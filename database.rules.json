@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "worlds": {
+      "$worldId": {
+        ".read": "auth != null && (data.child('visibility').val() === 'link' || data.child('visibility').val() === 'public' || data.child('ownerId').val() === auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.child('ownerId').val() === auth.uid) || data.child('ownerId').val() === auth.uid)",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+        },
+        "ownerId": {
+          ".validate": "newData.val() === auth.uid"
+        },
+        "visibility": {
+          ".validate": "newData.val() === 'private' || newData.val() === 'link' || newData.val() === 'public'"
+        },
+        "world": {
+          ".validate": "newData.child('version').isNumber()"
+        }
+      }
+    }
+  }
+}
