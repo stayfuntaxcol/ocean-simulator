@@ -108,6 +108,7 @@
     <button id="startBtn">Start verkennen</button>
     <div class="toolrow" style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
       <button id="importBtn" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">Importeer GLB-soort</button>
+      <button id="openFishStudioBtn" type="button" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">🎨 Open Fish Studio</button>
       <select id="schoolSize" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:9px 10px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700">
         <option value="1">1 vis</option>
         <option value="8">Kleine school · 8</option>
@@ -246,6 +247,7 @@ const activeCellsText = document.getElementById('activeCellsText');
 const visibleFishText = document.getElementById('visibleFishText');
 const hint = document.getElementById('hint');
 const importBtn = document.getElementById('importBtn');
+const openFishStudioBtn = document.getElementById('openFishStudioBtn');
 const fishFiles = document.getElementById('fishFiles');
 const importStatus = document.getElementById('importStatus');
 const schoolSize = document.getElementById('schoolSize');
@@ -2289,6 +2291,7 @@ function spawnImportedSchool(source,fileName,count){
 }
 
 let importedCount=0;
+openFishStudioBtn.addEventListener('click',()=>window.open('./studio/','_blank','noopener'));
 importBtn.addEventListener('click',()=>fishFiles.click());
 fishFiles.addEventListener('change',async()=>{
   const file=fishFiles.files?.[0]; if(!file)return;
