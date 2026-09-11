@@ -164,6 +164,12 @@
         <button id="importWorldBtn" type="button">⬆ JSON</button>
         <input id="worldFile" type="file" accept=".json,application/json" hidden>
       </div>
+      <div class="toolrow">
+        <input id="cloudWorldName" type="text" maxlength="60" value="Mijn oceaanwereld" aria-label="Naam van de wereld" style="flex:1;min-width:160px;border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:8px 10px;background:rgba(255,255,255,.08);color:#eef8ff">
+        <button id="cloudSaveBtn" type="button">☁ Bewaar online</button>
+        <button id="shareWorldBtn" type="button" disabled>🔗 Deel wereld</button>
+      </div>
+      <div id="cloudStatus" style="font-size:12px;color:#bfe5f3;line-height:1.35">Firebase wordt verbonden…</div>
       <div id="editorInfo">Streaming blijft actief: alleen de directe omgeving wordt gerenderd. Scholen gebruiken een compacte habitatkaart om rijk landschap te zoeken; soms kiezen ze bewust lege zones om nieuwe oceaangebieden te verkennen.</div>
     </div>
 
@@ -211,6 +217,24 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js';
+import { getDatabase, get, push, ref, serverTimestamp, set } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js';
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyBTQohjXtII45yRy7F2r-7HezO6F9AfNTQ',
+  authDomain: 'ocean-simulator-e6eef.firebaseapp.com',
+  databaseURL: 'https://ocean-simulator-e6eef-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: 'ocean-simulator-e6eef',
+  storageBucket: 'ocean-simulator-e6eef.firebasestorage.app',
+  messagingSenderId: '1035946759721',
+  appId: '1:1035946759721:web:e9d2f2453a031a6d456e38',
+  measurementId: 'G-0H03D2N2DJ'
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const firebaseAuth = getAuth(firebaseApp);
+const firebaseDatabase = getDatabase(firebaseApp);
 
 const app = document.getElementById('app');
 const startBtn = document.getElementById('startBtn');
@@ -241,6 +265,10 @@ const loadWorldBtn = document.getElementById('loadWorldBtn');
 const exportWorldBtn = document.getElementById('exportWorldBtn');
 const importWorldBtn = document.getElementById('importWorldBtn');
 const worldFile = document.getElementById('worldFile');
+const cloudWorldName = document.getElementById('cloudWorldName');
+const cloudSaveBtn = document.getElementById('cloudSaveBtn');
+const shareWorldBtn = document.getElementById('shareWorldBtn');
+const cloudStatus = document.getElementById('cloudStatus');
 const editorInfo = document.getElementById('editorInfo');
 const editBadge = document.getElementById('editBadge');
 const minimapWrap = document.getElementById('minimapWrap');
@@ -251,6 +279,9 @@ const mapToggle = document.getElementById('mapToggle');
 const minimapCtx = minimap.getContext('2d');
 let minimapZoom = 1;
 let lastMinimapDraw = 0;
+let firebaseUser = null;
+let currentCloudWorldId = new URLSearchParams(location.search).get('world');
+let currentCloudOwnerId = null;
 
 
 let editMode = false;
@@ -1571,6 +1602,94 @@ function restoreWorld(data){
   if(editMode) renderAllWorldCellsForEditor(); else { lastStreamingCell=''; refreshWorldStreaming(true); }
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
 }
+
+function cloudWorldUrl(worldId){
+  const url=new URL(location.href);
+  url.searchParams.set('world',worldId);
+  return url.toString();
+}
+
+function setCloudBusy(busy){
+  cloudSaveBtn.disabled=busy || !firebaseUser;
+  shareWorldBtn.disabled=busy || !currentCloudWorldId;
+}
+
+async function loadCloudWorld(worldId){
+  if(!worldId || !firebaseUser)return;
+  setCloudBusy(true);
+  cloudStatus.textContent='Gedeelde wereld laden…';
+  try{
+    const snapshot=await get(ref(firebaseDatabase,`worlds/${worldId}`));
+    if(!snapshot.exists())throw new Error('Wereld niet gevonden');
+    const record=snapshot.val();
+    if(!record.world)throw new Error('Wereldbestand ontbreekt');
+    restoreWorld(record.world);
+    currentCloudWorldId=worldId;
+    currentCloudOwnerId=record.ownerId||null;
+    cloudWorldName.value=record.name||'Gedeelde oceaanwereld';
+    history.replaceState(null,'',cloudWorldUrl(worldId));
+    cloudStatus.textContent=currentCloudOwnerId===firebaseUser.uid
+      ? 'Jouw online wereld is geladen.'
+      : 'Gedeelde wereld geladen · alleen bekijken.';
+  }catch(err){
+    console.error(err);
+    cloudStatus.textContent=`Online wereld laden mislukt: ${err.message}. Controleer Firebase Authentication en Database Rules.`;
+  }finally{setCloudBusy(false);}
+}
+
+async function saveCloudWorld(){
+  if(!firebaseUser)return;
+  if(currentCloudOwnerId && currentCloudOwnerId!==firebaseUser.uid){
+    cloudStatus.textContent='Deze wereld is van iemand anders en kan alleen worden bekeken.';
+    return;
+  }
+  setCloudBusy(true);
+  cloudStatus.textContent='Wereld online bewaren…';
+  try{
+    const worldId=currentCloudWorldId || push(ref(firebaseDatabase,'worlds')).key;
+    const record={
+      name:(cloudWorldName.value.trim()||'Mijn oceaanwereld').slice(0,60),
+      ownerId:firebaseUser.uid,
+      visibility:'link',
+      updatedAt:serverTimestamp(),
+      world:worldData()
+    };
+    await set(ref(firebaseDatabase,`worlds/${worldId}`),record);
+    currentCloudWorldId=worldId;
+    currentCloudOwnerId=firebaseUser.uid;
+    history.replaceState(null,'',cloudWorldUrl(worldId));
+    cloudStatus.textContent='Wereld staat online. Gebruik “Deel wereld” om de link te kopiëren.';
+  }catch(err){
+    console.error(err);
+    cloudStatus.textContent=`Online bewaren mislukt: ${err.message}. Controleer Firebase Authentication en Database Rules.`;
+  }finally{setCloudBusy(false);}
+}
+
+cloudSaveBtn.addEventListener('click',saveCloudWorld);
+shareWorldBtn.addEventListener('click',async()=>{
+  if(!currentCloudWorldId)return;
+  const url=cloudWorldUrl(currentCloudWorldId);
+  try{
+    await navigator.clipboard.writeText(url);
+    cloudStatus.textContent='Deellink gekopieerd. Stuur hem naar vrienden of familie.';
+  }catch{
+    prompt('Kopieer deze deellink:',url);
+  }
+});
+
+onAuthStateChanged(firebaseAuth,user=>{
+  firebaseUser=user;
+  setCloudBusy(false);
+  if(user){
+    cloudStatus.textContent='Firebase verbonden. Je kunt deze wereld online bewaren.';
+    if(currentCloudWorldId)loadCloudWorld(currentCloudWorldId);
+  }
+});
+signInAnonymously(firebaseAuth).catch(err=>{
+  console.error(err);
+  cloudStatus.textContent='Firebase-login mislukt. Activeer Anonymous Authentication in de Firebase Console.';
+});
+
 saveWorldBtn.addEventListener('click',()=>{
   try{localStorage.setItem('fiveLoavesOceanWorldV4',JSON.stringify(worldData()));editorInfo.textContent=`Wereld lokaal opgeslagen: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;}
   catch(err){editorInfo.textContent='Lokaal opslaan lukte niet. Gebruik “JSON” om een bestand te bewaren.';}
