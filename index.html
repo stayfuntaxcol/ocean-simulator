@@ -1,0 +1,2757 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>5 Broden & 2 Vissen — 3D Oceaan v11 Minimap</title>
+  <style>
+    :root{
+      --bg:#061827;
+      --panel:rgba(5,18,30,.78);
+      --line:rgba(255,255,255,.16);
+      --text:#eef8ff;
+      --muted:#a8c7d8;
+      --accent:#7fe2ff;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+    #app{position:relative;width:100%;height:100%}
+    canvas{display:block;width:100%;height:100%}
+    #hud{
+      position:absolute;left:16px;top:16px;z-index:10;
+      max-width:390px;padding:14px 16px;border:1px solid var(--line);
+      border-radius:14px;background:var(--panel);backdrop-filter:blur(8px);
+      box-shadow:0 10px 30px rgba(0,0,0,.25)
+    }
+    #hud h1{font-size:18px;margin:0 0 6px}
+    #hud p{margin:5px 0;color:var(--muted);font-size:13px;line-height:1.4}
+    #startBtn{
+      margin-top:8px;border:0;border-radius:10px;padding:10px 14px;
+      background:var(--accent);color:#062231;font-weight:700;cursor:pointer
+    }
+    #stats{
+      position:absolute;right:16px;top:16px;z-index:10;
+      padding:10px 12px;border:1px solid var(--line);
+      border-radius:12px;background:var(--panel);font-size:12px;line-height:1.5
+    }
+    #crosshair{
+      position:absolute;left:50%;top:50%;z-index:5;transform:translate(-50%,-50%);
+      width:12px;height:12px;pointer-events:none;opacity:.75
+    }
+    #crosshair:before,#crosshair:after{
+      content:"";position:absolute;background:#fff;border-radius:2px
+    }
+    #crosshair:before{left:5px;top:0;width:2px;height:12px}
+    #crosshair:after{left:0;top:5px;width:12px;height:2px}
+    #hint{
+      position:absolute;left:50%;bottom:18px;transform:translateX(-50%);
+      z-index:10;padding:8px 12px;border-radius:10px;background:rgba(0,0,0,.35);
+      font-size:12px;color:#d9eff9;white-space:nowrap
+    }
+
+    #worldTools{
+      margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.16);
+      display:grid;gap:8px
+    }
+    #worldTools .toolrow{display:flex;gap:7px;flex-wrap:wrap}
+    #worldTools button,#worldTools select{
+      border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:8px 10px;
+      background:rgba(255,255,255,.08);color:#eef8ff;font-weight:600;cursor:pointer
+    }
+    #worldTools button.active{background:#7fe2ff;color:#062231}
+    #worldTools select option{color:#111}
+    #editorInfo{font-size:12px;color:#bfe5f3;line-height:1.35}
+    #editBadge{
+      display:none;position:absolute;left:50%;top:16px;transform:translateX(-50%);
+      z-index:20;padding:9px 13px;border-radius:10px;background:rgba(4,24,34,.88);
+      border:1px solid rgba(127,226,255,.55);font-size:13px;font-weight:700
+    }
+    #editBadge.on{display:block}
+
+
+    #minimapWrap{
+      position:absolute;right:16px;bottom:16px;z-index:12;width:224px;
+      padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--panel);
+      backdrop-filter:blur(8px);box-shadow:0 10px 30px rgba(0,0,0,.25)
+    }
+    #minimapHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:12px;font-weight:700}
+    #minimapControls{display:flex;gap:5px}
+    #minimapControls button{width:30px;height:28px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(255,255,255,.08);color:#eef8ff;cursor:pointer;font-weight:700}
+    #minimap{display:block;width:202px;height:202px;cursor:crosshair;border-radius:10px;background:#082936;border:1px solid rgba(255,255,255,.12)}
+    #minimapLegend{display:flex;justify-content:space-between;gap:5px;margin-top:6px;color:#bfe5f3;font-size:10px}
+    #minimapWrap.collapsed{width:auto;padding:8px 10px}
+    #minimapWrap.collapsed #minimap,#minimapWrap.collapsed #minimapLegend,#minimapWrap.collapsed #mapZoomOut,#minimapWrap.collapsed #mapZoomIn{display:none}
+    @media (max-width:700px){#minimapWrap{right:10px;bottom:54px;width:174px}#minimap{width:152px;height:152px}}
+
+    @media (max-width:700px){
+      #hud{left:10px;top:10px;right:10px;max-width:none}
+      #stats{display:none}
+      #hint{max-width:92%;white-space:normal;text-align:center}
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports":{
+      "three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js",
+      "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <h1>3D Oceaan — Scholen, Habitat, Streaming & Minimap</h1>
+    <p><b>WASD</b> bewegen · <b>muis</b> rondkijken · <b>spatie</b> omhoog · <b>C</b> omlaag · <b>Shift</b> sneller.</p>
+    <p>Vissen vormen organische scholen per soort, zoeken rijk onderwaterlandschap op en trekken soms gezamenlijk op ontdekking naar nieuwe gebieden.</p>
+    <button id="startBtn">Start verkennen</button>
+    <div class="toolrow" style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+      <button id="importBtn" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">Importeer GLB-soort</button>
+      <select id="schoolSize" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:9px 10px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700">
+        <option value="1">1 vis</option>
+        <option value="8">Kleine school · 8</option>
+        <option value="20" selected>School · 20</option>
+        <option value="50">Grote school · 50</option>
+      </select>
+    </div>
+    <input id="fishFiles" type="file" accept=".glb,model/gltf-binary" hidden>
+    <p id="importStatus">Importeer één GLB-model en kies hoeveel vissen van deze soort als samenhangende school worden toegevoegd.</p>
+
+    <div id="worldTools">
+      <div class="toolrow">
+        <button id="editModeBtn" type="button">🧱 Wereld bouwen</button>
+        <select id="worldBrush" aria-label="Kies landschap">
+          <option value="auto">✨ Automatisch landschap</option>
+          <option value="mixed">🌈 Gemengde biodiversiteit</option>
+          <option value="coral">🪸 Koraalveld</option>
+          <option value="rocks">🪨 Rotsrif</option>
+          <option value="seagrass">🌿 Zeegrasveld</option>
+          <option value="sponge">🧽 Spons & anemoon</option>
+          <option value="terrainLower">⬇ Bodem verlagen / geul</option>
+          <option value="terrainRaise">⬆ Bodem verhogen</option>
+          <option value="terrainSmooth">〰 Bodem gladstrijken</option>
+          <option value="lavaVent">🌋 Lava-bron plaatsen</option>
+          <option value="removeTop">↩ Verwijder bovenste laag</option>
+          <option value="clear">🧹 Vak helemaal leegmaken</option>
+        </select>
+      </div>
+      <div class="toolrow" id="autoLandscapeTools">
+        <select id="landscapeDensity" aria-label="Dichtheid automatisch landschap">
+          <option value="light">Light</option>
+          <option value="medium" selected>Medium</option>
+          <option value="heavy">Heavy</option>
+          <option value="extreme">Extreme</option>
+        </select>
+        <span style="font-size:12px;color:#bfe5f3;align-self:center">Selecteer “Automatisch landschap” en sleep over een gebied.</span>
+      </div>
+      <div class="toolrow">
+        <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#d9f5ff;">
+          <input type="checkbox" id="terrainInspectToggle" checked>
+          🔎 Terrein inspecteren
+        </label>
+        <span style="font-size:11px;color:#9cc9d8;align-self:center">Heldere bouwmodus + hoogtecontrast</span>
+      </div>
+      <div class="toolrow">
+        <button id="randomTerrainBtn" type="button">🎲 Random bodem</button>
+        <button id="flatTerrainBtn" type="button">▭ Bodem vlak</button>
+        <span style="font-size:11px;color:#9cc9d8;align-self:center">Alleen hoogte/diepte · geen rotsen of begroeiing</span>
+      </div>
+      <div class="toolrow">
+        <button id="saveWorldBtn" type="button">💾 Opslaan</button>
+        <button id="loadWorldBtn" type="button">↻ Laden</button>
+        <button id="exportWorldBtn" type="button">⬇ JSON</button>
+        <button id="importWorldBtn" type="button">⬆ JSON</button>
+        <input id="worldFile" type="file" accept=".json,application/json" hidden>
+      </div>
+      <div id="editorInfo">Streaming blijft actief: alleen de directe omgeving wordt gerenderd. Scholen gebruiken een compacte habitatkaart om rijk landschap te zoeken; soms kiezen ze bewust lege zones om nieuwe oceaangebieden te verkennen.</div>
+    </div>
+
+  </div>
+
+  <div id="stats">
+    <div>Vissen: <span id="fishCount">0</span></div>
+    <div>Snelheid: <span id="speedText">0</span></div>
+    <div>Diepte: <span id="depthText">0</span> m</div>
+    <div>Zicht: <span id="visibilityText">72</span> m</div>
+    <div>Actieve vakken: <span id="activeCellsText">0</span></div>
+    <div>Zichtbare vissen: <span id="visibleFishText">0</span></div>
+    <div>Scholen: <span id="schoolCountText">0</span></div>
+    <div>Gem. health: <span id="healthText">100</span>%</div>
+    <div>Kritiek: <span id="criticalFishText">0</span></div>
+    <div>Lavabronnen: <span id="lavaCountText">0</span></div>
+  </div>
+
+
+  <div id="minimapWrap">
+    <div id="minimapHeader"><span>🧭 Kaart · klik om te reizen</span><div id="minimapControls"><button id="mapZoomOut" type="button" title="Uitzoomen">−</button><button id="mapZoomIn" type="button" title="Inzoomen">+</button><button id="mapToggle" type="button" title="Kaart inklappen">▾</button></div></div>
+    <canvas id="minimap" width="404" height="404" aria-label="Minimap van de onderwaterwereld"></canvas>
+    <div id="minimapLegend"><span>laag landschap</span><span>rijk rif</span><span>▲ jij</span></div>
+  </div>
+
+  <div id="editBadge">BOUWMODUS · sleep over de zeebodem om een groot gebied te vullen</div>
+  <div id="crosshair"></div>
+  <div id="hint">Klik op “Start verkennen”. Druk ESC om de muis vrij te geven.</div>
+</div>
+
+
+<div id="followPanel" style="position:absolute;left:18px;bottom:18px;z-index:8;display:none;min-width:240px;max-width:330px;background:rgba(5,35,45,.82);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;color:white;backdrop-filter:blur(8px);font:13px/1.35 system-ui,sans-serif">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+    <strong id="followTitle">Vis geselecteerd</strong>
+    <button id="stopFollowBtn" type="button" style="border:0;border-radius:9px;padding:6px 9px;cursor:pointer">✕ Stop</button>
+  </div>
+  <div style="display:flex;gap:7px;margin-top:9px">
+    <button id="followFishBtn" type="button" style="flex:1;border:0;border-radius:9px;padding:8px;cursor:pointer">🐟 Volg vis</button>
+    <button id="followSchoolBtn" type="button" style="flex:1;border:0;border-radius:9px;padding:8px;cursor:pointer">🐠 Volg school</button>
+  </div>
+  <div id="followInfo" style="margin-top:8px;opacity:.85">A/D zijwaarts · Q omhoog · E omlaag · scroll afstand · rotsen zijn massief · camera past bijna door dezelfde ruimte als vissen · ESC loslaten</div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const app = document.getElementById('app');
+const startBtn = document.getElementById('startBtn');
+const fishCountEl = document.getElementById('fishCount');
+const speedText = document.getElementById('speedText');
+const depthText = document.getElementById('depthText');
+const visibilityText = document.getElementById('visibilityText');
+const activeCellsText = document.getElementById('activeCellsText');
+const visibleFishText = document.getElementById('visibleFishText');
+const hint = document.getElementById('hint');
+const importBtn = document.getElementById('importBtn');
+const fishFiles = document.getElementById('fishFiles');
+const importStatus = document.getElementById('importStatus');
+const schoolSize = document.getElementById('schoolSize');
+const schoolCountText = document.getElementById('schoolCountText');
+const healthText = document.getElementById('healthText');
+const criticalFishText = document.getElementById('criticalFishText');
+const lavaCountText = document.getElementById('lavaCountText');
+
+const editModeBtn = document.getElementById('editModeBtn');
+const worldBrush = document.getElementById('worldBrush');
+const landscapeDensity = document.getElementById('landscapeDensity');
+const terrainInspectToggle = document.getElementById('terrainInspectToggle');
+const randomTerrainBtn = document.getElementById('randomTerrainBtn');
+const flatTerrainBtn = document.getElementById('flatTerrainBtn');
+const saveWorldBtn = document.getElementById('saveWorldBtn');
+const loadWorldBtn = document.getElementById('loadWorldBtn');
+const exportWorldBtn = document.getElementById('exportWorldBtn');
+const importWorldBtn = document.getElementById('importWorldBtn');
+const worldFile = document.getElementById('worldFile');
+const editorInfo = document.getElementById('editorInfo');
+const editBadge = document.getElementById('editBadge');
+const minimapWrap = document.getElementById('minimapWrap');
+const minimap = document.getElementById('minimap');
+const mapZoomOut = document.getElementById('mapZoomOut');
+const mapZoomIn = document.getElementById('mapZoomIn');
+const mapToggle = document.getElementById('mapToggle');
+const minimapCtx = minimap.getContext('2d');
+let minimapZoom = 1;
+let lastMinimapDraw = 0;
+
+
+let editMode = false;
+let savedCamPos = null;
+let savedCamQuat = null;
+
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b5364);
+// Troebel water verbergt de streaming-grens op natuurlijke wijze.
+scene.fog = new THREE.FogExp2(0x0b5364, 0.035);
+const normalFogDensity = 0.035;
+const normalFogColor = new THREE.Color(0x0b5364);
+const inspectFogDensity = 0.0085;
+let terrainInspectActive = false;
+let landscapeEditorActive=false;
+let savedSceneBackground=null;
+let savedBubbleVisibility=true;
+
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 120);
+camera.position.set(0, 8, 28);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = false;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.insertBefore(renderer.domElement, app.firstChild);
+
+const controls = new PointerLockControls(camera, renderer.domElement);
+
+startBtn.addEventListener('click', () => { if(!editMode){ if(followMode) stopFollowing(false); controls.lock(); } });
+renderer.domElement.addEventListener('click', () => {
+  if (!editMode && !controls.isLocked && !followMode) controls.lock();
+});
+
+controls.addEventListener('lock', () => {
+  startBtn.textContent = 'Verkennen actief';
+  hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · klik een vis om te volgen';
+});
+controls.addEventListener('unlock', () => {
+  startBtn.textContent = 'Verder verkennen';
+  hint.textContent = 'Klik op “Verder verkennen” om de besturing weer te activeren.';
+});
+
+// Licht
+scene.add(new THREE.HemisphereLight(0x8fe7ff, 0x10242a, 1.6));
+
+const sun = new THREE.DirectionalLight(0xcaf8ff, 2.1);
+sun.position.set(-20, 60, 15);
+scene.add(sun);
+
+const glow = new THREE.PointLight(0x2fb7ff, 12, 160, 2);
+glow.position.set(20, 20, -10);
+scene.add(glow);
+
+const terrainInspectLight = new THREE.HemisphereLight(0xe2f8ff, 0x51625a, 0);
+scene.add(terrainInspectLight);
+const terrainInspectSun = new THREE.DirectionalLight(0xffffff, 0);
+terrainInspectSun.position.set(45, 70, 30);
+scene.add(terrainInspectSun);
+
+// Zeebodem + lichte bewerkbare heightmap
+const TERRAIN_BASE_Y = -18;
+const TERRAIN_CELL = 12;
+const terrainOffsets = new Map();
+
+function terrainCellOffset(ix,iz){ return terrainOffsets.get(`${ix},${iz}`)||0; }
+function terrainBaseNoise(x,z){
+  return Math.sin(x*.035)*1.0 + Math.cos(z*.028)*1.3 + Math.sin((x-z)*.017)*.9;
+}
+function terrainOffsetAt(x,z){
+  // Zelfstandig initialiseerbaar: gebruikt niet CELL/WORLD_HALF die later in de module worden gedeclareerd.
+  const gx=x/TERRAIN_CELL;
+  const gz=z/TERRAIN_CELL;
+  const ix=Math.floor(gx), iz=Math.floor(gz);
+  const fx=gx-ix, fz=gz-iz;
+  const a=terrainCellOffset(ix,iz), b=terrainCellOffset(ix+1,iz);
+  const c=terrainCellOffset(ix,iz+1), d=terrainCellOffset(ix+1,iz+1);
+  const ab=THREE.MathUtils.lerp(a,b,fx), cd=THREE.MathUtils.lerp(c,d,fx);
+  return THREE.MathUtils.lerp(ab,cd,fz);
+}
+function terrainHeightAt(x,z){
+  return TERRAIN_BASE_Y + terrainBaseNoise(x,z) + terrainOffsetAt(x,z);
+}
+
+const floorGeo = new THREE.PlaneGeometry(800,800,80,80);
+const floorPos = floorGeo.attributes.position;
+const floorXY = [];
+for(let i=0;i<floorPos.count;i++) floorXY.push([floorPos.getX(i),floorPos.getY(i)]);
+
+function rebuildTerrainMesh(){
+  let colors=floorGeo.getAttribute('color');
+  if(!colors){
+    colors=new THREE.BufferAttribute(new Float32Array(floorPos.count*3),3);
+    floorGeo.setAttribute('color',colors);
+  }
+  const c=new THREE.Color();
+  for(let i=0;i<floorPos.count;i++){
+    const [x,y]=floorXY[i];
+    const worldZ=-y;
+    const h=terrainBaseNoise(x,worldZ)+terrainOffsetAt(x,worldZ);
+    floorPos.setZ(i,h);
+
+    const worldY=TERRAIN_BASE_Y+h;
+    if(terrainInspectActive){
+      const t=THREE.MathUtils.clamp((worldY+31)/24,0,1);
+      if(t<.5){
+        const u=t*2;
+        c.setRGB(.08+.10*u,.22+.18*u,.30+.16*u);
+      }else{
+        const u=(t-.5)*2;
+        c.setRGB(.18+.36*u,.40+.28*u,.40+.14*u);
+      }
+    }else{
+      c.setRGB(.19,.35,.31);
+    }
+    colors.setXYZ(i,c.r,c.g,c.b);
+  }
+  floorPos.needsUpdate=true;
+  colors.needsUpdate=true;
+  floorGeo.computeVertexNormals();
+}
+rebuildTerrainMesh();
+
+const floorMat = new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,metalness:0,vertexColors:true});
+const floor = new THREE.Mesh(floorGeo,floorMat);
+floor.rotation.x=-Math.PI/2;
+floor.position.y=TERRAIN_BASE_Y;
+scene.add(floor);
+
+const terrainContourGroup = new THREE.Group();
+scene.add(terrainContourGroup);
+
+function rebuildTerrainContours(){
+  terrainContourGroup.clear();
+  if(!terrainInspectActive) return;
+
+  const mat=new THREE.LineBasicMaterial({color:0xc8f4f0,transparent:true,opacity:.28});
+  const majorMat=new THREE.LineBasicMaterial({color:0xe4fffb,transparent:true,opacity:.48});
+
+  const step=12;
+  for(let x=-WORLD_HALF;x<=WORLD_HALF;x+=step){
+    const pts=[];
+    for(let z=-WORLD_HALF;z<=WORLD_HALF;z+=3){
+      pts.push(new THREE.Vector3(x,terrainHeightAt(x,z)+.12,z));
+    }
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    terrainContourGroup.add(new THREE.Line(g,(Math.round(x/step)%4===0)?majorMat:mat));
+  }
+  for(let z=-WORLD_HALF;z<=WORLD_HALF;z+=step){
+    const pts=[];
+    for(let x=-WORLD_HALF;x<=WORLD_HALF;x+=3){
+      pts.push(new THREE.Vector3(x,terrainHeightAt(x,z)+.12,z));
+    }
+    const g=new THREE.BufferGeometry().setFromPoints(pts);
+    terrainContourGroup.add(new THREE.Line(g,(Math.round(z/step)%4===0)?majorMat:mat));
+  }
+}
+
+function setTerrainInspectMode(active){
+  terrainInspectActive=!!active;
+  if(!landscapeEditorActive && scene.fog){
+    scene.fog.density=terrainInspectActive ? inspectFogDensity : normalFogDensity;
+    scene.fog.color.copy(terrainInspectActive ? new THREE.Color(0x4a8793) : normalFogColor);
+  }
+  if(!landscapeEditorActive){
+    camera.far=terrainInspectActive ? 260 : 120;
+    camera.updateProjectionMatrix();
+  }
+  terrainInspectLight.intensity=terrainInspectActive ? 1.15 : 0;
+  terrainInspectSun.intensity=terrainInspectActive ? 1.55 : 0;
+  rebuildTerrainMesh();
+  rebuildTerrainContours();
+}
+
+function setLandscapeEditorMode(active){
+  landscapeEditorActive=!!active;
+
+  if(landscapeEditorActive){
+    savedSceneBackground=scene.background?.clone?.() || scene.background;
+    savedBubbleVisibility=bubbles.visible;
+
+    // Geen water/mist: neutrale heldere bouwomgeving.
+    scene.fog=null;
+    scene.background=new THREE.Color(0xc7e3e8);
+    camera.far=1800;
+    camera.updateProjectionMatrix();
+
+    terrainInspectLight.intensity=1.45;
+    terrainInspectSun.intensity=1.9;
+
+    // Ecosysteem uit beeld en gepauzeerd tijdens bouwen.
+    for(const f of fishes) f.visible=false;
+    bubbles.visible=false;
+
+    // Alles op de kaart beschikbaar.
+    clearAllWorldVisuals();
+    renderAllWorldCellsForEditor();
+  }else{
+    scene.background=savedSceneBackground || new THREE.Color(0x0b5364);
+    scene.fog=new THREE.FogExp2(normalFogColor.clone(),normalFogDensity);
+    camera.far=120;
+    camera.updateProjectionMatrix();
+
+    terrainInspectLight.intensity=0;
+    terrainInspectSun.intensity=0;
+    bubbles.visible=savedBubbleVisibility;
+
+    for(const f of fishes){
+      if(!f.userData.dead) f.visible=true;
+    }
+
+    clearAllWorldVisuals();
+    lastStreamingCell='';
+    refreshWorldStreaming(true);
+  }
+}
+
+function minimapWorldFromEvent(e){
+  const rect=minimap.getBoundingClientRect();
+  const px=(e.clientX-rect.left)/rect.width;
+  const py=(e.clientY-rect.top)/rect.height;
+
+  const visibleHalf=WORLD_HALF/minimapZoom;
+  let cx=0,cz=0;
+  if(minimapZoom>1){cx=camera.position.x;cz=camera.position.z;}
+  cx=THREE.MathUtils.clamp(cx,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
+  cz=THREE.MathUtils.clamp(cz,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
+  if(visibleHalf>=WORLD_HALF){cx=0;cz=0;}
+
+  const minX=cx-visibleHalf,maxX=cx+visibleHalf;
+  const minZ=cz-visibleHalf,maxZ=cz+visibleHalf;
+
+  return {
+    x:THREE.MathUtils.lerp(minX,maxX,px),
+    z:THREE.MathUtils.lerp(maxZ,minZ,py)
+  };
+}
+
+function teleportEditorTo(x,z){
+  const height=THREE.MathUtils.clamp(camera.position.y,45,230);
+  camera.position.set(
+    THREE.MathUtils.clamp(x,-WORLD_HALF+1,WORLD_HALF-1),
+    height,
+    THREE.MathUtils.clamp(z,-WORLD_HALF+1,WORLD_HALF-1)
+  );
+  camera.up.set(0,0,-1);
+  camera.lookAt(camera.position.x,terrainHeightAt(camera.position.x,camera.position.z),camera.position.z);
+  drawMinimap();
+}
+
+
+
+// Lichtstralen
+const rayMat = new THREE.MeshBasicMaterial({
+  color:0x7ccfff, transparent:true, opacity:.055,
+  side:THREE.DoubleSide, depthWrite:false
+});
+for(let i=0;i<18;i++){
+  const g = new THREE.ConeGeometry(2 + Math.random()*3, 70 + Math.random()*80, 16, 1, true);
+  const m = new THREE.Mesh(g, rayMat);
+  m.position.set((Math.random()-.5)*180, 20 + Math.random()*30, (Math.random()-.5)*180);
+  m.rotation.z = (Math.random()-.5)*0.25;
+  scene.add(m);
+}
+
+// Spectaculair rif: rotsen, koraal, sponzen, anemonen en zeewier
+const reef = new THREE.Group();
+scene.add(reef);
+
+// Massieve natuurwet: rotslagen zijn ondoordringbaar voor camera en vissen.
+const rockCollisionRoots = new Set();
+function removeReefRoot(root){ rockCollisionRoots.delete(root); reef.remove(root); }
+const reefMobile = matchMedia('(max-width: 800px)').matches;
+const reefScale = reefMobile ? .55 : 1;
+const coralColors = [0xff6f61,0xf3a6c8,0xd96aa7,0xffb347,0xf5d76e,0x8f79c6,0x58b7a7,0x77c46b,0xe67e50];
+const rockColors = [0x58645f,0x66736c,0x4c5653,0x756b61,0x526a65];
+const matCache = new Map();
+function reefMat(color, rough=.9){
+  const key=color+'_'+rough;
+  if(!matCache.has(key)) matCache.set(key,new THREE.MeshStandardMaterial({color,roughness:rough,metalness:0}));
+  return matCache.get(key);
+}
+function randXZ(radius=250){
+  const a=Math.random()*Math.PI*2, r=12+Math.pow(Math.random(),.72)*radius;
+  return [Math.cos(a)*r,Math.sin(a)*r];
+}
+function addRockCluster(x,z,scale=1){
+  const g=new THREE.Group();
+  const n=2+Math.floor(Math.random()*5);
+  for(let i=0;i<n;i++){
+    const r=(1.2+Math.random()*4.8)*scale;
+    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0),reefMat(rockColors[Math.floor(Math.random()*rockColors.length)]));
+    m.scale.set(1+.8*Math.random(),.55+Math.random()*.8,.8+Math.random()*.9);
+    m.position.set((Math.random()-.5)*5*scale,(r*.35)-.5,(Math.random()-.5)*5*scale);
+    m.rotation.set(Math.random(),Math.random()*Math.PI,Math.random()*.35);
+    g.add(m);
+  }
+  g.position.set(x,-17.7,z); reef.add(g);
+}
+function addBranchCoral(x,z,scale=1,color=0xff7f6e){
+  const g=new THREE.Group(), mat=reefMat(color,.82);
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.22*scale,.34*scale,3.8*scale,7),mat);
+  trunk.position.y=1.9*scale; g.add(trunk);
+  const branches=4+Math.floor(Math.random()*4);
+  for(let i=0;i<branches;i++){
+    const h=(1.5+Math.random()*2.8)*scale;
+    const b=new THREE.Mesh(new THREE.CylinderGeometry(.12*scale,.2*scale,h,6),mat);
+    const ang=(i/branches)*Math.PI*2+Math.random()*.5;
+    b.position.set(Math.cos(ang)*(.45+.35*Math.random())*scale,(2.4+Math.random()*1.4)*scale,Math.sin(ang)*(.45+.35*Math.random())*scale);
+    b.rotation.z=(Math.random()*.55+.2)*(Math.cos(ang)>=0?-1:1);
+    b.rotation.x=(Math.random()-.5)*.35;
+    g.add(b);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(.18*scale,8,6),reefMat(0xffc0b0,.75));
+    tip.position.set(b.position.x,b.position.y+h*.42,b.position.z); g.add(tip);
+  }
+  g.position.set(x,-17.5,z); g.rotation.y=Math.random()*Math.PI*2; reef.add(g);
+}
+function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
+  const g=new THREE.Group(), mat=reefMat(color,.86);
+  const levels=2+Math.floor(Math.random()*3);
+  for(let i=0;i<levels;i++){
+    const r=(1.2+i*.75+Math.random()*.4)*scale;
+    const p=new THREE.Mesh(new THREE.CylinderGeometry(r*.75,r,.18*scale,16),mat);
+    p.position.y=(.6+i*.72)*scale;
+    p.rotation.x=(Math.random()-.5)*.12; p.rotation.z=(Math.random()-.5)*.12;
+    g.add(p);
+    const stem=new THREE.Mesh(new THREE.CylinderGeometry(.14*scale,.22*scale,.7*scale,7),mat);
+    stem.position.y=(.25+i*.72)*scale; g.add(stem);
+  }
+  g.position.set(x,-17.5,z); reef.add(g);
+}
+function addSponge(x,z,scale=1,color=0xffb347){
+  const g=new THREE.Group(), mat=reefMat(color,.92);
+  const n=2+Math.floor(Math.random()*5);
+  for(let i=0;i<n;i++){
+    const h=(.8+Math.random()*2.6)*scale;
+    const tube=new THREE.Mesh(new THREE.CylinderGeometry((.15+.18*Math.random())*scale,(.25+.22*Math.random())*scale,h,9,1,true),mat);
+    tube.position.set((Math.random()-.5)*1.3*scale,h/2,(Math.random()-.5)*1.3*scale);
+    tube.rotation.z=(Math.random()-.5)*.18; g.add(tube);
+    const rim=new THREE.Mesh(new THREE.TorusGeometry((.16+.17*Math.random())*scale,.055*scale,6,12),reefMat(0xffd18a,.78));
+    rim.rotation.x=Math.PI/2; rim.position.set(tube.position.x,h,tube.position.z); g.add(rim);
+  }
+  g.position.set(x,-17.55,z); reef.add(g);
+}
+function addAnemone(x,z,scale=1,color=0xd96aa7){
+  const g=new THREE.Group();
+  const base=new THREE.Mesh(new THREE.SphereGeometry(.55*scale,10,7),reefMat(color,.9));
+  base.scale.y=.55; base.position.y=.25*scale; g.add(base);
+  const tentMat=reefMat(color,.75);
+  for(let i=0;i<18;i++){
+    const h=(.65+Math.random()*1.2)*scale;
+    const t=new THREE.Mesh(new THREE.CylinderGeometry(.035*scale,.07*scale,h,5),tentMat);
+    const a=Math.random()*Math.PI*2, r=Math.random()*.42*scale;
+    t.position.set(Math.cos(a)*r,.55*scale+h/2,Math.sin(a)*r);
+    t.rotation.z=(Math.random()-.5)*.55; t.rotation.x=(Math.random()-.5)*.4; g.add(t);
+  }
+  g.position.set(x,-17.55,z); reef.add(g);
+}
+function addStarfish(x,z,scale=1,color=0xf28f5b){
+  const shape=new THREE.Shape();
+  for(let i=0;i<10;i++){
+    const a=-Math.PI/2+i*Math.PI/5, r=(i%2===0?1:.42)*scale;
+    const px=Math.cos(a)*r, py=Math.sin(a)*r;
+    i===0?shape.moveTo(px,py):shape.lineTo(px,py);
+  }
+  shape.closePath();
+  const geo=new THREE.ExtrudeGeometry(shape,{depth:.12*scale,bevelEnabled:true,bevelSize:.06*scale,bevelThickness:.04*scale,bevelSegments:1});
+  const m=new THREE.Mesh(geo,reefMat(color,.95)); m.rotation.x=-Math.PI/2; m.rotation.z=Math.random()*Math.PI;
+  m.position.set(x,-17.25,z); reef.add(m);
+}
+function addSeaweed(x,z,scale=1){
+  const g=new THREE.Group(), colors=[0x317a64,0x3f8d72,0x597f55,0x6c9058];
+  const blades=3+Math.floor(Math.random()*6);
+  for(let i=0;i<blades;i++){
+    const h=(1.8+Math.random()*5.5)*scale;
+    const weed=new THREE.Mesh(new THREE.CylinderGeometry(.035*scale,.11*scale,h,5),reefMat(colors[Math.floor(Math.random()*colors.length)],.96));
+    weed.position.set((Math.random()-.5)*.8*scale,h/2,(Math.random()-.5)*.8*scale);
+    weed.rotation.z=(Math.random()-.5)*.4; g.add(weed);
+  }
+  g.position.set(x,-17.7,z); reef.add(g);
+}
+
+// -------- WORLD EDITOR: persistente, gelaagde biodiversiteit --------
+const CELL = 12;
+const WORLD_HALF = 144;
+const FLOOR_Y = -17.35;
+// Map: cellKey -> [{id,type}, ...] in plaatsingsvolgorde.
+// Daardoor kan één vak tegelijk rotsen, gras, koraal, sponzen enz. bevatten.
+const worldCells = new Map();
+let nextLayerId = 1;
+
+
+
+// -------- MINIMAP / ORIENTATIE --------
+function mapHabitatWeight(layers){
+  let score=0;
+  for(const l of layers||[]){
+    if(l.type==='coral') score+=3;
+    else if(l.type==='seagrass') score+=2;
+    else if(l.type==='sponge') score+=2;
+    else if(l.type==='rocks') score+=1.25;
+    else if(l.type==='mixed') score+=2.5;
+    else score+=1;
+  }
+  return score;
+}
+
+function drawMinimap(){
+  const ctx=minimapCtx, w=minimap.width, h=minimap.height;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='#082936'; ctx.fillRect(0,0,w,h);
+
+  const visibleHalf=WORLD_HALF/minimapZoom;
+  let cx=0, cz=0;
+  if(minimapZoom>1){ cx=camera.position.x; cz=camera.position.z; }
+  cx=THREE.MathUtils.clamp(cx,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
+  cz=THREE.MathUtils.clamp(cz,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
+  if(visibleHalf>=WORLD_HALF){cx=0;cz=0;}
+
+  const minX=cx-visibleHalf,maxX=cx+visibleHalf,minZ=cz-visibleHalf,maxZ=cz+visibleHalf;
+  const sx=x=>(x-minX)/(maxX-minX)*w;
+  const sy=z=>h-(z-minZ)/(maxZ-minZ)*h;
+
+  // Subtiel raster.
+  ctx.strokeStyle='rgba(180,235,244,.10)'; ctx.lineWidth=1;
+  const step=CELL;
+  for(let x=Math.ceil(minX/step)*step;x<=maxX;x+=step){const px=sx(x);ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,h);ctx.stroke();}
+  for(let z=Math.ceil(minZ/step)*step;z<=maxZ;z+=step){const py=sy(z);ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(w,py);ctx.stroke();}
+
+  // Landschap per wereldcel; meer lagen = lichtere / warmere tint.
+  for(const [key,layers] of worldCells.entries()){
+    const [ix,iz]=key.split(',').map(Number);
+    const x0=ix*CELL,z0=iz*CELL,x1=x0+CELL,z1=z0+CELL;
+    if(x1<minX||x0>maxX||z1<minZ||z0>maxZ) continue;
+    const score=mapHabitatWeight(layers);
+    const t=Math.min(1,score/18);
+    const r=Math.round(34+85*t), g=Math.round(106+110*t), b=Math.round(92-30*t);
+    ctx.fillStyle=`rgba(${r},${g},${b},${0.34+0.56*t})`;
+    const px0=sx(x0),px1=sx(x1),py0=sy(z0),py1=sy(z1);
+    ctx.fillRect(px0,Math.min(py0,py1),Math.max(1,px1-px0),Math.max(1,Math.abs(py1-py0)));
+  }
+
+  // Actieve streaming-radius rond speler.
+  const px=sx(camera.position.x), py=sy(camera.position.z);
+  const radiusPx=CULL_RADIUS/(maxX-minX)*w;
+  ctx.strokeStyle='rgba(127,226,255,.35)';ctx.lineWidth=2;ctx.setLineDash([7,6]);ctx.beginPath();ctx.arc(px,py,radiusPx,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+
+  // Kijkrichting en speler.
+  const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);
+  const ang=Math.atan2(fwd.x,fwd.z);
+  ctx.save();ctx.translate(px,py);ctx.rotate(ang);
+  ctx.fillStyle='#ffffff';ctx.strokeStyle='rgba(0,0,0,.65)';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(0,-13);ctx.lineTo(8,9);ctx.lineTo(0,5);ctx.lineTo(-8,9);ctx.closePath();ctx.stroke();ctx.fill();ctx.restore();
+
+  // Noordmarkering.
+  ctx.fillStyle='rgba(255,255,255,.92)';ctx.font='bold 24px Arial';ctx.textAlign='center';ctx.fillText('N',w/2,28);
+  ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w/2,34);ctx.lineTo(w/2,49);ctx.stroke();
+}
+
+mapZoomIn.addEventListener('click',e=>{e.stopPropagation();minimapZoom=Math.min(4,minimapZoom*1.5);drawMinimap();});
+mapZoomOut.addEventListener('click',e=>{e.stopPropagation();minimapZoom=Math.max(1,minimapZoom/1.5);drawMinimap();});
+mapToggle.addEventListener('click',e=>{e.stopPropagation();minimapWrap.classList.toggle('collapsed');mapToggle.textContent=minimapWrap.classList.contains('collapsed')?'▴':'▾';});
+
+minimap.addEventListener('click',e=>{
+  e.stopPropagation();
+  if(!editMode) return;
+  const p=minimapWorldFromEvent(e);
+  teleportEditorTo(p.x,p.z);
+  editorInfo.textContent=`Verplaatst naar kaartpositie x ${p.x.toFixed(0)}, z ${p.z.toFixed(0)}.`;
+});
+
+minimapWrap.addEventListener('click',e=>e.stopPropagation());
+
+// -------- STREAMING / ZICHT --------
+// Data blijft altijd in worldCells. Alleen cellen binnen deze straal bestaan als 3D-objecten.
+const HIGH_DETAIL_RADIUS = 30;
+const ACTIVE_RADIUS = 48;
+const CULL_RADIUS = 60;
+const FISH_ANIMATION_RADIUS = 45;
+const activeWorldCells = new Set();
+let lastStreamingCell = '';
+let lastStreamingUpdate = 0;
+visibilityText.textContent = CULL_RADIUS;
+
+const raycaster = new THREE.Raycaster();
+const supportRaycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const editPlane = new THREE.Plane(new THREE.Vector3(0,1,0),17.45);
+let dragStart = null;
+let dragEnd = null;
+
+const grid = new THREE.GridHelper(WORLD_HALF*2, (WORLD_HALF*2)/CELL, 0x7fe2ff, 0x315b66);
+grid.position.y = -17.35;
+grid.material.transparent = true;
+grid.material.opacity = .28;
+grid.visible = false;
+scene.add(grid);
+
+const selectionMat = new THREE.MeshBasicMaterial({
+  color:0x7fe2ff,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide
+});
+const selection = new THREE.Mesh(new THREE.PlaneGeometry(1,1),selectionMat);
+selection.rotation.x = -Math.PI/2;
+selection.position.y = -17.15;
+selection.visible = false;
+scene.add(selection);
+
+function cellKey(ix,iz){ return `${ix},${iz}`; }
+function layersForCell(key){
+  if(!worldCells.has(key)) worldCells.set(key,[]);
+  return worldCells.get(key);
+}
+function rootsForCell(key){
+  return reef.children.filter(o=>o.userData.editorCell===key);
+}
+function removeLayerObjects(layerId){
+  for(let i=reef.children.length-1;i>=0;i--){
+    if(reef.children[i].userData.editorLayerId===layerId) removeReefRoot(reef.children[i]);
+  }
+}
+function clearCell(key){
+  habitatRevision++;
+  for(let i=reef.children.length-1;i>=0;i--){
+    if(reef.children[i].userData.editorCell===key) removeReefRoot(reef.children[i]);
+  }
+  worldCells.delete(key);
+  activeWorldCells.delete(key);
+}
+function removeTopLayer(ix,iz){
+  habitatRevision++;
+  const key=cellKey(ix,iz);
+  const layers=worldCells.get(key);
+  if(!layers || !layers.length) return false;
+  const top=layers.pop();
+  removeLayerObjects(top.id);
+  if(!layers.length) worldCells.delete(key);
+  return true;
+}
+function seededJitter(ix,iz,n=0,layerSeed=0){
+  const v=Math.sin(ix*91.73+iz*47.21+n*19.17+layerSeed*13.37)*43758.5453;
+  return v-Math.floor(v);
+}
+
+function supportHeightAt(x,z,supportRoots){
+  if(!supportRoots.length) return terrainHeightAt(x,z);
+  supportRaycaster.set(new THREE.Vector3(x,80,z),new THREE.Vector3(0,-1,0));
+  supportRaycaster.near=0; supportRaycaster.far=140;
+  const hits=supportRaycaster.intersectObjects(supportRoots,true);
+  return hits.length ? Math.max(terrainHeightAt(x,z),hits[0].point.y) : terrainHeightAt(x,z);
+}
+function placeRootsOnExistingSurface(newRoots,supportRoots){
+  // Elk nieuw root-object wordt afzonderlijk op het hoogste bestaande oppervlak
+  // op zijn eigen X/Z-positie geplaatst. Zo kan gras echt bovenop een rots staan.
+  for(const root of newRoots){
+    root.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(root);
+    const center=new THREE.Vector3(); box.getCenter(center);
+    const supportY=supportHeightAt(center.x,center.z,supportRoots);
+    const lift=(supportY+0.025)-box.min.y;
+    root.position.y+=lift;
+    root.updateMatrixWorld(true);
+  }
+}
+function markLayerRoots(before,key,layerId,type,supportRoots){
+  const roots=[];
+  for(let i=before;i<reef.children.length;i++){
+    const root=reef.children[i];
+    root.userData.editorCell=key;
+    root.userData.editorLayerId=layerId;
+    root.userData.editorLayerType=type;
+    root.userData.isSolidRock = type==='rocks';
+    if(type==='rocks') rockCollisionRoots.add(root);
+    roots.push(root);
+  }
+  placeRootsOnExistingSurface(roots,supportRoots);
+
+  // Sla de WERKELIJKE 3D-positie van deze geplaatste laag op.
+  // Daardoor bepaalt de gebruiker zelf de hoogte/diepte door waar de begroeiing wordt geplaatst.
+  if(roots.length){
+    const box=new THREE.Box3();
+    let hasBox=false;
+    for(const root of roots){
+      root.updateMatrixWorld(true);
+      const b=new THREE.Box3().setFromObject(root);
+      if(!b.isEmpty()){
+        if(!hasBox){box.copy(b);hasBox=true;} else box.union(b);
+      }
+    }
+    if(hasBox){
+      const center=box.getCenter(new THREE.Vector3());
+      const size=box.getSize(new THREE.Vector3());
+      let habitatY;
+      if(type==='rocks'){
+        // Kale rots is een verkenningspunt: doel boven/naast de formatie, nooit midden in steen.
+        habitatY=box.max.y+1.1;
+      }else{
+        // Levende habitat: richt op de werkelijk gebouwde verticale zone.
+        habitatY=box.min.y+size.y*.58;
+      }
+      const layers=worldCells.get(key)||[];
+      const layer=layers.find(l=>String(l.id)===String(layerId));
+      if(layer){
+        const nextPoint={
+          x:Number(center.x.toFixed(3)),
+          y:Number(habitatY.toFixed(3)),
+          z:Number(center.z.toFixed(3))
+        };
+        const oldPoint=layer.habitatPoint;
+        if(!oldPoint || Math.abs(oldPoint.x-nextPoint.x)>.01 || Math.abs(oldPoint.y-nextPoint.y)>.01 || Math.abs(oldPoint.z-nextPoint.z)>.01){
+          layer.habitatPoint=nextPoint;
+          habitatRevision++;
+        }
+      }
+    }
+  }
+  return roots;
+}
+
+
+// --- Rots-collision & routeplanning -------------------------------------------------
+const collisionRaycaster = new THREE.Raycaster();
+const collisionDir = new THREE.Vector3();
+const collisionTmp = new THREE.Vector3();
+const collisionTmp2 = new THREE.Vector3();
+const collisionBox = new THREE.Box3();
+const CAMERA_RADIUS = 0.46;
+const FISH_RADIUS = 0.38;
+const SEABED_Y = -18;
+const MIN_SWIM_Y = SEABED_Y + 0.65;
+
+function activeRockRoots(){
+  // Set bevat uitsluitend momenteel gerenderde rotslagen; streaming houdt dit klein.
+  return Array.from(rockCollisionRoots).filter(o=>o.parent);
+}
+function solidRockRoot(obj){
+  let o=obj;
+  while(o && o!==reef){ if(o.userData?.isSolidRock) return o; o=o.parent; }
+  return null;
+}
+function segmentRockHit(from,to,padding=0){
+  collisionDir.copy(to).sub(from);
+  const len=collisionDir.length();
+  if(len<1e-5)return null;
+  collisionDir.multiplyScalar(1/len);
+  collisionRaycaster.set(from,collisionDir);
+  collisionRaycaster.near=0;
+  collisionRaycaster.far=len+padding;
+  const hits=collisionRaycaster.intersectObjects(activeRockRoots(),true);
+  if(!hits.length)return null;
+  const h=hits[0];
+  h.solidRoot=solidRockRoot(h.object);
+  return h;
+}
+function pointInsideRock(point,radius=0){
+  // Belangrijk: een bounding box van een overhang mag vrije ruimte eronder NIET blokkeren.
+  // Daarom gebruiken we de bbox alleen als snelle voorselectie en daarna korte rays naar de echte mesh.
+  const dirs=[
+    new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),
+    new THREE.Vector3(0,1,0),new THREE.Vector3(0,-1,0),
+    new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)
+  ];
+  for(const root of rockCollisionRoots){
+    if(!root.parent)continue;
+    collisionBox.setFromObject(root).expandByScalar(radius+.08);
+    if(!collisionBox.containsPoint(point))continue;
+
+    // Alleen "bezet" wanneer echte rotsgeometrie zeer dichtbij zit.
+    for(const d of dirs){
+      collisionRaycaster.set(point,d);
+      collisionRaycaster.near=0;
+      collisionRaycaster.far=Math.max(.12,radius+.12);
+      const hits=collisionRaycaster.intersectObject(root,true);
+      if(hits.length && hits[0].distance<=Math.max(.12,radius+.12)) return root;
+    }
+  }
+  return null;
+}
+function cellHasRockAt(x,z){
+  const ix=Math.floor(x/CELL), iz=Math.floor(z/CELL);
+  return (worldCells.get(cellKey(ix,iz))||[]).some(l=>l.type==='rocks');
+}
+function safeMoveAgainstRocks(from,to,radius=CAMERA_RADIUS){
+  const hit=segmentRockHit(from,to,radius);
+  if(!hit && !pointInsideRock(to,radius))return to.clone();
+  if(hit){
+    const d=from.distanceTo(hit.point);
+    collisionDir.copy(to).sub(from).normalize();
+    return from.clone().addScaledVector(collisionDir,Math.max(0,d-radius-0.08));
+  }
+  return from.clone();
+}
+
+function routeCandidatesAroundRock(from,preferred,hit,radius=CAMERA_RADIUS){
+  const root=hit?.solidRoot;
+  if(!root)return [];
+  collisionBox.setFromObject(root);
+  const center=collisionBox.getCenter(new THREE.Vector3());
+  const size=collisionBox.getSize(new THREE.Vector3());
+
+  const travel=preferred.clone().sub(from);
+  const verticalIntent=Math.sign(preferred.y-from.y);
+  travel.y=0;
+  if(travel.lengthSq()<.001)travel.set(0,0,1); else travel.normalize();
+  const side=new THREE.Vector3(travel.z,0,-travel.x).normalize();
+
+  const sideClear=Math.max(size.x,size.z)*.62+radius+.65;
+  const halfForward=Math.max(size.x,size.z)*.58+radius+1.4;
+  const topY=collisionBox.max.y+radius+.65;
+  const underY=collisionBox.min.y-radius-.38;
+  const lowY=Math.max(MIN_SWIM_Y,Math.min(from.y,underY));
+
+  const candidates=[];
+
+  // Eerst routes die de bestaande hoogte zo goed mogelijk behouden.
+  candidates.push(center.clone().addScaledVector(side, sideClear).setY(from.y));
+  candidates.push(center.clone().addScaledVector(side,-sideClear).setY(from.y));
+
+  // Onderdoor is een volwaardige route wanneer er echte vrije waterlaag boven de bodem is.
+  if(underY > MIN_SWIM_Y+.35){
+    candidates.push(center.clone().addScaledVector(travel, halfForward).setY(lowY));
+    candidates.push(center.clone().addScaledVector(travel, halfForward+3.5).setY(lowY));
+    candidates.push(center.clone().addScaledVector(side, sideClear*.55).addScaledVector(travel,halfForward).setY(lowY));
+    candidates.push(center.clone().addScaledVector(side,-sideClear*.55).addScaledVector(travel,halfForward).setY(lowY));
+  }
+
+  // Bovenlangs blijft mogelijk, maar is niet meer de standaard.
+  candidates.push(new THREE.Vector3(center.x,topY,center.z));
+  candidates.push(center.clone().addScaledVector(side, sideClear*.75).setY(topY));
+  candidates.push(center.clone().addScaledVector(side,-sideClear*.75).setY(topY));
+
+  // Als de gebruiker/vis expliciet omlaag wil, voeg nog een lage kandidaat vóór de rots toe.
+  if(verticalIntent<0 || from.y < center.y){
+    candidates.push(from.clone().addScaledVector(travel,6).setY(Math.max(MIN_SWIM_Y,from.y-1.5)));
+  }
+  return candidates;
+}
+function chooseRockDetour(from,preferred,hit,radius=CAMERA_RADIUS){
+  const candidates=routeCandidatesAroundRock(from,preferred,hit,radius);
+  let best=null,bestScore=Infinity;
+  for(const c of candidates){
+    if(c.y<MIN_SWIM_Y)continue;
+    if(pointInsideRock(c,radius))continue;
+    if(segmentRockHit(from,c,radius))continue;
+
+    const secondBlocked=!!segmentRockHit(c,preferred,radius);
+    const verticalChange=Math.abs(c.y-from.y);
+    const upwardPenalty=Math.max(0,c.y-from.y)*1.25;
+    const downwardPenalty=Math.max(0,from.y-c.y)*.18; // dalen is goedkoop onder water
+    const score=
+      from.distanceTo(c)+c.distanceTo(preferred)
+      +(secondBlocked?9:0)
+      +verticalChange*.22
+      +upwardPenalty
+      +downwardPenalty;
+
+    if(score<bestScore){bestScore=score;best=c.clone();}
+  }
+  return best;
+}
+
+function instantiateLayerVisual(ix,iz,layerId,type){
+  const key=cellKey(ix,iz);
+  // Alleen reeds gerenderde eerdere lagen in dit vak zijn dragend.
+  const supportRoots=rootsForCell(key).slice();
+  const layerSeed=Number(layerId)||1;
+  const cx=ix*CELL+CELL/2, cz=iz*CELL+CELL/2;
+  const px=(n)=>cx+(seededJitter(ix,iz,n,layerSeed)-.5)*CELL*.72;
+  const pz=(n)=>cz+(seededJitter(ix,iz,n+20,layerSeed)-.5)*CELL*.72;
+  const before=reef.children.length;
+
+  if(type==='rocks'){
+    addRockCluster(cx,cz,1.15+seededJitter(ix,iz,1,layerSeed)*1.15);
+    if(seededJitter(ix,iz,2,layerSeed)>.35) addRockCluster(px(2),pz(2),.55+.55*seededJitter(ix,iz,3,layerSeed));
+  }else if(type==='coral'){
+    addBranchCoral(px(1),pz(1),.8+seededJitter(ix,iz,2,layerSeed)*.75,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
+    addPlateCoral(px(4),pz(4),.7+seededJitter(ix,iz,5,layerSeed)*.8,coralColors[Math.floor(seededJitter(ix,iz,6,layerSeed)*coralColors.length)]);
+    if(seededJitter(ix,iz,7,layerSeed)>.35) addAnemone(px(7),pz(7),.65,coralColors[Math.floor(seededJitter(ix,iz,8,layerSeed)*coralColors.length)]);
+  }else if(type==='seagrass'){
+    for(let n=0;n<5;n++) addSeaweed(px(n),pz(n),.65+seededJitter(ix,iz,n+8,layerSeed)*.75);
+  }else if(type==='sponge'){
+    addSponge(px(1),pz(1),.85+seededJitter(ix,iz,2,layerSeed)*.7,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
+    addAnemone(px(4),pz(4),.7+seededJitter(ix,iz,5,layerSeed)*.55,coralColors[Math.floor(seededJitter(ix,iz,6,layerSeed)*coralColors.length)]);
+    addStarfish(px(7),pz(7),.45+.3*seededJitter(ix,iz,8,layerSeed),coralColors[Math.floor(seededJitter(ix,iz,9,layerSeed)*coralColors.length)]);
+  }else{
+    addRockCluster(cx,cz,.75+seededJitter(ix,iz,1,layerSeed)*.9);
+    addBranchCoral(px(2),pz(2),.6+seededJitter(ix,iz,3,layerSeed)*.65,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
+    addPlateCoral(px(5),pz(5),.55+seededJitter(ix,iz,6,layerSeed)*.6,coralColors[Math.floor(seededJitter(ix,iz,7,layerSeed)*coralColors.length)]);
+    addSponge(px(8),pz(8),.55+.45*seededJitter(ix,iz,9,layerSeed),coralColors[Math.floor(seededJitter(ix,iz,10,layerSeed)*coralColors.length)]);
+    for(let n=0;n<3;n++) addSeaweed(px(11+n),pz(11+n),.55+.5*seededJitter(ix,iz,14+n,layerSeed));
+  }
+  markLayerRoots(before,key,layerId,type,supportRoots);
+}
+
+function instantiateCell(key){
+  if(activeWorldCells.has(key)) return;
+  const layers=worldCells.get(key);
+  if(!layers || !layers.length) return;
+  const [ix,iz]=key.split(',').map(Number);
+  activeWorldCells.add(key);
+  // Volgorde is belangrijk: latere lagen worden op eerdere lagen gestapeld.
+  for(const layer of layers) instantiateLayerVisual(ix,iz,layer.id,layer.type);
+}
+
+function unloadCellVisuals(key){
+  for(let i=reef.children.length-1;i>=0;i--){
+    if(reef.children[i].userData.editorCell===key) removeReefRoot(reef.children[i]);
+  }
+  activeWorldCells.delete(key);
+}
+
+function clearAllWorldVisuals(){
+  for(let i=reef.children.length-1;i>=0;i--){
+    if(reef.children[i].userData.editorCell) removeReefRoot(reef.children[i]);
+  }
+  activeWorldCells.clear();
+}
+
+function renderAllWorldCellsForEditor(){
+  clearAllWorldVisuals();
+  for(const key of worldCells.keys()) instantiateCell(key);
+  activeCellsText.textContent=activeWorldCells.size;
+}
+
+function refreshWorldStreaming(force=false){
+  if(editMode) return;
+  const playerCellX=Math.floor(camera.position.x/CELL);
+  const playerCellZ=Math.floor(camera.position.z/CELL);
+  const streamKey=`${playerCellX},${playerCellZ}`;
+  if(!force && streamKey===lastStreamingCell) return;
+  lastStreamingCell=streamKey;
+
+  const wanted=new Set();
+  const reach=Math.ceil(CULL_RADIUS/CELL);
+  for(let ix=playerCellX-reach;ix<=playerCellX+reach;ix++){
+    for(let iz=playerCellZ-reach;iz<=playerCellZ+reach;iz++){
+      const cx=ix*CELL+CELL/2, cz=iz*CELL+CELL/2;
+      const dist=Math.hypot(cx-camera.position.x,cz-camera.position.z);
+      const key=cellKey(ix,iz);
+      if(dist<=ACTIVE_RADIUS && worldCells.has(key)) wanted.add(key);
+    }
+  }
+
+  // Nieuwe cellen laden binnen 48 m. Bestaande cellen pas bij 60 m verwijderen:
+  // deze hysterese voorkomt zichtbaar in/uit-poppen op de grens.
+  for(const key of [...activeWorldCells]){
+    const [ix,iz]=key.split(',').map(Number);
+    const cx=ix*CELL+CELL/2, cz=iz*CELL+CELL/2;
+    if(Math.hypot(cx-camera.position.x,cz-camera.position.z)>CULL_RADIUS) unloadCellVisuals(key);
+  }
+  for(const key of wanted) instantiateCell(key);
+  activeCellsText.textContent=activeWorldCells.size;
+}
+
+function addLayerToCell(ix,iz,type,restoredId=null){
+  habitatRevision++;
+  const key=cellKey(ix,iz);
+  if(type==='clear'){ clearCell(key); activeWorldCells.delete(key); return; }
+  if(type==='removeTop'){ removeTopLayer(ix,iz); return; }
+
+  const layers=layersForCell(key);
+  const layerId=restoredId ?? nextLayerId++;
+  nextLayerId=Math.max(nextLayerId,Number(layerId)+1);
+  const layer={id:layerId,type,habitatPoint:null};
+  layers.push(layer);
+
+  // In bouwmodus is de volledige wereld zichtbaar. Tijdens zwemmen alleen actieve chunks.
+  if(editMode || activeWorldCells.has(key)){
+    if(editMode && !activeWorldCells.has(key)) activeWorldCells.add(key);
+    instantiateLayerVisual(ix,iz,layerId,type);
+  }
+}
+
+function pointerGround(e){
+  const rect=renderer.domElement.getBoundingClientRect();
+  pointer.x=((e.clientX-rect.left)/rect.width)*2-1;
+  pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  const hit=new THREE.Vector3();
+  if(!raycaster.ray.intersectPlane(editPlane,hit)) return null;
+  hit.x=THREE.MathUtils.clamp(hit.x,-WORLD_HALF,WORLD_HALF-.001);
+  hit.z=THREE.MathUtils.clamp(hit.z,-WORLD_HALF,WORLD_HALF-.001);
+  return hit;
+}
+function groundToCell(p){
+  return {
+    ix:Math.floor((p.x+WORLD_HALF)/CELL)-WORLD_HALF/CELL,
+    iz:Math.floor((p.z+WORLD_HALF)/CELL)-WORLD_HALF/CELL
+  };
+}
+function updateSelection(a,b){
+  const ca=groundToCell(a), cb=groundToCell(b);
+  const minX=Math.min(ca.ix,cb.ix), maxX=Math.max(ca.ix,cb.ix);
+  const minZ=Math.min(ca.iz,cb.iz), maxZ=Math.max(ca.iz,cb.iz);
+  const w=(maxX-minX+1)*CELL, d=(maxZ-minZ+1)*CELL;
+  selection.scale.set(w,d,1);
+  selection.position.x=(minX+maxX+1)*CELL/2;
+  selection.position.z=(minZ+maxZ+1)*CELL/2;
+  selection.visible=true;
+  editorInfo.textContent=worldBrush.value==='auto' ? `Selectie: ${maxX-minX+1} × ${maxZ-minZ+1} vakken (${w} × ${d}) · AUTO ${landscapeDensity.value.toUpperCase()}` : `Selectie: ${maxX-minX+1} × ${maxZ-minZ+1} vakken (${w} × ${d}) · nieuwe laag: ${worldBrush.options[worldBrush.selectedIndex].text}`;
+}
+function totalLayerCount(){
+  let n=0; for(const layers of worldCells.values()) n+=layers.length; return n;
+}
+
+
+const densityProfiles={
+  light:{coverage:.42,minLayers:1,maxLayers:1,rockChance:.32,coralChance:.17,spongeChance:.10,grassChance:.41,maxCells:180},
+  medium:{coverage:.68,minLayers:1,maxLayers:2,rockChance:.34,coralChance:.25,spongeChance:.13,grassChance:.28,maxCells:160},
+  heavy:{coverage:.88,minLayers:2,maxLayers:3,rockChance:.38,coralChance:.28,spongeChance:.14,grassChance:.20,maxCells:130},
+  extreme:{coverage:1.0,minLayers:3,maxLayers:5,rockChance:.42,coralChance:.29,spongeChance:.14,grassChance:.15,maxCells:90}
+};
+let landscapeGenerationSeed=1;
+
+function landscapeNoise(ix,iz,seed=1){
+  // Twee grootschalige golven + detailruis leveren natuurlijke patches in plaats van puur willekeurige vakjes.
+  const broad=(Math.sin(ix*.53+seed*.91)+Math.cos(iz*.47-seed*.63)+2)/4;
+  const detail=seededJitter(ix,iz,37,seed);
+  return broad*.68+detail*.32;
+}
+function weightedLandscapeType(ix,iz,n,seed,profile,preferGrowth=false){
+  const r=seededJitter(ix,iz,80+n,seed);
+  let rock=profile.rockChance, coral=profile.coralChance, sponge=profile.spongeChance, grass=profile.grassChance;
+  if(preferGrowth){ rock*=.42; coral*=1.20; sponge*=1.18; grass*=1.18; }
+  const total=rock+coral+sponge+grass;
+  let x=r*total;
+  if((x-=rock)<0)return 'rocks';
+  if((x-=coral)<0)return 'coral';
+  if((x-=sponge)<0)return 'sponge';
+  return 'seagrass';
+}
+function generateLandscapeSelection(a,b,densityName){
+  const ca=groundToCell(a), cb=groundToCell(b);
+  const minX=Math.min(ca.ix,cb.ix), maxX=Math.max(ca.ix,cb.ix);
+  const minZ=Math.min(ca.iz,cb.iz), maxZ=Math.max(ca.iz,cb.iz);
+  const profile=densityProfiles[densityName]||densityProfiles.medium;
+  const count=(maxX-minX+1)*(maxZ-minZ+1);
+  if(count>profile.maxCells){
+    editorInfo.textContent=`${densityName.toUpperCase()} selectie te groot (${count} vakken). Maximaal ${profile.maxCells} vakken voor deze dichtheid.`;
+    return;
+  }
+  const seed=landscapeGenerationSeed++;
+  let populated=0, addedLayers=0;
+  for(let ix=minX;ix<=maxX;ix++){
+    for(let iz=minZ;iz<=maxZ;iz++){
+      const n=landscapeNoise(ix,iz,seed);
+      const threshold=1-profile.coverage;
+      if(n<threshold) continue;
+      populated++;
+      const layerSpan=profile.maxLayers-profile.minLayers;
+      const extra=layerSpan>0 ? Math.floor(seededJitter(ix,iz,53,seed)*(layerSpan+1)) : 0;
+      const layerCount=profile.minLayers+extra;
+
+      // In dichte zones vaker eerst een dragende rotsbasis, daarna begroeiing erbovenop.
+      const hasRockSupport=(worldCells.get(cellKey(ix,iz))||[]).some(l=>l.type==='rocks');
+      for(let k=0;k<layerCount;k++){
+        let type;
+        if(k===0 && !hasRockSupport && profile.rockChance>=.36 && seededJitter(ix,iz,61,seed)>.34){
+          type='rocks';
+        }else{
+          type=weightedLandscapeType(ix,iz,k,seed,profile,k>0 || hasRockSupport);
+        }
+        addLayerToCell(ix,iz,type);
+        addedLayers++;
+      }
+    }
+  }
+  editorInfo.textContent=`Automatisch landschap ${densityName.toUpperCase()}: ${populated}/${count} vakken begroeid, ${addedLayers} nieuwe lagen toegevoegd. Totaal: ${totalLayerCount()} lagen.`;
+}
+
+function terrainSelectionCells(a,b){
+  const ca=groundToCell(a), cb=groundToCell(b);
+  const out=[];
+  for(let ix=Math.min(ca.ix,cb.ix);ix<=Math.max(ca.ix,cb.ix);ix++){
+    for(let iz=Math.min(ca.iz,cb.iz);iz<=Math.max(ca.iz,cb.iz);iz++){
+      out.push({ix,iz,key:cellKey(ix,iz)});
+    }
+  }
+  return out;
+}
+function rebuildEditedCellVisuals(keys){
+  if(!keys || !keys.length) return;
+  // Alleen gewijzigde cellen en directe buren opnieuw opbouwen.
+  const affected=new Set();
+  for(const key of keys){
+    const [ix,iz]=key.split(',').map(Number);
+    for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){
+      affected.add(cellKey(ix+dx,iz+dz));
+    }
+  }
+
+  for(const key of affected){
+    if(activeWorldCells.has(key)) unloadCellVisuals(key);
+  }
+  for(const key of affected){
+    if(worldCells.has(key) && worldCells.get(key)?.length){
+      instantiateCell(key);
+    }
+  }
+  activeCellsText.textContent=activeWorldCells.size;
+}
+
+function rebuildWorldAfterTerrainEdit(changedKeys=null,fullWorld=false){
+  // De vloer zelf is licht genoeg om in één keer te verversen.
+  rebuildTerrainMesh();
+  rebuildTerrainContours();
+  habitatRevision++;
+
+  if(fullWorld){
+    // Alleen nodig na een volledig random terrein.
+    if(editMode){
+      clearAllWorldVisuals();
+      renderAllWorldCellsForEditor();
+    }else{
+      clearAllWorldVisuals();
+      lastStreamingCell='';
+      refreshWorldStreaming(true);
+    }
+    return;
+  }
+
+  // Handmatige brush: géén volledige wereldrebuild meer.
+  rebuildEditedCellVisuals(changedKeys||[]);
+}
+function applyTerrainBrush(a,b,type){
+  const cells=terrainSelectionCells(a,b);
+  if(cells.length>120){
+    editorInfo.textContent=`Terreinselectie te groot (${cells.length}). Maximaal 120 vakken.`;
+    return;
+  }
+  if(type==='terrainSmooth'){
+    const next=new Map();
+    for(const c of cells){
+      let sum=terrainCellOffset(c.ix,c.iz)*2, n=2;
+      for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){
+        if(dx===0&&dz===0) continue;
+        sum+=terrainCellOffset(c.ix+dx,c.iz+dz); n++;
+      }
+      next.set(c.key,THREE.MathUtils.clamp(sum/n,-12,10));
+    }
+    for(const [k,v] of next) terrainOffsets.set(k,v);
+  }else{
+    const delta=type==='terrainLower' ? -1.75 : 1.75;
+    for(const c of cells){
+      const cur=terrainOffsets.get(c.key)||0;
+      terrainOffsets.set(c.key,THREE.MathUtils.clamp(cur+delta,-12,10));
+    }
+  }
+  rebuildWorldAfterTerrainEdit(cells.map(c=>c.key),false);
+  editorInfo.textContent=type==='terrainLower'
+    ? `Geul verdiept in ${cells.length} vakken. Herhaal voor extra diepte.`
+    : type==='terrainRaise'
+      ? `Bodem verhoogd in ${cells.length} vakken.`
+      : `Bodem gladgestreken over ${cells.length} vakken.`;
+}
+
+
+function terrainHash(ix,iz,seed){
+  const v=Math.sin(ix*127.1 + iz*311.7 + seed*74.7)*43758.5453123;
+  return v-Math.floor(v);
+}
+
+function generateRandomTerrain(){
+  // Alleen bodemhoogtes. worldCells (rotsen/koraal/gras/spons) blijven onaangeroerd.
+  const seed=Math.random()*10000;
+  const minI=Math.floor(-WORLD_HALF/CELL)-2;
+  const maxI=Math.ceil(WORLD_HALF/CELL)+2;
+  const generated=new Map();
+
+  // Breed, natuurlijk reliëf: grote golven + enkele heuvels/geulen.
+  const features=[];
+  const featureCount=7;
+  for(let n=0;n<featureCount;n++){
+    const fx=THREE.MathUtils.lerp(-WORLD_HALF*.8,WORLD_HALF*.8,terrainHash(n,4,seed));
+    const fz=THREE.MathUtils.lerp(-WORLD_HALF*.8,WORLD_HALF*.8,terrainHash(n,9,seed));
+    const radius=28+terrainHash(n,15,seed)*58;
+    const sign=terrainHash(n,23,seed)>.48 ? 1 : -1;
+    const amp=(2.5+terrainHash(n,31,seed)*5.5)*sign;
+    features.push({fx,fz,radius,amp});
+  }
+
+  for(let ix=minI;ix<=maxI;ix++){
+    for(let iz=minI;iz<=maxI;iz++){
+      const x=ix*CELL, z=iz*CELL;
+
+      // Lage frequenties voor glooiend terrein.
+      let h=
+        Math.sin((x+seed)*.022)*2.2 +
+        Math.cos((z-seed*.7)*.019)*2.0 +
+        Math.sin((x+z+seed*.35)*.011)*1.8;
+
+      // Grote lokale verhogingen en verlagingen.
+      for(const f of features){
+        const dx=x-f.fx,dz=z-f.fz;
+        const d2=dx*dx+dz*dz;
+        const fall=Math.exp(-d2/(2*f.radius*f.radius));
+        h+=f.amp*fall;
+      }
+
+      // Klein beetje asymmetrie/noise.
+      h+=(terrainHash(ix,iz,seed)-.5)*1.4;
+      generated.set(cellKey(ix,iz),THREE.MathUtils.clamp(h,-10.5,8.5));
+    }
+  }
+
+  // Meerdere smoothing-passes voor brede, zachte hellingen.
+  let current=generated;
+  for(let pass=0;pass<4;pass++){
+    const next=new Map();
+    for(let ix=minI;ix<=maxI;ix++){
+      for(let iz=minI;iz<=maxI;iz++){
+        let sum=(current.get(cellKey(ix,iz))||0)*4;
+        let weight=4;
+        const neighbors=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+        for(const [dx,dz] of neighbors){
+          const k=cellKey(ix+dx,iz+dz);
+          if(current.has(k)){
+            const w=(dx===0||dz===0)?2:1;
+            sum+=(current.get(k)||0)*w;
+            weight+=w;
+          }
+        }
+        next.set(cellKey(ix,iz),sum/weight);
+      }
+    }
+    current=next;
+  }
+
+  terrainOffsets.clear();
+  for(const [k,v] of current) terrainOffsets.set(k,THREE.MathUtils.clamp(v,-10.5,8.5));
+
+  rebuildWorldAfterTerrainEdit(null,true);
+  editorInfo.textContent='🎲 Nieuwe random bodem gemaakt. Alleen hoogte en diepte zijn aangepast; rotsen, koraal, sponsen en gras zijn niet gegenereerd.';
+}
+
+function flattenTerrain(){
+  terrainOffsets.clear();
+  rebuildWorldAfterTerrainEdit(null,true);
+  editorInfo.textContent='▭ Bodem teruggezet naar de basisvorm. Landschapslagen zijn niet verwijderd.';
+}
+
+function fillSelection(a,b){
+  const ca=groundToCell(a), cb=groundToCell(b);
+  let minX=Math.min(ca.ix,cb.ix), maxX=Math.max(ca.ix,cb.ix);
+  let minZ=Math.min(ca.iz,cb.iz), maxZ=Math.max(ca.iz,cb.iz);
+  const type=worldBrush.value;
+  const count=(maxX-minX+1)*(maxZ-minZ+1);
+  if(type==='auto'){
+    generateLandscapeSelection(a,b,landscapeDensity.value);
+    return;
+  }
+  if(type==='terrainLower' || type==='terrainRaise' || type==='terrainSmooth'){
+    applyTerrainBrush(a,b,type);
+    return;
+  }
+  if(type==='lavaVent'){
+    const cells=terrainSelectionCells(a,b);
+    const c=cells[Math.floor(cells.length/2)];
+    if(c) addLavaVent(c.ix*CELL+CELL/2,c.iz*CELL+CELL/2);
+    editorInfo.textContent='🌋 Lavabron geplaatst. De bron groeit langzaam en beschadigt vissen in de hittezone.';
+    return;
+  }
+  const maxCells=180;
+  if(count>maxCells){
+    editorInfo.textContent=`Selectie te groot (${count} vakken). Maximaal ${maxCells} vakken per bewerking.`;
+    return;
+  }
+  for(let ix=minX;ix<=maxX;ix++) for(let iz=minZ;iz<=maxZ;iz++) addLayerToCell(ix,iz,type);
+  if(type==='removeTop') editorInfo.textContent=`Bovenste laag verwijderd in ${count} vakken. Over: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
+  else if(type==='clear') editorInfo.textContent=`${count} vakken volledig leeggemaakt. Over: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
+  else editorInfo.textContent=`${count} vakken kregen een extra laag ${worldBrush.options[worldBrush.selectedIndex].text}. Wereld: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
+}
+function setEditMode(on){
+  editMode=on;
+  if(on){
+    controls.unlock();
+    savedCamPos=camera.position.clone(); savedCamQuat=camera.quaternion.clone();
+    camera.position.set(0,210,.01); camera.up.set(0,0,-1); camera.lookAt(0,-17.5,0);
+    // Tijdens bouwen tonen we bewust alle ontworpen vakken. Bij terugkeer naar zwemmen wordt weer gestreamd.
+    renderAllWorldCellsForEditor();
+    grid.visible=true; editBadge.classList.add('on'); editModeBtn.classList.add('active');
+    editModeBtn.textContent='🌊 Terug naar zwemmen';
+    document.getElementById('crosshair').style.display='none';
+    hint.textContent='LANDSCHAPSEDITOR · geen water · vissen gepauzeerd · WASD verplaatsen · Q/E hoogte · klik op kaart om direct te reizen';
+    setTerrainInspectMode(terrainInspectToggle.checked);
+    setLandscapeEditorMode(true);
+  }else{
+    setLandscapeEditorMode(false);
+    setTerrainInspectMode(false);
+    grid.visible=false; selection.visible=false; editBadge.classList.remove('on'); editModeBtn.classList.remove('active');
+    editModeBtn.textContent='🧱 Wereld bouwen';
+    document.getElementById('crosshair').style.display='';
+    camera.up.set(0,1,0);
+    if(savedCamPos){camera.position.copy(savedCamPos);camera.quaternion.copy(savedCamQuat);}
+    clearAllWorldVisuals();
+    lastStreamingCell='';
+    refreshWorldStreaming(true);
+    hint.textContent='Streaming actief: alleen de wereld dichtbij wordt opgebouwd. Klik op “Start verkennen” om te zwemmen.';
+  }
+}
+editModeBtn.addEventListener('click',()=>setEditMode(!editMode));
+terrainInspectToggle.addEventListener('change',()=>{
+  if(editMode) setTerrainInspectMode(terrainInspectToggle.checked);
+});
+randomTerrainBtn.addEventListener('click',()=>{
+  if(!editMode){
+    editorInfo.textContent='Open eerst de landschapseditor om een random bodem te genereren.';
+    return;
+  }
+  generateRandomTerrain();
+});
+flatTerrainBtn.addEventListener('click',()=>{
+  if(!editMode){
+    editorInfo.textContent='Open eerst de landschapseditor om de bodem vlak te maken.';
+    return;
+  }
+  flattenTerrain();
+});
+worldBrush.addEventListener('change',()=>{
+  const auto=worldBrush.value==='auto';
+  landscapeDensity.disabled=!auto;
+  landscapeDensity.style.opacity=auto?'1':'.55';
+  const terrainTool=['terrainLower','terrainRaise','terrainSmooth'].includes(worldBrush.value);
+  editorInfo.textContent=auto
+    ? `Automatisch landschap: kies Light, Medium, Heavy of Extreme en sleep over het gewenste gebied.`
+    : terrainTool
+      ? `${worldBrush.options[worldBrush.selectedIndex].text}: sleep over een gebied. Alleen de bodem wordt aangepast.`
+      : `Handmatige laag: ${worldBrush.options[worldBrush.selectedIndex].text}. Sleep over het gewenste gebied.`;
+});
+landscapeDensity.addEventListener('change',()=>{
+  if(worldBrush.value==='auto') editorInfo.textContent=`Automatisch landschap ${landscapeDensity.value.toUpperCase()}: sleep over het gebied dat je wilt genereren.`;
+});
+worldBrush.dispatchEvent(new Event('change'));
+
+
+renderer.domElement.addEventListener('pointerdown',e=>{
+  if(!editMode || e.button!==0) return;
+  dragStart=pointerGround(e); dragEnd=dragStart;
+  if(dragStart){ updateSelection(dragStart,dragEnd); renderer.domElement.setPointerCapture(e.pointerId); }
+});
+renderer.domElement.addEventListener('pointermove',e=>{
+  if(!editMode || !dragStart) return;
+  const p=pointerGround(e); if(p){dragEnd=p;updateSelection(dragStart,dragEnd);}
+});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!editMode || !dragStart) return;
+  const p=pointerGround(e)||dragEnd;
+  if(p) fillSelection(dragStart,p);
+  dragStart=null;dragEnd=null;selection.visible=false;
+});
+renderer.domElement.addEventListener('wheel',e=>{
+  if(!editMode)return;
+  e.preventDefault();
+  camera.position.y=THREE.MathUtils.clamp(camera.position.y+Math.sign(e.deltaY)*18,70,380);
+},{passive:false});
+
+function worldData(){
+  return {
+    version:4,
+    cellSize:CELL,
+    worldHalf:WORLD_HALF,
+    nextLayerId,
+    terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
+    lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
+    cells:[...worldCells.entries()].map(([key,layers])=>({
+      key,
+      layers:layers.map(l=>({
+        id:l.id,
+        type:l.type,
+        habitatPoint:l.habitatPoint ? {x:l.habitatPoint.x,y:l.habitatPoint.y,z:l.habitatPoint.z} : null
+      }))
+    }))
+  };
+}
+function restoreWorld(data){
+  habitatRevision++;
+  // Alleen door de editor geplaatste objecten verwijderen; het basisrif blijft intact.
+  for(let i=reef.children.length-1;i>=0;i--){
+    if(reef.children[i].userData.editorCell) removeReefRoot(reef.children[i]);
+  }
+  clearAllWorldVisuals();
+  worldCells.clear(); terrainOffsets.clear(); clearLavaVents(); nextLayerId=1;
+  if(!data || !Array.isArray(data.cells)) return;
+  if(Array.isArray(data.terrain)){
+    for(const item of data.terrain){
+      if(item?.key && Number.isFinite(item.offset)) terrainOffsets.set(String(item.key),THREE.MathUtils.clamp(item.offset,-12,10));
+    }
+  }
+  rebuildTerrainMesh();
+  for(const c of data.cells){
+    const [ix,iz]=String(c.key).split(',').map(Number);
+    if(!Number.isFinite(ix)||!Number.isFinite(iz)) continue;
+    const key=cellKey(ix,iz);
+    const sourceLayers=Array.isArray(c.layers) ? c.layers : (c.type ? [{type:c.type}] : []);
+    const clean=[];
+    for(const layer of sourceLayers){
+      if(!layer.type || layer.type==='clear' || layer.type==='removeTop') continue;
+      const id=layer.id ?? nextLayerId++;
+      nextLayerId=Math.max(nextLayerId,Number(id)+1);
+      clean.push({
+        id,
+        type:layer.type,
+        habitatPoint:layer.habitatPoint && Number.isFinite(layer.habitatPoint.x) && Number.isFinite(layer.habitatPoint.y) && Number.isFinite(layer.habitatPoint.z)
+          ? {x:layer.habitatPoint.x,y:layer.habitatPoint.y,z:layer.habitatPoint.z}
+          : null
+      });
+    }
+    if(clean.length) worldCells.set(key,clean);
+  }
+  if(Number.isFinite(data.nextLayerId)) nextLayerId=Math.max(nextLayerId,data.nextLayerId);
+  if(Array.isArray(data.lavaVents)){
+    for(const v of data.lavaVents){
+      if(Number.isFinite(v?.x)&&Number.isFinite(v?.z)) addLavaVent(v.x,v.z,v);
+    }
+  }
+  if(editMode) renderAllWorldCellsForEditor(); else { lastStreamingCell=''; refreshWorldStreaming(true); }
+  editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
+}
+saveWorldBtn.addEventListener('click',()=>{
+  try{localStorage.setItem('fiveLoavesOceanWorldV4',JSON.stringify(worldData()));editorInfo.textContent=`Wereld lokaal opgeslagen: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;}
+  catch(err){editorInfo.textContent='Lokaal opslaan lukte niet. Gebruik “JSON” om een bestand te bewaren.';}
+});
+loadWorldBtn.addEventListener('click',()=>{
+  try{
+    const raw=localStorage.getItem('fiveLoavesOceanWorldV4') || localStorage.getItem('fiveLoavesOceanWorldV3') || localStorage.getItem('fiveLoavesOceanWorldV2') || localStorage.getItem('fiveLoavesOceanWorldV1');
+    if(!raw){editorInfo.textContent='Nog geen lokaal opgeslagen wereld gevonden.';return;}
+    restoreWorld(JSON.parse(raw));
+  }catch(err){editorInfo.textContent='Opgeslagen wereld kon niet worden geladen.';}
+});
+exportWorldBtn.addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify(worldData(),null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='5-broden-2-vissen-gelaagde-wereld.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+});
+importWorldBtn.addEventListener('click',()=>worldFile.click());
+worldFile.addEventListener('change',async()=>{
+  const f=worldFile.files?.[0]; if(!f)return;
+  try{restoreWorld(JSON.parse(await f.text()));}
+  catch(err){editorInfo.textContent='Dit JSON-bestand kon niet als wereld worden gelezen.';}
+  worldFile.value='';
+});
+
+
+
+// -------- Vulkanische bron + health --------
+const lavaVents=[];
+let nextLavaId=1;
+const lavaGroup=new THREE.Group();
+scene.add(lavaGroup);
+
+function addLavaVent(x,z,data=null){
+  const vent={
+    id:data?.id ?? nextLavaId++,
+    x,z,
+    amount:data?.amount ?? .3,
+    flowRate:data?.flowRate ?? .0012,
+    maxAmount:data?.maxAmount ?? 120
+  };
+  nextLavaId=Math.max(nextLavaId,Number(vent.id)+1);
+
+  const root=new THREE.Group();
+  root.position.set(x,terrainHeightAt(x,z)+.12,z);
+
+  const crater=new THREE.Mesh(
+    new THREE.TorusGeometry(2.0,.55,8,18),
+    new THREE.MeshStandardMaterial({color:0x2e2926,roughness:1})
+  );
+  crater.rotation.x=Math.PI/2;
+  root.add(crater);
+
+  const lavaMat=new THREE.MeshStandardMaterial({
+    color:0xff5b17,emissive:0xff2b00,emissiveIntensity:1.8,roughness:.7
+  });
+  const mound=new THREE.Mesh(new THREE.ConeGeometry(1.4,.8,18,5),lavaMat);
+  mound.position.y=.35;
+  root.add(mound);
+
+  const glowLight=new THREE.PointLight(0xff5a22,6,15,2);
+  glowLight.position.y=2;
+  root.add(glowLight);
+
+  const bubbleMat=new THREE.MeshBasicMaterial({color:0xff9a4a,transparent:true,opacity:.75});
+  const bubbles=[];
+  for(let i=0;i<12;i++){
+    const b=new THREE.Mesh(new THREE.SphereGeometry(.07+Math.random()*.08,6,5),bubbleMat);
+    b.userData.phase=Math.random();
+    b.userData.angle=Math.random()*Math.PI*2;
+    b.userData.rad=.2+Math.random()*1.0;
+    root.add(b); bubbles.push(b);
+  }
+
+  vent.root=root; vent.mound=mound; vent.bubbles=bubbles;
+  lavaGroup.add(root); lavaVents.push(vent);
+  lavaCountText.textContent=lavaVents.length;
+  return vent;
+}
+function clearLavaVents(){
+  while(lavaGroup.children.length) lavaGroup.remove(lavaGroup.children[0]);
+  lavaVents.length=0; nextLavaId=1;
+  lavaCountText.textContent='0';
+}
+function lavaHazardAt(pos){
+  let h=0;
+  for(const v of lavaVents){
+    const radius=7.5+Math.sqrt(v.amount)*.22;
+    const dx=pos.x-v.x,dz=pos.z-v.z;
+    const d=Math.hypot(dx,dz);
+    if(d<radius) h=Math.max(h,1-d/radius);
+  }
+  return h;
+}
+function updateLava(dt,t){
+  for(const v of lavaVents){
+    v.amount=Math.min(v.maxAmount,v.amount+v.flowRate*dt);
+    const r=1+Math.sqrt(v.amount)*.14;
+    const h=.7+Math.pow(v.amount,.34)*.8;
+    v.mound.scale.set(r,h,r);
+    v.mound.position.y=h*.42;
+    v.root.position.y=terrainHeightAt(v.x,v.z)+.12;
+
+    for(const b of v.bubbles){
+      const p=(t*.08+b.userData.phase)%1;
+      b.position.set(Math.cos(b.userData.angle)*b.userData.rad,.35+p*(1.8+h*.6),Math.sin(b.userData.angle)*b.userData.rad);
+      b.scale.setScalar(.6+p*1.3);
+      b.material.opacity=.75*(1-p);
+    }
+  }
+}
+function updateHazardHealth(dt){
+  let alive=0,sum=0,critical=0;
+  for(const fish of fishes){
+    if(fish.userData.health==null) fish.userData.health=100;
+    if(fish.userData.dead) continue;
+
+    const hazard=lavaHazardAt(fish.position);
+    if(hazard>0){
+      fish.userData.health=Math.max(0,fish.userData.health-dt*(1.2+hazard*7.5));
+    }else{
+      fish.userData.health=Math.min(100,fish.userData.health+dt*.10);
+    }
+
+    if(fish.userData.health<=0){
+      fish.userData.dead=true;
+      fish.userData.velocity?.set(0,0,0);
+      fish.visible=false;
+      continue;
+    }
+    alive++; sum+=fish.userData.health;
+    if(fish.userData.health<30) critical++;
+  }
+  healthText.textContent=alive?Math.round(sum/alive):0;
+  criticalFishText.textContent=critical;
+}
+
+// Bubbels
+const bubbleCount = 420;
+const bubbleGeo = new THREE.BufferGeometry();
+const bubblePositions = new Float32Array(bubbleCount*3);
+const bubbleSpeeds = new Float32Array(bubbleCount);
+for(let i=0;i<bubbleCount;i++){
+  bubblePositions[i*3]=(Math.random()-.5)*260;
+  bubblePositions[i*3+1]=-18+Math.random()*70;
+  bubblePositions[i*3+2]=(Math.random()-.5)*260;
+  bubbleSpeeds[i]=.01+Math.random()*.04;
+}
+bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePositions,3));
+const bubbleMat = new THREE.PointsMaterial({
+  color:0xd8f7ff,size:.13,transparent:true,opacity:.45,depthWrite:false
+});
+const bubbles = new THREE.Points(bubbleGeo,bubbleMat);
+scene.add(bubbles);
+
+// Visgenerator + ecosysteem-AI
+const fishPalette = [
+  0xffa45b,0x59c3c3,0xf4d35e,0xee6c8a,0x8ac6d1,0x9c89b8,0x76b947,0xf28f3b
+];
+
+
+function orientFishForward(fish,target){
+  // De vismodellen zijn langs de lokale X-as gebouwd (+X = neus, -X = staart),
+  // terwijl Object3D.lookAt() de lokale +Z-as op het doel richt.
+  // Deze vaste offset laat de neus daadwerkelijk in de bewegingsrichting wijzen.
+  fish.lookAt(target);
+  fish.rotateY(-Math.PI/2);
+}
+
+function createFish(color=0xffa45b, scale=1){
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({color,roughness:.65,metalness:.02});
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1,14,9),bodyMat);
+  body.scale.set(1.6,.75,.55); group.add(body);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(.72,1.5,3),bodyMat);
+  tail.rotation.z=-Math.PI/2; tail.position.x=-1.75; group.add(tail);
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(.35,.9,3),bodyMat);
+  fin.position.set(.1,.6,0); fin.rotation.z=Math.PI; group.add(fin);
+  group.scale.setScalar(scale);
+  group.userData.isFishRoot=true;
+  group.userData.tail=tail;
+  group.userData.phase=Math.random()*Math.PI*2;
+  group.userData.speed=.75+Math.random()*1.8;
+  return group;
+}
+
+const isMobile = matchMedia('(max-width: 800px)').matches;
+const FISH_COUNT = isMobile ? 90 : 220;
+const fishes = [];
+const schools = new Map();
+const gltfLoader = new GLTFLoader();
+let nextSchoolId=1;
+let habitatRevision=0;
+let cachedHabitatRevision=-1;
+let habitatCells=[];
+let schoolThinkAccumulator=0;
+
+function speciesFromName(name){
+  return String(name||'fish').toLowerCase().replace(/\.glb$/i,'').replace(/[^a-z0-9_-]+/g,'-');
+}
+function makeSchool(speciesId,opts={}){
+  const id=`school_${nextSchoolId++}`;
+  const school={
+    id,speciesId,
+    members:[],
+    center:new THREE.Vector3(),
+    avgVelocity:new THREE.Vector3(1,0,0),
+    target:new THREE.Vector3(),
+    targetCell:null,
+    targetLayer:null,
+    targetHabitat:0,
+    mode:'habitat',
+    cohesion:opts.cohesion??(.52+Math.random()*.18),
+    alignment:opts.alignment??(.42+Math.random()*.16),
+    separation:opts.separation??(.72+Math.random()*.16),
+    habitatPull:opts.habitatPull??(.48+Math.random()*.14),
+    exploration:opts.exploration??(.12+Math.random()*.12),
+    cruiseSpeed:opts.cruiseSpeed??(1.15+Math.random()*.65),
+    retargetAt:0,
+    navWaypoint:null,
+    navHoldUntil:0,
+    navRetryAt:0,
+    navLastCenter:new THREE.Vector3(),
+    navLastProgressAt:0,
+    navLastProgressDist:Infinity,
+    navBlockedDir:null
+  };
+  schools.set(id,school); schoolCountText.textContent=schools.size; return school;
+}
+function registerFish(fish,speciesId,school){
+  fish.userData.isFishRoot=true;
+  fish.userData.speciesId=speciesId;
+  fish.userData.schoolId=school.id;
+  fish.userData.phase=fish.userData.phase??Math.random()*Math.PI*2;
+  fish.userData.speed=fish.userData.speed??(.85+Math.random()*1.15);
+  fish.userData.personality=.82+Math.random()*.36;
+  fish.userData.wanderPhase=Math.random()*Math.PI*2;
+  fish.userData.panicStart=0;
+  fish.userData.panicPeakUntil=0;
+  fish.userData.panicEnd=0;
+  fish.userData.panicStrength=0;
+  fish.userData.panicDir=new THREE.Vector3();
+  if(!fish.userData.velocity) fish.userData.velocity=new THREE.Vector3(1,0,0).multiplyScalar(fish.userData.speed);
+  school.members.push(fish);
+  if(editMode) fish.visible=false;
+}
+
+// Standaardvissen worden per kleur/soort in losse scholen verdeeld.
+const baseSchools=[];
+for(let si=0;si<fishPalette.length;si++) baseSchools.push(makeSchool(`reef_${si}`,{exploration:.18}));
+for(let i=0;i<FISH_COUNT;i++){
+  const speciesIndex=i%fishPalette.length;
+  const fish=createFish(fishPalette[speciesIndex],.35+Math.random()*.8);
+  const angle=Math.random()*Math.PI*2, radius=12+Math.random()*150;
+  fish.position.set(Math.cos(angle)*radius,-12+Math.random()*42,Math.sin(angle)*radius);
+  const dir=new THREE.Vector3(Math.random()-.5,(Math.random()-.5)*.08,Math.random()-.5).normalize();
+  fish.userData.velocity=dir.multiplyScalar(fish.userData.speed);
+  registerFish(fish,`reef_${speciesIndex}`,baseSchools[speciesIndex]);
+  orientFishForward(fish,fish.position.clone().add(dir)); scene.add(fish); fishes.push(fish);
+}
+fishCountEl.textContent=fishes.length;
+
+function habitatWeight(type){
+  if(type==='coral') return 3.2;
+  if(type==='seagrass') return 2.0;
+  if(type==='sponge') return 2.3;
+  if(type==='mixed') return 4.0;
+  if(type==='rocks') return .35; // alleen verkennen, niet blijven hangen
+  return .4;
+}
+function isLivingHabitat(type){
+  return type==='coral' || type==='seagrass' || type==='sponge' || type==='mixed';
+}
+function fallbackLayerHabitatPoint(key,layer){
+  const [ix,iz]=key.split(',').map(Number);
+  const x=ix*CELL+CELL/2, z=iz*CELL+CELL/2;
+  // Alleen fallback voor oude JSON die nog geen echte 3D-ankerdata bevat.
+  // Zodra de cel in de editor/streaming wordt opgebouwd, overschrijft markLayerRoots dit met de echte positie.
+  return {x,y:layer.type==='rocks'?FLOOR_Y+3:FLOOR_Y+2,z};
+}
+function rebuildHabitatMap(){
+  if(cachedHabitatRevision===habitatRevision)return;
+  habitatCells=[];
+
+  for(const [key,layers] of worldCells){
+    if(!layers?.length)continue;
+    const [ix,iz]=key.split(',').map(Number);
+    const livingPoints=[];
+    const rockPoints=[];
+
+    for(const layer of layers){
+      const p=layer.habitatPoint || fallbackLayerHabitatPoint(key,layer);
+      const point={
+        key,
+        layerId:layer.id,
+        type:layer.type,
+        x:p.x,y:p.y,z:p.z,
+        score:habitatWeight(layer.type)
+      };
+      if(isLivingHabitat(layer.type))livingPoints.push(point);
+      else if(layer.type==='rocks')rockPoints.push(point);
+    }
+
+    // Eén cel krijgt één stem in de eerste keuze; veel lagen maken hem dus niet automatisch dominant.
+    if(livingPoints.length || rockPoints.length){
+      habitatCells.push({
+        key,ix,iz,
+        livingPoints,
+        rockPoints,
+        hasLife:livingPoints.length>0,
+        x:ix*CELL+CELL/2,
+        z:iz*CELL+CELL/2
+      });
+    }
+  }
+  cachedHabitatRevision=habitatRevision;
+}
+function habitatScoreNear(x,z,radius=24){
+  rebuildHabitatMap();
+  let score=0;
+  for(const h of habitatCells){
+    if(!h.hasLife)continue;
+    const d=Math.hypot(h.x-x,h.z-z);
+    if(d<radius)score+=(1-d/radius);
+  }
+  return score;
+}
+function schoolCrowdingNearCell(cell,school){
+  let crowd=0;
+  for(const other of schools.values()){
+    if(other===school)continue;
+    if(other.targetCell===cell.key)crowd+=1.5;
+    const d=Math.hypot(other.center.x-cell.x,other.center.z-cell.z);
+    if(d<18)crowd+=1;
+    else if(d<30)crowd+=.35;
+  }
+  return crowd;
+}
+function weightedRandom(items){
+  if(!items.length)return null;
+  let total=0;
+  for(const item of items)total+=Math.max(.001,item.weight);
+  let r=Math.random()*total;
+  for(const item of items){
+    r-=Math.max(.001,item.weight);
+    if(r<=0)return item.value;
+  }
+  return items[items.length-1].value;
+}
+function chooseSchoolTarget(school,t){
+  rebuildHabitatMap();
+  const c=school.center;
+  const livingCells=habitatCells.filter(h=>h.hasLife);
+  const rockOnlyCells=habitatCells.filter(h=>!h.hasLife && h.rockPoints.length);
+
+  // Meestal echte, door de gebruiker geplaatste levende habitat.
+  // Soms bewust een kale rots verkennen, maar daar kort blijven.
+  const exploreRock=rockOnlyCells.length>0 && Math.random()<.10;
+  let chosenCell=null;
+
+  if(!exploreRock && livingCells.length){
+    const options=[];
+    for(const h of livingCells){
+      const d=Math.hypot(h.x-c.x,h.z-c.z);
+      if(d<8 || d>190)continue;
+
+      const crowd=schoolCrowdingNearCell(h,school);
+      const novelty=school.targetCell===h.key ? .10 : 1;
+      const distanceVariety=d>45 ? 1.22 : (d>22 ? 1.08 : .85);
+
+      // Belangrijk: dichtheid van begroeiing bepaalt NIET meer rechtstreeks de winnaar.
+      // Een kleine levende plek kan dus net zo goed gekozen worden als een dicht rif.
+      const weight=novelty*distanceVariety/(1+crowd*.9);
+      options.push({value:h,weight});
+    }
+    chosenCell=weightedRandom(options);
+    if(!chosenCell && livingCells.length)chosenCell=livingCells[Math.floor(Math.random()*livingCells.length)];
+  }
+
+  if(chosenCell){
+    const point=chosenCell.livingPoints[Math.floor(Math.random()*chosenCell.livingPoints.length)];
+    const jitterX=(Math.random()-.5)*4.5;
+    const jitterZ=(Math.random()-.5)*4.5;
+    const jitterY=(Math.random()-.5)*3.2;
+
+    school.target.set(
+      THREE.MathUtils.clamp(point.x+jitterX,-WORLD_HALF+3,WORLD_HALF-3),
+      Math.max(MIN_SWIM_Y,point.y+jitterY),
+      THREE.MathUtils.clamp(point.z+jitterZ,-WORLD_HALF+3,WORLD_HALF-3)
+    );
+    school.targetCell=chosenCell.key;
+    school.targetHabitat=point.score;
+    school.targetLayer=point.layerId;
+    school.mode='habitat';
+    school.retargetAt=t+12+Math.random()*22;
+    return;
+  }
+
+  if(rockOnlyCells.length){
+    const options=[];
+    for(const h of rockOnlyCells){
+      const d=Math.hypot(h.x-c.x,h.z-c.z);
+      if(d<10 || d>180)continue;
+      const novelty=school.targetCell===h.key?.08:1;
+      const crowd=schoolCrowdingNearCell(h,school);
+      options.push({value:h,weight:novelty/(1+crowd)});
+    }
+    chosenCell=weightedRandom(options) || rockOnlyCells[Math.floor(Math.random()*rockOnlyCells.length)];
+    const point=chosenCell.rockPoints[Math.floor(Math.random()*chosenCell.rockPoints.length)];
+    school.target.set(
+      point.x+(Math.random()-.5)*6,
+      Math.max(MIN_SWIM_Y,point.y+(Math.random()-.5)*2.5),
+      point.z+(Math.random()-.5)*6
+    );
+    school.targetCell=chosenCell.key;
+    school.targetHabitat=.2;
+    school.targetLayer=point.layerId;
+    school.mode='rock-explore';
+    school.retargetAt=t+5+Math.random()*7; // kale rots: kort onderzoeken en weer verder
+    return;
+  }
+
+  // Alleen als de gebruiker nog nergens landschap heeft gebouwd: vrije exploratie.
+  const a=Math.random()*Math.PI*2, d=35+Math.random()*80;
+  school.target.set(
+    THREE.MathUtils.clamp(c.x+Math.cos(a)*d,-WORLD_HALF+8,WORLD_HALF-8),
+    Math.max(MIN_SWIM_Y,c.y+(Math.random()-.5)*8),
+    THREE.MathUtils.clamp(c.z+Math.sin(a)*d,-WORLD_HALF+8,WORLD_HALF-8)
+  );
+  school.targetCell=null;
+  school.targetHabitat=0;
+  school.targetLayer=null;
+  school.mode='explore';
+  school.retargetAt=t+8+Math.random()*12;
+}
+
+function chooseBestCorridor(school,t){
+  const origin=school.center.clone();
+  const goal=school.target.clone().sub(origin);
+  const goalFlat=goal.clone(); goalFlat.y=0;
+  if(goalFlat.lengthSq()<.001)goalFlat.set(0,0,1); else goalFlat.normalize();
+  const side=new THREE.Vector3(goalFlat.z,0,-goalFlat.x).normalize();
+
+  const lowY=Math.max(MIN_SWIM_Y,origin.y-2.2);
+  const sameY=origin.y;
+  const highY=origin.y+2.2;
+
+  const dirs=[
+    {name:'vooruit',dir:goalFlat.clone(),y:sameY,bias:0},
+    {name:'laag',dir:goalFlat.clone(),y:lowY,bias:1.2},
+    {name:'links',dir:goalFlat.clone().addScaledVector(side,.9).normalize(),y:sameY,bias:.2},
+    {name:'rechts',dir:goalFlat.clone().addScaledVector(side,-.9).normalize(),y:sameY,bias:.2},
+    {name:'links-laag',dir:goalFlat.clone().addScaledVector(side,.75).normalize(),y:lowY,bias:.8},
+    {name:'rechts-laag',dir:goalFlat.clone().addScaledVector(side,-.75).normalize(),y:lowY,bias:.8},
+    {name:'boven',dir:goalFlat.clone(),y:highY,bias:-2.2}
+  ];
+
+  let best=null,bestScore=-Infinity;
+  for(const d of dirs){
+    if(school.navBlockedDir && school.navBlockedDir.name===d.name && t<school.navBlockedDir.until)continue;
+
+    let lastFree=null,freeDist=0;
+    for(const dist of [6,9,12,15]){
+      const p=origin.clone().addScaledVector(d.dir,dist);
+      p.y=d.y;
+      if(p.y<MIN_SWIM_Y)break;
+      if(pointInsideRock(p,FISH_RADIUS+.08))break;
+      if(segmentRockHit(origin,p,FISH_RADIUS+.08))break;
+      lastFree=p; freeDist=dist;
+    }
+    if(!lastFree)continue;
+
+    const toward=lastFree.clone().sub(origin); toward.y=0;
+    if(toward.lengthSq())toward.normalize();
+    const alignment=toward.dot(goalFlat);
+    const upwardPenalty=Math.max(0,lastFree.y-origin.y)*1.25;
+    const downwardBonus=Math.max(0,origin.y-lastFree.y)*.18;
+
+    const score=freeDist*2.2+alignment*4+d.bias-upwardPenalty+downwardBonus;
+    if(score>bestScore){
+      bestScore=score;
+      best={name:d.name,waypoint:lastFree.clone(),freeDist};
+    }
+  }
+  return best;
+}
+
+function markSchoolRouteProgress(school,t){
+  if(!school.navWaypoint)return;
+  if(!school.navLastProgressAt){
+    school.navLastProgressAt=t;
+    school.navLastCenter.copy(school.center);
+    school.navLastProgressDist=school.center.distanceTo(school.navWaypoint);
+    return;
+  }
+  if(t-school.navLastProgressAt<1.2)return;
+
+  const moved=school.center.distanceTo(school.navLastCenter);
+  const nowDist=school.center.distanceTo(school.navWaypoint);
+  const improved=school.navLastProgressDist-nowDist;
+
+  if(moved<1.0 && improved<.7){
+    const delta=school.navWaypoint.clone().sub(school.center);
+    const goal=school.target.clone().sub(school.center); goal.y=0;
+    if(goal.lengthSq())goal.normalize(); else goal.set(0,0,1);
+    const side=new THREE.Vector3(goal.z,0,-goal.x).normalize();
+    let name=school.navWaypoint.y<school.center.y-.7?'laag':'vooruit';
+    const lateral=delta.dot(side);
+    if(Math.abs(lateral)>1){
+      name=lateral>0
+        ? (school.navWaypoint.y<school.center.y-.7?'links-laag':'links')
+        : (school.navWaypoint.y<school.center.y-.7?'rechts-laag':'rechts');
+    }
+    school.navBlockedDir={name,until:t+4};
+    school.navWaypoint=null;
+    school.navHoldUntil=0;
+    school.navRetryAt=t+.05;
+  }
+
+  school.navLastCenter.copy(school.center);
+  school.navLastProgressDist=school.navWaypoint?school.center.distanceTo(school.navWaypoint):Infinity;
+  school.navLastProgressAt=t;
+}
+
+function updateSchoolBrains(t){
+  for(const school of schools.values()){
+    const members=school.members.filter(f=>f.parent);
+    if(!members.length)continue;
+
+    school.center.set(0,0,0); school.avgVelocity.set(0,0,0);
+    for(const f of members){school.center.add(f.position);school.avgVelocity.add(f.userData.velocity);}
+    school.center.multiplyScalar(1/members.length);
+    if(school.avgVelocity.lengthSq()>0)school.avgVelocity.normalize();
+
+    if(t>=school.retargetAt || school.center.distanceTo(school.target)<10)chooseSchoolTarget(school,t);
+
+    markSchoolRouteProgress(school,t);
+
+    if(school.navWaypoint){
+      const reached=school.center.distanceTo(school.navWaypoint)<2.6;
+      if(reached && t>school.navHoldUntil){
+        school.navWaypoint=null;
+        school.navRetryAt=t+.05;
+      }
+    }
+
+    if(!school.navWaypoint && t>=school.navRetryAt){
+      const directHit=segmentRockHit(school.center,school.target,FISH_RADIUS+.08);
+      if(!directHit){
+        school.navRetryAt=t+.7;
+      }else{
+        const route=chooseBestCorridor(school,t);
+        if(route){
+          school.navWaypoint=route.waypoint;
+          school.navHoldUntil=t+2.6;
+          school.navRetryAt=t+.7;
+          school.navLastProgressAt=t;
+          school.navLastCenter.copy(school.center);
+          school.navLastProgressDist=school.center.distanceTo(school.navWaypoint);
+        }else{
+          school.navRetryAt=t+.7;
+        }
+      }
+    }
+  }
+}
+
+function normalizeImportedFish(root){
+  root.updateMatrixWorld(true);
+  const box=new THREE.Box3().setFromObject(root);
+  const size=box.getSize(new THREE.Vector3()), center=box.getCenter(new THREE.Vector3());
+  const maxDim=Math.max(size.x,size.y,size.z)||1;
+  root.position.sub(center); root.scale.multiplyScalar(3.4/maxDim); root.updateMatrixWorld(true); return root;
+}
+function spawnImportedSchool(source,fileName,count){
+  const speciesId=speciesFromName(fileName);
+  const school=makeSchool(speciesId,{cohesion:.67,alignment:.58,separation:.82,habitatPull:.57,exploration:.20,cruiseSpeed:1.35});
+  const forward=new THREE.Vector3(); camera.getWorldDirection(forward).normalize();
+  const rightVec=new THREE.Vector3().crossVectors(forward,camera.up).normalize();
+  const spawnCenter=camera.position.clone().addScaledVector(forward,13);
+  for(let i=0;i<count;i++){
+    const fish=source.clone(true);
+    fish.scale.multiplyScalar(.76+Math.random()*.28);
+    const a=Math.random()*Math.PI*2, r=Math.sqrt(Math.random())*(2.2+Math.sqrt(count)*.55);
+    fish.position.copy(spawnCenter).addScaledVector(rightVec,Math.cos(a)*r);
+    fish.position.y=THREE.MathUtils.clamp(spawnCenter.y+Math.sin(a)*r*.45+(Math.random()-.5)*2,-12,38);
+    fish.position.z+=(Math.random()-.5)*r;
+    const dir=new THREE.Vector3(forward.x+(Math.random()-.5)*.22,(Math.random()-.5)*.06,forward.z+(Math.random()-.5)*.22).normalize();
+    fish.userData.velocity=dir.multiplyScalar(.95+Math.random()*.65);
+    fish.userData.speed=fish.userData.velocity.length(); fish.userData.tail=fish.getObjectByName('Tail')||null;
+    fish.userData.imported=true; fish.userData.sourceName=fileName;
+    registerFish(fish,speciesId,school);
+    orientFishForward(fish,fish.position.clone().add(dir)); scene.add(fish); fishes.push(fish);
+  }
+  school.center.copy(spawnCenter); chooseSchoolTarget(school,performance.now()/1000);
+  fishCountEl.textContent=fishes.length; schoolCountText.textContent=schools.size;
+  return school;
+}
+
+let importedCount=0;
+importBtn.addEventListener('click',()=>fishFiles.click());
+fishFiles.addEventListener('change',async()=>{
+  const file=fishFiles.files?.[0]; if(!file)return;
+  const count=Math.max(1,Number(schoolSize.value)||1);
+  importBtn.disabled=true; importStatus.textContent=`${file.name} laden als ${count===1?'één vis':`school van ${count}`}…`;
+  try{
+    const buffer=await file.arrayBuffer();
+    const gltf=await new Promise((resolve,reject)=>gltfLoader.parse(buffer,'',resolve,reject));
+    const model=normalizeImportedFish(gltf.scene); model.name=file.name.replace(/\.glb$/i,'');
+    const school=spawnImportedSchool(model,file.name,count); importedCount+=count;
+    importStatus.textContent=`${count===1?'1 vis':`${count} vissen`} van “${school.speciesId}” toegevoegd als ${count===1?'individu':'samenhangende school'} · totaal ${fishes.length} vissen.`;
+  }catch(err){console.error(err);importStatus.textContent='Importeren mislukt. Controleer of dit een geldig GLB-bestand is.';}
+  finally{importBtn.disabled=false;fishFiles.value='';}
+});
+
+// Tijdelijke vectoren voor boids; hergebruik voorkomt veel garbage collection.
+const sepV=new THREE.Vector3(), aliV=new THREE.Vector3(), cohV=new THREE.Vector3();
+const targetV=new THREE.Vector3(), wanderV=new THREE.Vector3(), desiredV=new THREE.Vector3();
+const tmpV=new THREE.Vector3();
+
+function disturbanceLevel(fish,now){
+  const u=fish.userData;
+  if(!u.panicEnd || now<u.panicStart || now>=u.panicEnd)return 0;
+  if(now<=u.panicPeakUntil)return u.panicStrength||1;
+  const span=Math.max(.001,u.panicEnd-u.panicPeakUntil);
+  const k=THREE.MathUtils.clamp((now-u.panicPeakUntil)/span,0,1);
+  // Zachte ease-out: eerst zichtbaar verspreid blijven, daarna geleidelijk terug naar de school.
+  return (u.panicStrength||1)*(1-k)*(1-k);
+}
+
+function disturbSchool(clickedFish,wholeSchool=false){
+  if(!clickedFish?.parent)return;
+  const school=schools.get(clickedFish.userData.schoolId);
+  if(!school)return;
+  const now=performance.now()/1000;
+  const epicenter=clickedFish.position.clone();
+  const localRadius=wholeSchool?Infinity:11.5;
+  const baseStrength=wholeSchool?1.18:1.0;
+  let affected=0;
+
+  for(const fish of school.members){
+    if(!fish.parent)continue;
+    const dist=fish.position.distanceTo(epicenter);
+    if(dist>localRadius)continue;
+
+    // Lokale klik plant zich als een kleine golf door de school voort.
+    const delay=wholeSchool?Math.min(.32,dist*.018):Math.min(.55,dist*.045);
+    const distanceFalloff=wholeSchool?(.78+Math.random()*.22):THREE.MathUtils.clamp(1-dist/localRadius*.58,.38,1);
+    const outward=fish.position.clone().sub(epicenter);
+    if(outward.lengthSq()<.01){
+      outward.set(Math.random()-.5,(Math.random()-.5)*.35,Math.random()-.5);
+    }
+    outward.normalize();
+
+    // Iedere vis krijgt net een andere vluchtvector; geen perfect radiale "explosie".
+    outward.x+=(Math.random()-.5)*.55;
+    outward.y+=(Math.random()-.5)*.28;
+    outward.z+=(Math.random()-.5)*.55;
+    outward.normalize();
+
+    const strength=baseStrength*distanceFalloff*(.82+Math.random()*.28);
+    fish.userData.panicDir.copy(outward);
+    fish.userData.panicStart=now+delay;
+    fish.userData.panicPeakUntil=fish.userData.panicStart+(wholeSchool?.95:.72)+Math.random()*.28;
+    fish.userData.panicEnd=fish.userData.panicPeakUntil+(wholeSchool?5.8:4.8)+Math.random()*1.8;
+    fish.userData.panicStrength=strength;
+    affected++;
+  }
+
+  if(affected){
+    school.disturbanceUntil=now+(wholeSchool?7.5:6.5);
+    school.disturbanceType=wholeSchool?'groot':'lokaal';
+    if(followInfo){
+      const old=followInfo.textContent;
+      followInfo.textContent=wholeSchool?`Grote verstoring: ${affected} vissen schieten uiteen…`:`Schrikgolf: ${affected} vissen reageren…`;
+      setTimeout(()=>{ if(followInfo && followInfo.textContent.includes('vissen')) followInfo.textContent=old; },1400);
+    }
+  }
+}
+
+function updateFish(dt,t){
+  let visibleCount=0;
+  schoolThinkAccumulator+=dt;
+  if(schoolThinkAccumulator>.35){updateSchoolBrains(t);schoolThinkAccumulator=0;}
+  const camX=camera.position.x,camY=camera.position.y,camZ=camera.position.z;
+
+  for(const school of schools.values()){
+    const members=school.members;
+    school.avgVelocity.set(0,0,0);
+    let avgN=0;
+    for(const mf of members){ if(mf.parent && mf.userData.velocity){school.avgVelocity.add(mf.userData.velocity);avgN++;} }
+    if(avgN) school.avgVelocity.multiplyScalar(1/avgN);
+    for(const fish of members){
+      if(!fish.parent || fish.userData.dead) continue;
+      const p=fish.position;
+      const dx=p.x-camX,dy=p.y-camY,dz=p.z-camZ,distSq=dx*dx+dy*dy+dz*dz;
+      const visible=editMode || distSq<=CULL_RADIUS*CULL_RADIUS;
+      fish.visible=visible;
+
+      // Ver weg: alleen goedkope schoolsimulatie. Dichtbij: volledige boids.
+      if(!visible){
+        targetV.copy(school.navWaypoint||school.target).sub(p); if(targetV.lengthSq()>1) targetV.normalize();
+        fish.userData.velocity.lerp(targetV.multiplyScalar(school.cruiseSpeed),Math.min(1,dt*.16));
+        collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
+        if(cellHasRockAt(collisionTmp2.x,collisionTmp2.z)){
+          // Buiten beeld vermijden we de cel conservatief zonder automatisch omhoog te sturen.
+          // De schoolnavigator bepaalt de globale route; de individuele vis draait alleen zacht mee.
+          fish.userData.velocity.applyAxisAngle(new THREE.Vector3(0,1,0),.45+((fish.userData.phase%1)*.45));
+          fish.userData.velocity.y*=.65;
+        }else p.copy(collisionTmp2);
+        continue;
+      }
+      visibleCount++;
+      sepV.set(0,0,0);aliV.set(0,0,0);cohV.set(0,0,0);let neighbours=0,close=0;
+      // Alleen soortgenoten uit dezelfde school beïnvloeden elkaar direct.
+      for(const other of members){
+        if(other===fish || !other.parent) continue;
+        const d2=p.distanceToSquared(other.position);
+        if(d2<225){
+          neighbours++; aliV.add(other.userData.velocity); cohV.add(other.position);
+          if(d2<18){tmpV.copy(p).sub(other.position).multiplyScalar(1/Math.max(.35,d2));sepV.add(tmpV);close++;}
+        }
+      }
+      desiredV.set(0,0,0);
+      const panic=disturbanceLevel(fish,performance.now()/1000);
+      if(neighbours){
+        aliV.multiplyScalar(1/neighbours); if(aliV.lengthSq())aliV.normalize();
+        cohV.multiplyScalar(1/neighbours).sub(p); if(cohV.lengthSq())cohV.normalize();
+
+        // Tijdens paniek valt cohesion bijna weg, alignment sterk terug.
+        // In de herstelfase komen beide automatisch vloeiend terug.
+        const alignmentWeight=school.alignment*(1-panic*.82);
+        const cohesionWeight=school.cohesion*(1-panic*.96);
+        desiredV.addScaledVector(aliV,alignmentWeight).addScaledVector(cohV,cohesionWeight);
+      }
+      if(close && sepV.lengthSq()){
+        const separationWeight=school.separation*(1+panic*2.8);
+        desiredV.addScaledVector(sepV.normalize(),separationWeight);
+      }
+      if(panic>0 && fish.userData.panicDir){
+        desiredV.addScaledVector(fish.userData.panicDir,2.45*panic);
+      }
+      targetV.copy(school.navWaypoint||school.target).sub(p); if(targetV.lengthSq())targetV.normalize();
+      desiredV.addScaledVector(targetV,school.habitatPull*(1-panic*.72));
+      // Organische individuele variatie voorkomt een mechanische zwerm.
+      wanderV.set(Math.sin(t*.73+fish.userData.wanderPhase),Math.sin(t*.49+fish.userData.phase)*.22,Math.cos(t*.67+fish.userData.wanderPhase));
+      desiredV.addScaledVector(wanderV,.19*fish.userData.personality);
+      // Zacht binnen de wereld en zwemhoogte houden.
+      if(Math.abs(p.x)>WORLD_HALF-12) desiredV.x+=-Math.sign(p.x)*1.2;
+      if(Math.abs(p.z)>WORLD_HALF-12) desiredV.z+=-Math.sign(p.z)*1.2;
+      if(p.y>34) desiredV.y-=.8; const localFloor=terrainHeightAt(p.x,p.z)+.65; if(p.y<localFloor+.6) desiredV.y+=.8;
+
+      // Lokale veiligheid: alleen een kleine zijwaartse correctie vlak voor een rots.
+      // De grote route komt uitsluitend van het school-waypoint.
+      if(fish.userData.velocity.lengthSq()>.001){
+        collisionTmp.copy(fish.userData.velocity).normalize();
+        collisionTmp2.copy(p).addScaledVector(collisionTmp,2.8);
+        const rockAhead=segmentRockHit(p,collisionTmp2,FISH_RADIUS);
+        if(rockAhead && rockAhead.solidRoot){
+          collisionBox.setFromObject(rockAhead.solidRoot);
+          const center=collisionBox.getCenter(collisionTmp2);
+          const away=collisionTmp.copy(p).sub(center);
+          away.y=0;
+          if(away.lengthSq()<.001){
+            const nav=school.navWaypoint||school.target;
+            const toward=nav.clone().sub(p); toward.y=0;
+            if(toward.lengthSq())toward.normalize(); else toward.set(0,0,1);
+            away.set(toward.z,0,-toward.x);
+          }
+          away.normalize();
+          desiredV.addScaledVector(away,.48);
+        }
+      }
+      if(desiredV.lengthSq()){
+        const panicSpeed=1+panic*.95;
+        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed);
+      }
+      fish.userData.velocity.lerp(desiredV,Math.min(1,dt*(panic>0?2.35:1.45)));
+      collisionTmp.copy(p);
+      collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
+      const fishHit=segmentRockHit(collisionTmp,collisionTmp2,FISH_RADIUS);
+      if(fishHit){
+        const travel=collisionTmp2.clone().sub(collisionTmp);
+        if(travel.lengthSq())travel.normalize();
+        p.copy(fishHit.point).addScaledVector(travel,-FISH_RADIUS-.04);
+
+        const nav=school.navWaypoint||school.target;
+        const reroute=nav.clone().sub(p);
+        if(reroute.lengthSq()){
+          reroute.normalize();
+          fish.userData.velocity.lerp(reroute.multiplyScalar(school.cruiseSpeed*.68),.28);
+        }else{
+          fish.userData.velocity.multiplyScalar(.45);
+        }
+      }else{
+        p.copy(collisionTmp2);
+      }
+      p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.10;
+      if(editMode || distSq<=FISH_ANIMATION_RADIUS*FISH_ANIMATION_RADIUS){
+        if(fish.userData.tail) fish.userData.tail.rotation.y=Math.sin(t*7.5*fish.userData.speed+fish.userData.phase)*.42;
+        if(fish.userData.velocity.lengthSq()>.001) orientFishForward(fish,tmpV.copy(p).add(fish.userData.velocity));
+      }
+    }
+  }
+  visibleFishText.textContent=visibleCount;
+}
+
+
+// --- Cinematische vis- en schoolvolgmodus ---
+const followPanel=document.getElementById('followPanel');
+const followTitle=document.getElementById('followTitle');
+const followInfo=document.getElementById('followInfo');
+const followFishBtn=document.getElementById('followFishBtn');
+const followSchoolBtn=document.getElementById('followSchoolBtn');
+const stopFollowBtn=document.getElementById('stopFollowBtn');
+const followPositionReadout=document.getElementById('followPositionReadout');
+let followMode=null; // null | 'fish' | 'school'
+let selectedFish=null;
+let followDistance=9.0, followHeight=2.0;
+let followOrbitAngle=0;        // hoek rondom de vis/school, relatief aan de zwemrichting
+let followOrbitInitialized=false;
+const followCamTarget=new THREE.Vector3(), followDesiredPos=new THREE.Vector3();
+const followForward=new THREE.Vector3(), followSideVec=new THREE.Vector3();
+const followLookAt=new THREE.Vector3(), followSmoothLook=new THREE.Vector3();
+let followLookReady=false;
+let followRouteWaypoint=null;
+const filteredFollowTarget=new THREE.Vector3(), filteredFollowForward=new THREE.Vector3(0,0,1);
+let followFilterReady=false;
+
+function selectedSchool(){
+  return selectedFish ? schools.get(selectedFish.userData.schoolId) : null;
+}
+function setFollowButtonState(){
+  followFishBtn.style.opacity=followMode==='fish'?'1':'.6';
+  followSchoolBtn.style.opacity=followMode==='school'?'1':'.6';
+}
+function startFollowing(fish,mode='fish'){
+  if(!fish)return;
+  selectedFish=fish; followMode=mode; followLookReady=false; followFilterReady=false; followRouteWaypoint=null; followOrbitInitialized=false;
+  followPanel.style.display='block';
+  const school=selectedSchool();
+  followTitle.textContent=mode==='school'
+    ? `School volgen · ${school?.speciesId||'onbekend'}`
+    : `Vis volgen · ${fish.userData.speciesId||'onbekend'}`;
+  setFollowButtonState();
+  if(controls.isLocked) controls.unlock();
+  startBtn.textContent='Vrij zwemmen';
+  hint.textContent='Follow Mode · A/D rond school · W/S dichterbij/verder · Q/E omhoog/omlaag · scroll afstand · ESC stoppen';
+}
+function stopFollowing(relock=false){
+  followMode=null; selectedFish=null; followPanel.style.display='none'; followLookReady=false; followFilterReady=false; followRouteWaypoint=null; followOrbitInitialized=false;
+  startBtn.textContent='Verder verkennen';
+  hint.textContent='Klik op “Verder verkennen” om vrij te zwemmen, of klik een vis om opnieuw te volgen.';
+  if(relock && !editMode) controls.lock();
+}
+followFishBtn.addEventListener('click',e=>{e.stopPropagation();if(selectedFish)startFollowing(selectedFish,'fish');});
+followSchoolBtn.addEventListener('click',e=>{e.stopPropagation();if(selectedFish)startFollowing(selectedFish,'school');});
+stopFollowBtn.addEventListener('click',e=>{e.stopPropagation();stopFollowing(false);});
+followPanel.addEventListener('click',e=>e.stopPropagation());
+
+function fishRootFromObject(obj){
+  let o=obj;
+  while(o && o!==scene){
+    if(o.userData?.isFishRoot) return o;
+    o=o.parent;
+  }
+  return null;
+}
+function pickFishAtCenter(){
+  if(editMode)return null;
+  raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+  const hits=raycaster.intersectObjects(fishes.filter(f=>f.visible),true);
+  for(const hit of hits){
+    const root=fishRootFromObject(hit.object);
+    if(root)return root;
+  }
+  return null;
+}
+function pickFishAtPointerEvent(e){
+  if(editMode)return null;
+  const rect=renderer.domElement.getBoundingClientRect();
+  const nx=((e.clientX-rect.left)/rect.width)*2-1;
+  const ny=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(new THREE.Vector2(nx,ny),camera);
+  const hits=raycaster.intersectObjects(fishes.filter(f=>f.visible),true);
+  for(const hit of hits){
+    const root=fishRootFromObject(hit.object);
+    if(root)return root;
+  }
+  return null;
+}
+// In vrije zwemmodus selecteert een klik de vis onder het vizier.
+// Als er geen vis geraakt wordt, blijft de normale pointer-lockbesturing actief.
+renderer.domElement.addEventListener('mousedown',e=>{
+  if(e.button!==0 || editMode || followMode)return;
+  const fish=pickFishAtCenter();
+  if(fish){ e.preventDefault(); e.stopPropagation(); startFollowing(fish,'fish'); }
+},true);
+
+renderer.domElement.addEventListener('wheel',e=>{
+  if(!followMode)return;
+  e.preventDefault();
+  followDistance=THREE.MathUtils.clamp(followDistance+Math.sign(e.deltaY)*1.0,3.5,28);
+},{passive:false});
+
+// Tijdens Follow Mode kun je de school rechtstreeks verstoren.
+// Eén klik = lokale schrikgolf. Dubbelklik = vrijwel de hele school.
+// Een korte timer voorkomt dat een dubbelklik ook twee lokale golven veroorzaakt.
+let disturbClickTimer=null;
+renderer.domElement.addEventListener('click',e=>{
+  if(!followMode || editMode || e.button!==0)return;
+  const fish=pickFishAtPointerEvent(e);
+  if(!fish)return;
+  e.preventDefault();
+  e.stopPropagation();
+  if(disturbClickTimer)clearTimeout(disturbClickTimer);
+  disturbClickTimer=setTimeout(()=>{
+    disturbSchool(fish,false);
+    disturbClickTimer=null;
+  },210);
+},true);
+
+renderer.domElement.addEventListener('dblclick',e=>{
+  if(!followMode || editMode || e.button!==0)return;
+  const fish=pickFishAtPointerEvent(e);
+  if(!fish)return;
+  e.preventDefault();
+  e.stopPropagation();
+  if(disturbClickTimer){clearTimeout(disturbClickTimer);disturbClickTimer=null;}
+  disturbSchool(fish,true);
+},true);
+
+function schoolCameraTarget(school){
+  if(!school || !school.members.length) return selectedFish?.position||camera.position;
+  followCamTarget.set(0,0,0); let n=0;
+  for(const f of school.members){ if(f.parent){followCamTarget.add(f.position);n++;} }
+  if(n)followCamTarget.multiplyScalar(1/n);
+  return followCamTarget;
+}
+function updateFollowCamera(dt){
+  if(!followMode || !selectedFish || !selectedFish.parent)return;
+  const school=selectedSchool();
+  const rawTarget = followMode==='school' ? schoolCameraTarget(school) : selectedFish.position;
+
+  // 1) Filter eerst de vis/schoolbeweging. Kleine staart- en boidschommelingen mogen de camera niet sturen.
+  if(followMode==='school' && school && school.avgVelocity.lengthSq()>.001) followForward.copy(school.avgVelocity).normalize();
+  else if(selectedFish.userData.velocity?.lengthSq()>.001) followForward.copy(selectedFish.userData.velocity).normalize();
+  else camera.getWorldDirection(followForward).normalize();
+  if(!followFilterReady){
+    filteredFollowTarget.copy(rawTarget); filteredFollowForward.copy(followForward); followFilterReady=true;
+  }
+  filteredFollowTarget.lerp(rawTarget,1-Math.exp(-dt*1.25));
+  filteredFollowForward.lerp(followForward,1-Math.exp(-dt*.95));
+  if(filteredFollowForward.lengthSq()>.001)filteredFollowForward.normalize();
+
+  // 2) Vrij rond de gevolgde vis/school zwemmen.
+  // A/D verandert de HOEK rond het doel; W/S verandert de AFSTAND; Q/E de HOOGTE.
+  // Daardoor is Follow Mode geen vaste cameraklem meer, maar een vrij beweegbare orbit rond de school.
+  followSideVec.set(filteredFollowForward.z,0,-filteredFollowForward.x);
+  if(followSideVec.lengthSq()<.001)followSideVec.set(1,0,0); else followSideVec.normalize();
+
+  // Begin altijd achter de school/vis vanuit de bestaande camerapositie, zodat inschakelen niet springt.
+  if(!followOrbitInitialized){
+    const rel=camera.position.clone().sub(filteredFollowTarget);
+    const back=filteredFollowForward.clone().multiplyScalar(-1);
+    rel.y=0; back.y=0;
+    if(rel.lengthSq()>.01 && back.lengthSq()>.01){
+      rel.normalize(); back.normalize();
+      const cross=back.x*rel.z-back.z*rel.x;
+      const dot=THREE.MathUtils.clamp(back.dot(rel),-1,1);
+      followOrbitAngle=Math.atan2(cross,dot);
+      followDistance=THREE.MathUtils.clamp(
+        Math.max(3.5, Math.hypot(camera.position.x-filteredFollowTarget.x,camera.position.z-filteredFollowTarget.z)),
+        3.5,28
+      );
+      followHeight=THREE.MathUtils.clamp(camera.position.y-filteredFollowTarget.y,-18,18);
+    }else{
+      followOrbitAngle=0;
+    }
+    followOrbitInitialized=true;
+  }
+
+  const orbitSpeed=dt*1.05;       // rad/s; bewust rustig zodat A/D cinematic blijft
+  const radialSpeed=dt*7.0;       // meter/s
+  const verticalSpeed=dt*5.0;     // meter/s
+
+  const manualFollowInput=keys['KeyA']||keys['KeyD']||keys['KeyW']||keys['KeyS']||keys['KeyQ']||keys['KeyE'];
+  if(keys['KeyA']) followOrbitAngle-=orbitSpeed;
+  if(keys['KeyD']) followOrbitAngle+=orbitSpeed;
+  if(keys['KeyW']) followDistance-=radialSpeed;
+  if(keys['KeyS']) followDistance+=radialSpeed;
+  if(keys['KeyQ']) followHeight+=verticalSpeed;
+  if(keys['KeyE']) followHeight-=verticalSpeed;
+  if(manualFollowInput) followRouteWaypoint=null;
+
+  followDistance=THREE.MathUtils.clamp(followDistance,3.5,28);
+  followHeight=THREE.MathUtils.clamp(followHeight,-18,18);
+
+  // Basispunt = recht achter de zwemrichting.
+  // Draai dat punt vervolgens rond de Y-as over followOrbitAngle.
+  const backDir=filteredFollowForward.clone().multiplyScalar(-1);
+  backDir.y=0;
+  if(backDir.lengthSq()<.001)backDir.set(0,0,1); else backDir.normalize();
+  const cosA=Math.cos(followOrbitAngle), sinA=Math.sin(followOrbitAngle);
+  const orbitDir=new THREE.Vector3(
+    backDir.x*cosA - backDir.z*sinA,
+    0,
+    backDir.x*sinA + backDir.z*cosA
+  ).normalize();
+
+  followDesiredPos.copy(filteredFollowTarget)
+    .addScaledVector(orbitDir,followDistance);
+  followDesiredPos.y=Math.max(MIN_SWIM_Y,followDesiredPos.y+followHeight);
+
+  // 3) Vooruitkijkende routeplanning. De directe route naar de voorkeurspositie wordt getest.
+  // Bij een rots kiezen we een waypoint links, rechts of bovenom en houden dat vast tot de route weer vrij is.
+  const directHit=segmentRockHit(camera.position,followDesiredPos,CAMERA_RADIUS);
+  if(directHit){
+    if(!followRouteWaypoint || segmentRockHit(camera.position,followRouteWaypoint,CAMERA_RADIUS)){
+      followRouteWaypoint=chooseRockDetour(camera.position,followDesiredPos,directHit,CAMERA_RADIUS);
+    }
+  }else if(followRouteWaypoint){
+    // Wanneer zowel de directe route als zicht op de voorkeurspositie vrij zijn, laat de tijdelijke omweg los.
+    if(!segmentRockHit(camera.position,followDesiredPos,CAMERA_RADIUS)) followRouteWaypoint=null;
+  }
+
+  const routedGoal=followRouteWaypoint || followDesiredPos;
+  if(followRouteWaypoint && camera.position.distanceTo(followRouteWaypoint)<1.0){
+    const nextHit=segmentRockHit(camera.position,followDesiredPos,CAMERA_RADIUS);
+    followRouteWaypoint=nextHit?chooseRockDetour(camera.position,followDesiredPos,nextHit,CAMERA_RADIUS):null;
+  }
+
+  // 4) Dubbele smoothing: eerst een zachte route, daarna harde collision-clamp.
+  // De afstand mag hierdoor tijdelijk groter/kleiner worden; de camera jaagt de vis nooit nerveus na.
+  const posAlpha=1-Math.exp(-dt*1.65);
+  collisionTmp.copy(camera.position).lerp(routedGoal,posAlpha);
+  const safePos=safeMoveAgainstRocks(camera.position,collisionTmp,CAMERA_RADIUS);
+  camera.position.copy(safePos);
+
+  // 5) Kijkpunt heeft zijn eigen tragere filter; kijk iets vóór de gevolgde beweging.
+  followLookAt.copy(filteredFollowTarget).addScaledVector(filteredFollowForward,2.5);
+  if(!followLookReady){followSmoothLook.copy(followLookAt);followLookReady=true;}
+  followSmoothLook.lerp(followLookAt,1-Math.exp(-dt*1.7));
+  camera.up.set(0,1,0);
+  camera.lookAt(followSmoothLook);
+
+  depthText.textContent=Math.max(0,Math.round(20-camera.position.y));
+  speedText.textContent=followRouteWaypoint?'OMWEG':'VOLG';
+  if(followPositionReadout){
+    const deg=((THREE.MathUtils.radToDeg(followOrbitAngle)%360)+360)%360;
+    followPositionReadout.textContent=`positie rond school: ${deg.toFixed(0)}° · afstand ${followDistance.toFixed(1)} m · hoogte ${followHeight>=0?'+':''}${followHeight.toFixed(1)} m`;
+  }
+}
+
+// Besturing
+const keys = {};
+addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code==='Escape' && followMode){ e.preventDefault(); stopFollowing(false); }
+});
+addEventListener('keyup',e=>keys[e.code]=false);
+
+const clock = new THREE.Clock();
+const tempDir = new THREE.Vector3();
+const right = new THREE.Vector3();
+
+function updateMovement(dt){
+  if(followMode){ updateFollowCamera(dt); return; }
+
+  if(editMode){
+    const editorMove=new THREE.Vector3();
+    // Bovenaanzicht: W/S = noord/zuid, A/D = west/oost.
+    if(keys['KeyW']) editorMove.z-=1;
+    if(keys['KeyS']) editorMove.z+=1;
+    if(keys['KeyA']) editorMove.x-=1;
+    if(keys['KeyD']) editorMove.x+=1;
+
+    const boost=keys['ShiftLeft']||keys['ShiftRight'];
+    const panSpeed=boost?95:42;
+
+    if(editorMove.lengthSq()>0){
+      editorMove.normalize().multiplyScalar(panSpeed*dt);
+      camera.position.x+=editorMove.x;
+      camera.position.z+=editorMove.z;
+      speedText.textContent=panSpeed.toFixed(0);
+    }else speedText.textContent='0';
+
+    // Q/E verandert de kijkhoogte; zo kun je van kaartoverzicht naar detailniveau.
+    const verticalSpeed=boost?85:42;
+    if(keys['KeyQ']) camera.position.y+=verticalSpeed*dt;
+    if(keys['KeyE']) camera.position.y-=verticalSpeed*dt;
+
+    camera.position.x=THREE.MathUtils.clamp(camera.position.x,-WORLD_HALF+1,WORLD_HALF-1);
+    camera.position.z=THREE.MathUtils.clamp(camera.position.z,-WORLD_HALF+1,WORLD_HALF-1);
+    camera.position.y=THREE.MathUtils.clamp(camera.position.y,35,260);
+    camera.up.set(0,0,-1);
+    camera.lookAt(camera.position.x,terrainHeightAt(camera.position.x,camera.position.z),camera.position.z);
+
+    depthText.textContent=`editor ${Math.round(camera.position.y)}m`;
+    return;
+  }
+
+  if(!controls.isLocked){
+    speedText.textContent = '0.0';
+    return;
+  }
+
+  const move = new THREE.Vector3();
+  camera.getWorldDirection(tempDir);
+  tempDir.y = 0;
+  tempDir.normalize();
+
+  right.crossVectors(tempDir, camera.up).normalize();
+
+  if(keys['KeyW']) move.add(tempDir);
+  if(keys['KeyS']) move.sub(tempDir);
+  if(keys['KeyD']) move.add(right);
+  if(keys['KeyA']) move.sub(right);
+  if(keys['KeyQ']) move.y += 1;
+  if(keys['KeyE']) move.y -= 1;
+
+  const boost = keys['ShiftLeft'] || keys['ShiftRight'];
+  const speed = boost ? 22 : 9;
+
+  if(move.lengthSq()>0){
+    move.normalize().multiplyScalar(speed*dt);
+    camera.position.add(move);
+    speedText.textContent = speed.toFixed(1);
+  } else {
+    speedText.textContent = '0.0';
+  }
+
+  camera.position.y = THREE.MathUtils.clamp(camera.position.y,-15,60);
+  const r = Math.hypot(camera.position.x,camera.position.z);
+  if(r>310){
+    const s = 310/r;
+    camera.position.x*=s;
+    camera.position.z*=s;
+  }
+
+  depthText.textContent = Math.max(0,Math.round(20-camera.position.y));
+}
+
+function updateBubbles(){
+  const a = bubbleGeo.attributes.position;
+  for(let i=0;i<bubbleCount;i++){
+    let y=a.getY(i)+bubbleSpeeds[i];
+    if(y>55)y=-18;
+    a.setY(i,y);
+  }
+  a.needsUpdate=true;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(),.04);
+  const t = performance.now()/1000;
+
+  updateMovement(dt);
+  if(!editMode && t-lastStreamingUpdate>.20){ refreshWorldStreaming(); lastStreamingUpdate=t; }
+  if(!editMode){
+    updateLava(dt,t);
+    updateFish(dt,t);
+    updateHazardHealth(dt);
+    updateBubbles();
+  }
+  if(t-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=t; }
+
+  glow.position.x = Math.sin(t*.18)*35;
+  glow.position.z = Math.cos(t*.15)*35;
+
+  renderer.render(scene,camera);
+}
+refreshWorldStreaming(true);
+drawMinimap();
+animate();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
