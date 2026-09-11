@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Fish Skin Studio v6 — Mirrored Side Mapping</title>
+<style>
+:root{--bg:#eef5f6;--panel:#fff;--ink:#17343d;--muted:#69838b;--line:#c9dadd;--active:#dff5f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink)}
+.app{max-width:1220px;margin:auto;padding:12px}
+.row,.toolbar,.tabs,.swatches{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row{margin-bottom:12px}
+button,select,input{font:inherit}
+.btn,.sel{min-height:44px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 12px;color:var(--ink)}
+.btn.active{background:var(--active);border-color:#78c6d2}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px}
+.wrap{position:relative;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+#editor{display:block;width:100%;touch-action:none;background:#fff}
+#preview{display:block;width:100%;height:560px;background:#143f4c;border-radius:12px;touch-action:none}
+.help{font-size:13px;line-height:1.45;color:var(--muted);margin-top:8px}
+.sw{width:34px;height:34px;border-radius:8px;border:1px solid #9eb4ba}
+.badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.48);color:white;padding:6px 9px;border-radius:8px;font-size:12px}
+@media(max-width:840px){.grid{grid-template-columns:1fr}#preview{height:420px}.app{padding:8px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="row">
+    <select id="species" class="sel">
+      <option value="clown">Clownvis</option>
+      <option value="butterfly">Butterflyfish</option>
+      <option value="koi">Koi</option>
+      <option value="storyblue">Blauwe verhalenvis</option>
+      <option value="flatgreen">Groene bodemvis</option>
+      <option value="orange_story">Oranje verhalenvis</option>
+    </select>
+    <select id="pattern" class="sel"></select>
+
+    <div class="tabs">
+      <button id="bodyTab" class="btn active">Romp</button>
+      <button id="tailTab" class="btn">Staart</button>
+    </div>
+
+    <button id="newColors" class="btn">🎲 Nieuwe kleuren</button>
+    <button id="storybookStyle" class="btn">📖 Prentenboekstijl</button>
+    <span id="selectionStatus" style="font-size:13px;color:#69838b"></span>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <div class="toolbar">
+        <button class="btn tool active" data-tool="brush">🖌 Penseel</button>
+        <button class="btn tool" data-tool="fill">🪣 Vullen</button>
+        <button class="btn tool" data-tool="eraser">⌫ Gum</button>
+        <button id="undo" class="btn">↶ Undo</button>
+        <button id="redo" class="btn">↷ Redo</button>
+        <button id="clearPaint" class="btn">Wis eigen verf</button>
+        <label>Kleur <input id="color" type="color" value="#e44d32"></label>
+        <label>Dikte <input id="size" type="range" min="3" max="76" value="20"></label>
+      </div>
+
+      <div class="swatches" id="swatches" style="margin:10px 0"></div>
+
+      <div class="wrap">
+        <canvas id="editor" width="960" height="600"></canvas>
+        <div class="badge" id="badge">Volledige zijkant van de romp</div>
+      </div>
+
+      <div class="help">
+        Alle editorfuncties zijn behouden: penseel, vullen, gum, undo/redo, kleurstalen, standaardpatronen, Nieuwe kleuren en Prentenboekstijl. De romp is één gewone zijaanzicht-kleurplaat. De toepassing leest automatisch de werkelijke boven- en ondercontour van deze visvorm uit. Elke basisvis heeft zijn eigen rompverhouding, staartvorm en staart-kleurplaat. De verhalenvissen gebruiken nu sjablonen die direct op hun ronde mesh passen. Rug, buik en neus blijven volledig ingekleurd. De oogtekening is uit de sjablonen verwijderd; voorlopig blijft alleen een kleine zwarte 3D-stip als oog zichtbaar. De staart-UV’s worden nu automatisch uit de werkelijke contour van dat staartsjabloon berekend, zodat de kleuren ook bij clownvis en butterflyfish de volledige staartvorm volgen.
+      </div>
+    </section>
+
+    <section class="card">
+      <canvas id="preview"></canvas>
+      <div class="toolbar" style="margin-top:10px">
+        <button id="swim" class="btn">🌊 Laat zwemmen</button>
+        <button id="stop" class="btn">🎨 Stilzetten</button>
+        <button id="exportGLB" class="btn">⬇ Exporteer GLB</button>
+      </div>
+      <div class="help">
+        Sleep de 3D-vis rond en kijk vooral van boven en onder. Met ‘Prentenboekstijl’ krijgt de vis een warmere, matte, handgemaakte uitstraling met zachter licht, subtiele verftextuur, grotere ogen en rustigere animatie.
+      </div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+const $=s=>document.querySelector(s);
+const editor=$('#editor'),ctx=editor.getContext('2d');
+const speciesEl=$('#species'),patternEl=$('#pattern'),colorEl=$('#color'),sizeEl=$('#size');
+const W=960,H=600;
+let active='body',tool='brush',drawing=false,last=null;
+let storybookMode=false;
+const history={body:[],tail:[]};
+const redoHistory={body:[],tail:[]};
+
+function canvas(){const c=document.createElement('canvas');c.width=W;c.height=H;return c}
+const layers={
+  body:{base:canvas(),paint:canvas(),tex:canvas()},
+  tail:{base:canvas(),paint:canvas(),tex:canvas()}
+};
+
+const patterns={
+ clown:[
+   {id:'classic',name:'Klassieke 3 banden'},
+   {id:'wide',name:'Brede banden'},
+   {id:'picasso',name:'Picasso-variant'},
+   {id:'blank',name:'Blanco'}
+ ],
+ butterfly:[
+   {id:'vertical',name:'Verticale rifstrepen'},
+   {id:'eye',name:'Oogband'},
+   {id:'diagonal',name:'Diagonale banden'},
+   {id:'blank',name:'Blanco'}
+ ],
+ koi:[
+   {id:'kohaku',name:'Kohaku'},
+   {id:'sanke',name:'Sanke'},
+   {id:'showa',name:'Showa'},
+   {id:'blank',name:'Blanco'}
+ ],
+ storyblue:[
+   {id:'storyblue',name:'Blauwe verhalenvis'},
+   {id:'storyblue_blank',name:'Blanco verhalenvis'}
+ ],
+ flatgreen:[
+   {id:'flatgreen',name:'Groene bodemvis'},
+   {id:'flatgreen_blank',name:'Blanco bodemvis'}
+ ],
+ orange_story:[
+   {id:'orange_story',name:'Oranje verhalenvis'},
+   {id:'orange_story_blank',name:'Blanco oranje vis'}
+ ]
+};
+
+const dims={clown:[3.0,1.55,.92],butterfly:[2.55,2.0,.70],koi:[3.4,1.35,.94],storyblue:[2.85,1.72,1.00],flatgreen:[3.75,.92,1.28],orange_story:[3.15,1.78,1.02]};
+const paletteBank=[
+ ['#f27b22','#fff2dc','#1f262b','#f2cf3a'],
+ ['#e9d746','#ffffff','#26394e','#ec8c34'],
+ ['#d84a36','#f7f3e7','#171717','#d3a23d'],
+ ['#3d9db2','#f2e3b5','#22364e','#e35b45'],
+ ['#865db0','#f2d36b','#224d5b','#f4efe8']
+];
+let palette=paletteBank[0].slice();
+let storyBluePalette=['#28bfd1','#159daf','#116779','#0c5364','#d8eef0','#0b2026'];
+let flatGreenPalette=['#a9ad47','#8d9238','#62632b','#4b4726','#d8d99b','#23261b'];
+let orangeStoryPalette=['#e68a28','#f1a13a','#cf7021','#5b4a5f','#efe7dd','#8c4d3f','#2f2625'];
+const storyBlueBanks=[
+ ['#28bfd1','#159daf','#116779','#0c5364','#d8eef0','#0b2026'],
+ ['#56cbd0','#279aa5','#176271','#104653','#e4f2ed','#10262b'],
+ ['#3db7cb','#247e9c','#19536e','#123e57','#d9edef','#102027']
+];
+
+function applyPainterlyTexture(canvasEl, strength=.06){
+  const c=canvasEl.getContext('2d');
+  const img=c.getImageData(0,0,canvasEl.width,canvasEl.height);
+  const d=img.data;
+  for(let y=0;y<canvasEl.height;y+=2){
+    for(let x=0;x<canvasEl.width;x+=2){
+      const i=(y*canvasEl.width+x)*4;
+      const n=(Math.sin(x*.17)+Math.cos(y*.13)+Math.sin((x+y)*.07))*0.5;
+      const delta=n*255*strength;
+      d[i]=Math.max(0,Math.min(255,d[i]+delta));
+      d[i+1]=Math.max(0,Math.min(255,d[i+1]+delta));
+      d[i+2]=Math.max(0,Math.min(255,d[i+2]+delta));
+    }
+  }
+  c.putImageData(img,0,0);
+}
+
+function bodyPath(){
+ const p=new Path2D();
+ if(speciesEl.value==='storyblue'){
+   // Short, tall body with a larger rounded head.
+   // Template follows the actual rounded ellipsoid mesh.
+   p.moveTo(120,300);
+   p.bezierCurveTo(120,165,285,105,495,105);
+   p.bezierCurveTo(705,105,875,170,875,300);
+   p.bezierCurveTo(875,430,705,495,495,495);
+   p.bezierCurveTo(285,495,120,435,120,300);
+ }else if(speciesEl.value==='flatgreen'){
+   // Long, low bottom fish: narrow tail end, broad blunt head.
+   // Long low ellipse matching the actual mesh, fully colourable to every edge.
+   p.moveTo(105,300);
+   p.bezierCurveTo(105,225,290,195,500,195);
+   p.bezierCurveTo(710,195,890,225,890,300);
+   p.bezierCurveTo(890,375,710,405,500,405);
+   p.bezierCurveTo(290,405,105,375,105,300);
+ }else if(speciesEl.value==='orange_story'){
+   // High compact body with blunt head and deeper belly.
+   // High oval template matched to the high compact mesh.
+   p.moveTo(115,300);
+   p.bezierCurveTo(115,145,300,95,500,95);
+   p.bezierCurveTo(715,95,885,160,885,300);
+   p.bezierCurveTo(885,440,715,500,500,500);
+   p.bezierCurveTo(300,500,115,455,115,300);
+ }else{
+   p.moveTo(115,300);
+   p.bezierCurveTo(170,135,390,95,710,155);
+   p.bezierCurveTo(825,175,875,235,875,300);
+   p.bezierCurveTo(875,365,825,425,710,445);
+   p.bezierCurveTo(390,505,170,465,115,300);
+ }
+ p.closePath();
+ return p;
+}
+function tailPath(){
+ const sp=speciesEl.value;
+ const p=new Path2D();
+
+ if(sp==='clown'){
+   // Rounded fan tail
+   p.moveTo(180,300);
+   p.bezierCurveTo(315,250,470,135,730,105);
+   p.bezierCurveTo(810,145,820,225,790,300);
+   p.bezierCurveTo(820,375,810,455,730,495);
+   p.bezierCurveTo(470,465,315,350,180,300);
+   p.closePath();
+ } else if(sp==='butterfly'){
+   // Shorter, compact rounded/truncated tail
+   p.moveTo(190,300);
+   p.bezierCurveTo(320,255,470,180,690,170);
+   p.bezierCurveTo(755,195,785,245,785,300);
+   p.bezierCurveTo(785,355,755,405,690,430);
+   p.bezierCurveTo(470,420,320,345,190,300);
+   p.closePath();
+ } else if(sp==='storyblue'){
+   // Deep forked tail.
+   p.moveTo(185,300);
+   p.bezierCurveTo(300,250,430,155,725,110);
+   p.bezierCurveTo(675,220,650,265,610,300);
+   p.bezierCurveTo(650,335,675,380,725,490);
+   p.bezierCurveTo(430,445,300,350,185,300);
+   p.closePath();
+ } else if(sp==='flatgreen'){
+   // Broad, low paddle tail.
+   p.moveTo(185,300);
+   p.bezierCurveTo(300,255,470,210,735,205);
+   p.bezierCurveTo(800,225,820,265,815,300);
+   p.bezierCurveTo(820,335,800,375,735,395);
+   p.bezierCurveTo(470,390,300,345,185,300);
+   p.closePath();
+ } else if(sp==='orange_story'){
+   // Broad ragged fan tail.
+   p.moveTo(185,300);
+   p.bezierCurveTo(305,245,430,135,735,115);
+   p.bezierCurveTo(785,165,800,235,780,300);
+   p.bezierCurveTo(800,365,785,435,735,485);
+   p.bezierCurveTo(430,465,305,355,185,300);
+   p.closePath();
+ } else {
+   // Koi/carp: broader forked tail
+   p.moveTo(185,300);
+   p.bezierCurveTo(315,245,455,120,760,70);
+   p.bezierCurveTo(700,205,675,255,650,300);
+   p.bezierCurveTo(675,345,700,395,760,530);
+   p.bezierCurveTo(455,480,315,355,185,300);
+   p.closePath();
+ }
+ return p;
+}
+function pathFor(part){return part==='body'?bodyPath():tailPath()}
+
+function drawTemplateEye(c,species){ /* eyes removed from templates */ }
+
+function populatePatterns(){
+ patternEl.innerHTML='';
+ patterns[speciesEl.value].forEach(p=>{
+   const o=document.createElement('option');o.value=p.id;o.textContent=p.name;patternEl.appendChild(o)
+ });
+}
+
+function applyCurrentSelection({resetPaint=false}={}){
+  // Rebuild contour maps for the currently selected species/template first.
+  if(typeof buildContourMap==='function') contourMap=buildContourMap();
+  if(typeof buildTailContourMap==='function') tailContourMap=buildTailContourMap();
+
+  if(resetPaint){
+    layers.body.paint.getContext('2d').clearRect(0,0,W,H);
+    layers.tail.paint.getContext('2d').clearRect(0,0,W,H);
+    history.body=[];history.tail=[];
+    if(typeof redoHistory!=='undefined'){redoHistory.body=[];redoHistory.tail=[];}
+  }
+
+  drawBase('body');
+  drawBase('tail');
+
+  if(window.buildFish) window.buildFish();
+  refresh();
+
+  const status=document.querySelector('#selectionStatus');
+  if(status){
+    const speciesName=speciesEl.options[speciesEl.selectedIndex]?.textContent||'';
+    const patternName=patternEl.options[patternEl.selectedIndex]?.textContent||'';
+    status.textContent=`${speciesName} · ${patternName}`;
+  }
+}
+
+function shufflePalette(){
+ palette=paletteBank[Math.floor(Math.random()*paletteBank.length)].slice();
+ for(let i=palette.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[palette[i],palette[j]]=[palette[j],palette[i]]}
+}
+function clippedFill(c,p,color){
+ c.save();c.clip(p);c.fillStyle=color;c.fillRect(0,0,W,H);c.restore()
+}
+
+function drawBase(part){
+ const c=layers[part].base.getContext('2d');
+ c.clearRect(0,0,W,H);
+ const p=pathFor(part);
+ clippedFill(c,p,palette[1]||'#f4f0e7');
+ c.save();c.clip(p);
+ const id=patternEl.value;
+
+ if(part==='body'){
+   if(id==='orange_story' || id==='orange_story_blank'){
+     c.fillStyle=orangeStoryPalette[0];c.fillRect(0,0,W,H);
+     if(id==='orange_story'){
+       const og=c.createLinearGradient(130,90,820,470);
+       og.addColorStop(0,orangeStoryPalette[1]);
+       og.addColorStop(.48,orangeStoryPalette[0]);
+       og.addColorStop(1,orangeStoryPalette[2]);
+       c.fillStyle=og;c.fillRect(0,0,W,H);
+
+       // Diamond / scale lattice across the flank.
+       c.strokeStyle='rgba(120,72,35,.30)';
+       c.lineWidth=3;
+       for(let x=250;x<720;x+=55){
+         c.beginPath();c.moveTo(x,150);c.lineTo(x+160,455);c.stroke();
+         c.beginPath();c.moveTo(x+120,150);c.lineTo(x-40,455);c.stroke();
+       }
+
+       // White flank spot with brown centre.
+       c.fillStyle=orangeStoryPalette[4];
+       c.beginPath();c.ellipse(455,245,68,42,-.08,0,Math.PI*2);c.fill();
+       c.fillStyle=orangeStoryPalette[5];
+       c.beginPath();c.ellipse(455,245,37,22,-.08,0,Math.PI*2);c.fill();
+
+       // Gill line.
+       c.strokeStyle='rgba(110,63,32,.32)';
+       c.lineWidth=4;
+       c.beginPath();c.arc(680,305,92,-1.25,1.18);c.stroke();
+       drawTemplateEye(c,'orange_story');
+     }
+     c.restore();compose(part);return;
+   }
+
+   if(id==='flatgreen' || id==='flatgreen_blank'){
+     c.fillStyle=flatGreenPalette[0];c.fillRect(0,0,W,H);
+     if(id==='flatgreen'){
+       const gg=c.createLinearGradient(130,120,820,430);
+       gg.addColorStop(0,flatGreenPalette[4]);
+       gg.addColorStop(.42,flatGreenPalette[0]);
+       gg.addColorStop(1,flatGreenPalette[1]);
+       c.fillStyle=gg;c.fillRect(0,0,W,H);
+
+       // Subtle mottled skin, not a striped fish.
+       c.globalAlpha=.16;
+       c.fillStyle=flatGreenPalette[2];
+       for(let i=0;i<42;i++){
+         const x=180+((i*83)%610), y=220+((i*47)%165);
+         c.beginPath();c.ellipse(x,y,10+(i%4)*4,4+(i%3)*3,(i%7)*.18,0,Math.PI*2);c.fill();
+       }
+       c.globalAlpha=1;
+
+       // Soft head/gill transition.
+       c.strokeStyle='rgba(77,75,39,.28)';c.lineWidth=4;
+       c.beginPath();c.arc(690,302,92,-1.25,1.2);c.stroke();
+       drawTemplateEye(c,'flatgreen');
+     }
+     c.restore();compose(part);return;
+   }
+   if(id==='storyblue' || id==='storyblue_blank'){
+     c.fillStyle=storyBluePalette[0];c.fillRect(0,0,W,H);
+
+     if(id==='storyblue'){
+       // Darker posterior field.
+       const grad=c.createLinearGradient(420,0,820,0);
+       grad.addColorStop(0,storyBluePalette[0]);
+       grad.addColorStop(.6,storyBluePalette[1]);
+       grad.addColorStop(1,storyBluePalette[2]);
+       c.fillStyle=grad;
+       c.fillRect(360,70,520,470);
+
+       // Soft head area.
+       const hg=c.createRadialGradient(240,270,30,240,270,260);
+       hg.addColorStop(0,'#45c9d7');
+       hg.addColorStop(1,'#25b7ca');
+       c.fillStyle=hg;
+       c.fillRect(100,90,360,420);
+
+       // Scale pattern on body, subtle and tactile.
+       c.strokeStyle='rgba(14,101,116,.34)';
+       c.lineWidth=4;
+       for(let row=0;row<5;row++){
+         const y=185+row*56;
+         const offset=(row%2)*28;
+         for(let x=390+offset;x<690;x+=56){
+           c.beginPath();
+           c.arc(x,y,26,0,Math.PI);
+           c.stroke();
+         }
+       }
+
+       // Small cheek/gill curve.
+       c.strokeStyle='rgba(12,85,99,.40)';
+       c.lineWidth=5;
+       c.beginPath();
+       c.arc(330,300,82,-1.1,1.1);
+       c.stroke();
+       drawTemplateEye(c,'storyblue');
+     }
+     c.restore();
+     compose(part);
+     return;
+   }
+   if(id==='classic'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     [265,470,675].forEach((x,i)=>{c.fillStyle=palette[(i+1)%palette.length];c.fillRect(x,75,70,450)})
+   } else if(id==='wide'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     [300,565].forEach((x,i)=>{c.fillStyle=palette[i+1];c.fillRect(x,70,125,465)})
+   } else if(id==='vertical'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     for(let i=0;i<6;i++){c.fillStyle=palette[(i+1)%palette.length];c.fillRect(185+i*110,60,64,480)}
+   } else if(id==='eye'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     c.fillStyle=palette[2];c.fillRect(690,70,64,465)
+   } else if(id==='diagonal'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     c.lineWidth=82;
+     for(let i=-3;i<8;i++){c.strokeStyle=palette[(i+4)%palette.length];c.beginPath();c.moveTo(80+i*130,45);c.lineTo(320+i*130,555);c.stroke()}
+   } else if(['picasso','kohaku','sanke','showa'].includes(id)){
+     c.fillStyle=palette[1];c.fillRect(0,0,W,H);
+     const spots=[[280,230,105,65,.18],[455,350,135,80,-.18],[620,225,95,60,.30],[750,355,70,45,-.28]];
+     spots.forEach((s,i)=>{c.fillStyle=palette[i%palette.length];c.beginPath();c.ellipse(s[0],s[1],s[2],s[3],s[4],0,Math.PI*2);c.fill()});
+     if(['sanke','showa'].includes(id)){
+       [[385,330,45,28],[665,300,50,30]].forEach(s=>{c.fillStyle=palette[2];c.beginPath();c.ellipse(s[0],s[1],s[2],s[3],0,0,Math.PI*2);c.fill()})
+     }
+   }
+ } else {
+   if(id==='orange_story' || id==='orange_story_blank'){
+     c.fillStyle=orangeStoryPalette[3];c.fillRect(0,0,W,H);
+     if(id==='orange_story'){
+       const tg=c.createLinearGradient(190,300,780,300);
+       tg.addColorStop(0,'#6d596f');
+       tg.addColorStop(1,'#4c3f52');
+       c.fillStyle=tg;c.fillRect(0,0,W,H);
+       c.strokeStyle='rgba(205,190,210,.22)';c.lineWidth=5;
+       for(let i=0;i<12;i++){c.beginPath();c.moveTo(210,300);c.lineTo(760,130+i*31);c.stroke()}
+     }
+   } else if(id==='flatgreen' || id==='flatgreen_blank'){
+     c.fillStyle=flatGreenPalette[2];c.fillRect(0,0,W,H);
+     if(id==='flatgreen'){
+       const fg=c.createLinearGradient(180,300,790,300);
+       fg.addColorStop(0,flatGreenPalette[1]);
+       fg.addColorStop(1,flatGreenPalette[3]);
+       c.fillStyle=fg;c.fillRect(0,0,W,H);
+       c.strokeStyle='rgba(210,205,135,.22)';c.lineWidth=5;
+       for(let i=0;i<10;i++){c.beginPath();c.moveTo(210,300);c.lineTo(760,215+i*18);c.stroke()}
+     }
+   } else if(id==='storyblue' || id==='storyblue_blank'){
+     c.fillStyle=storyBluePalette[2];c.fillRect(0,0,W,H);
+     if(id==='storyblue'){
+       const tg=c.createLinearGradient(180,300,760,300);
+       tg.addColorStop(0,storyBluePalette[1]);
+       tg.addColorStop(.5,storyBluePalette[2]);
+       tg.addColorStop(1,storyBluePalette[3]);
+       c.fillStyle=tg;c.fillRect(0,0,W,H);
+
+       // soft fin-ray strokes
+       c.strokeStyle='rgba(36,154,175,.32)';
+       c.lineWidth=6;
+       for(let i=0;i<8;i++){
+         c.beginPath();
+         c.moveTo(210,300);
+         c.lineTo(680,130+i*42);
+         c.stroke();
+       }
+     }
+   } else if(['classic','wide','vertical'].includes(id)){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     [315,450,585,700].forEach((x,i)=>{c.fillStyle=palette[(i+1)%palette.length];c.fillRect(x,55,68,500)})
+   } else if(id==='diagonal'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);
+     c.lineWidth=82;
+     for(let i=-2;i<7;i++){c.strokeStyle=palette[(i+3)%palette.length];c.beginPath();c.moveTo(150+i*125,55);c.lineTo(400+i*125,555);c.stroke()}
+   } else if(id==='eye'){
+     c.fillStyle=palette[0];c.fillRect(0,0,W,H);c.fillStyle=palette[2];c.fillRect(470,60,95,500)
+   } else if(['picasso','kohaku','sanke','showa'].includes(id)){
+     c.fillStyle=palette[1];c.fillRect(0,0,W,H);
+     [[390,230,90,62],[545,370,118,76],[660,225,78,50]].forEach((s,i)=>{c.fillStyle=palette[i%palette.length];c.beginPath();c.ellipse(s[0],s[1],s[2],s[3],.18*i,0,Math.PI*2);c.fill()})
+   }
+ }
+ c.restore();
+ compose(part);
+}
+
+function compose(part){
+ const c=layers[part].tex.getContext('2d');
+ c.clearRect(0,0,W,H);
+ c.fillStyle='#f5f1e7';c.fillRect(0,0,W,H);
+ // First paint a guaranteed species-colour backing over the ENTIRE texture.
+ // The visible template is drawn on top. This keeps rounded noses, backs and
+ // bellies fully covered even where the 3D mesh extends beyond the 2D contour.
+ let backing='#d8d8d8';
+ if(speciesEl.value==='storyblue') backing=storyBluePalette[0];
+ else if(speciesEl.value==='flatgreen') backing=flatGreenPalette[0];
+ else if(speciesEl.value==='orange_story') backing=orangeStoryPalette[0];
+ else if(speciesEl.value==='clown') backing=palette[0]||'#e8892f';
+ else if(speciesEl.value==='butterfly') backing=palette[0]||'#e0b83e';
+ else if(speciesEl.value==='koi') backing=palette[0]||'#f0eee4';
+ c.fillStyle=backing;c.fillRect(0,0,W,H);
+
+ c.drawImage(layers[part].base,0,0);
+ c.drawImage(layers[part].paint,0,0);
+
+ if(storybookMode){
+   applyPainterlyTexture(c.canvas, part==='body' ? .035 : .025);
+ }
+
+ // Extend edge colours a few pixels outward around the body silhouette.
+ // This prevents white/transparent sampling at the mirrored seam.
+ if(part==='body' || part==='tail'){
+   const source=document.createElement('canvas');
+   source.width=W;source.height=H;
+   const sc=source.getContext('2d');sc.drawImage(c.canvas,0,0);
+   const bleed=part==='tail'?6:4;
+   const offsets=[
+     [-bleed,0],[bleed,0],[0,-bleed],[0,bleed],
+     [-bleed+1,-bleed+1],[bleed-1,-bleed+1],
+     [-bleed+1,bleed-1],[bleed-1,bleed-1]
+   ];
+   c.save();
+   c.globalCompositeOperation='destination-over';
+   for(const [dx,dy] of offsets)c.drawImage(source,dx,dy);
+   c.restore();
+   c.drawImage(source,0,0);
+ }
+ if(window.bodyTexture&&part==='body')window.bodyTexture.needsUpdate=true;
+ if(window.tailTexture&&part==='tail')window.tailTexture.needsUpdate=true;
+ if(active===part)refresh();
+}
+
+function refresh(){
+ ctx.clearRect(0,0,W,H);ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+ ctx.drawImage(layers[active].tex,0,0);
+ ctx.save();ctx.strokeStyle='#202020';ctx.lineWidth=5;ctx.stroke(pathFor(active));
+ if(active==='body'){
+   ctx.font='600 17px system-ui';ctx.fillStyle='#425b63';
+   ctx.fillText('STAARTAANZET',120,325);
+   ctx.fillText('NEUS',815,325);
+   ctx.fillText('bovenrand → midden rug',390,125);
+   ctx.fillText('onderrand → midden buik',385,500);
+ }
+ ctx.restore();
+ $('#bodyTab').classList.toggle('active',active==='body');
+ $('#tailTab').classList.toggle('active',active==='tail');
+ $('#badge').textContent=active==='body'?'Volledige zijkant van de romp':'Volledige staart';
+}
+
+function saveState(){
+ const c=layers[active].paint.getContext('2d');
+ history[active].push(c.getImageData(0,0,W,H));
+ if(history[active].length>30)history[active].shift();
+ redoHistory[active]=[];
+}
+function restoreUndo(){
+ if(!history[active].length)return;
+ const c=layers[active].paint.getContext('2d');
+ redoHistory[active].push(c.getImageData(0,0,W,H));
+ c.putImageData(history[active].pop(),0,0);
+ compose(active);
+}
+function restoreRedo(){
+ if(!redoHistory[active].length)return;
+ const c=layers[active].paint.getContext('2d');
+ history[active].push(c.getImageData(0,0,W,H));
+ c.putImageData(redoHistory[active].pop(),0,0);
+ compose(active);
+}
+function pnt(e){
+ const r=editor.getBoundingClientRect();
+ return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}
+}
+function paint(a,b){
+ const c=layers[active].paint.getContext('2d');
+ c.save();c.clip(pathFor(active));c.lineWidth=+sizeEl.value;c.lineCap='round';c.lineJoin='round';
+ if(tool==='eraser'){c.globalCompositeOperation='destination-out';c.strokeStyle='#000'}else{c.globalCompositeOperation='source-over';c.strokeStyle=colorEl.value}
+ c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke();c.restore();compose(active)
+}
+
+function hexToRgb(hex){
+ const n=parseInt(hex.slice(1),16);
+ return [(n>>16)&255,(n>>8)&255,n&255];
+}
+function floodFillAt(x,y){
+ const ix=Math.max(0,Math.min(W-1,Math.round(x)));
+ const iy=Math.max(0,Math.min(H-1,Math.round(y)));
+
+ // Only fill inside the currently selected fish silhouette.
+ const test=document.createElement('canvas');
+ test.width=W;test.height=H;
+ const tc=test.getContext('2d');
+ tc.fillStyle='#fff';tc.fill(pathFor(active));
+ if(tc.getImageData(ix,iy,1,1).data[3]===0)return;
+
+ saveState();
+
+ // Read the rendered texture so fill follows visible template regions.
+ const source=layers[active].tex.getContext('2d').getImageData(0,0,W,H);
+ const d=source.data;
+ const si=(iy*W+ix)*4;
+ const target=[d[si],d[si+1],d[si+2],d[si+3]];
+ const fill=hexToRgb(colorEl.value);
+ const pc=layers[active].paint.getContext('2d');
+ const paintImg=pc.getImageData(0,0,W,H);
+ const pd=paintImg.data;
+
+ const mask=tc.getImageData(0,0,W,H).data;
+ const seen=new Uint8Array(W*H);
+ const stack=[ix,iy];
+ const tolerance=28;
+
+ function similar(i){
+   return Math.abs(d[i]-target[0])<=tolerance &&
+          Math.abs(d[i+1]-target[1])<=tolerance &&
+          Math.abs(d[i+2]-target[2])<=tolerance &&
+          d[i+3]>0;
+ }
+
+ while(stack.length){
+   const cy=stack.pop(),cx=stack.pop();
+   if(cx<0||cx>=W||cy<0||cy>=H)continue;
+   const pi=cy*W+cx;
+   if(seen[pi])continue;
+   seen[pi]=1;
+   if(mask[pi*4+3]===0)continue;
+   const di=pi*4;
+   if(!similar(di))continue;
+
+   pd[di]=fill[0];pd[di+1]=fill[1];pd[di+2]=fill[2];pd[di+3]=255;
+
+   stack.push(cx+1,cy,cx-1,cy,cx,cy+1,cx,cy-1);
+ }
+ pc.putImageData(paintImg,0,0);
+ compose(active);
+}
+
+editor.addEventListener('pointerdown',e=>{
+ const p=pnt(e);
+ if(tool==='fill'){
+   floodFillAt(p.x,p.y);
+   return;
+ }
+ saveState();
+ drawing=true;last=p;
+ editor.setPointerCapture(e.pointerId)
+});
+editor.addEventListener('pointermove',e=>{if(!drawing)return;const p=pnt(e);paint(last,p);last=p});
+editor.addEventListener('pointerup',()=>{drawing=false;last=null});
+editor.addEventListener('pointercancel',()=>{drawing=false;last=null});
+
+document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>{
+ tool=b.dataset.tool;
+ document.querySelectorAll('.tool').forEach(x=>x.classList.remove('active'));
+ b.classList.add('active')
+});
+
+$('#undo').onclick=restoreUndo;
+$('#redo').onclick=restoreRedo;
+$('#clearPaint').onclick=()=>{saveState();layers[active].paint.getContext('2d').clearRect(0,0,W,H);compose(active)};
+$('#bodyTab').onclick=()=>{active='body';refresh()};
+$('#tailTab').onclick=()=>{active='tail';refresh()};
+$('#newColors').onclick=()=>{
+ if(speciesEl.value==='storyblue'){
+   const bank=storyBlueBanks[Math.floor(Math.random()*storyBlueBanks.length)];
+   storyBluePalette=bank.slice();
+ }else if(speciesEl.value==='flatgreen'){
+   const banks=[
+     ['#a9ad47','#8d9238','#62632b','#4b4726','#d8d99b','#23261b'],
+     ['#9ba95b','#778640','#566039','#3e4730','#d2d7a0','#20281f'],
+     ['#b0a94c','#8b8134','#625a2c','#463f25','#ddd49a','#28251b']
+   ];
+   flatGreenPalette=banks[Math.floor(Math.random()*banks.length)].slice();
+ }else if(speciesEl.value==='orange_story'){
+   const banks=[
+     ['#e68a28','#f1a13a','#cf7021','#5b4a5f','#efe7dd','#8c4d3f','#2f2625'],
+     ['#d97824','#ee9c36','#bd6421','#625166','#f2e7dc','#95584a','#332928'],
+     ['#ee9630','#f5ad46','#d77b27','#55465b','#f4ede5','#855044','#2d2423']
+   ];
+   orangeStoryPalette=banks[Math.floor(Math.random()*banks.length)].slice();
+ }else{
+   shufflePalette();
+ }
+ drawBase('body');drawBase('tail');
+ if(window.buildFish) window.buildFish();
+ refresh();
+};
+patternEl.onchange=()=>applyCurrentSelection({resetPaint:true});
+
+speciesEl.onchange=()=>{
+  populatePatterns();
+  if(speciesEl.value==='storyblue') patternEl.value='storyblue';
+  if(speciesEl.value==='flatgreen') patternEl.value='flatgreen';
+  if(speciesEl.value==='orange_story') patternEl.value='orange_story';
+  applyCurrentSelection({resetPaint:true});
+};
+
+$('#storybookStyle').onclick=()=>{
+  storybookMode=!storybookMode;
+  $('#storybookStyle').classList.toggle('active',storybookMode);
+  $('#storybookStyle').textContent=storybookMode?'📖 Prentenboekstijl: aan':'📖 Prentenboekstijl';
+
+  // Warmer, softer underwater scene.
+  if(scene){
+    scene.background=new THREE.Color(storybookMode?0x295e68:0x143f4c);
+    scene.fog=new THREE.Fog(storybookMode?0x295e68:0x143f4c,storybookMode?9:12,storybookMode?25:32);
+    if(window.storyLights){
+      window.storyLights.hemi.intensity=storybookMode?2.35:2.0;
+      window.storyLights.dl.intensity=storybookMode?1.55:2.0;
+      window.storyLights.fillA.intensity=storybookMode?1.15:.8;
+      window.storyLights.fillB.intensity=storybookMode?.95:.7;
+    }
+  }
+
+  // Re-render textures and rebuild the fish so material/eyes/body shape update.
+  compose('body');compose('tail');
+  if(window.buildFish)window.buildFish();
+};
+
+['#ffffff','#17191c','#ef7b21','#de4d38','#f1d24a','#3d93c5','#43a06d','#8c60b0','#e8a6bc','#7c5a42','#57c3c7','#d7d1c6'].forEach(c=>{
+ const b=document.createElement('button');b.className='sw';b.style.background=c;b.onclick=()=>colorEl.value=c;$('#swatches').appendChild(b)
+});
+
+populatePatterns();shufflePalette();drawBase('body');drawBase('tail');
+setTimeout(()=>{const s=document.querySelector('#selectionStatus');if(s){s.textContent=`${speciesEl.options[speciesEl.selectedIndex]?.textContent||''} · ${patternEl.options[patternEl.selectedIndex]?.textContent||''}`;}},0);
+
+// -------- THREE.JS --------
+const preview=$('#preview');
+let THREE,scene,camera,renderer,fish,tailMesh,drag=false,lx=0,ly=0,yaw=.2,pitch=.03,swimming=false;
+
+try{
+ THREE=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/+esm');
+ scene=new THREE.Scene();scene.background=new THREE.Color(0x143f4c);scene.fog=new THREE.Fog(0x143f4c,12,32);
+ camera=new THREE.PerspectiveCamera(45,1,.1,100);camera.position.set(0,0,10);
+ renderer=new THREE.WebGLRenderer({canvas:preview,antialias:true});
+ renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.6));
+ const hemi=new THREE.HemisphereLight(0xe9f8f5,0x355542,2.0);
+ scene.add(hemi);
+ const dl=new THREE.DirectionalLight(0xfff1d6,2.0);
+ dl.position.set(5,8,7);
+ scene.add(dl);
+
+ // Soft fill lights for a warm miniature / storybook feel.
+ const fillA=new THREE.PointLight(0xffd7a3,0.8,25);
+ fillA.position.set(-5,3,5);scene.add(fillA);
+ const fillB=new THREE.PointLight(0x7fd5d8,0.7,20);
+ fillB.position.set(3,-4,4);scene.add(fillB);
+ window.storyLights={hemi,dl,fillA,fillB};
+
+ window.bodyTexture=new THREE.CanvasTexture(layers.body.tex);
+ window.bodyTexture.colorSpace=THREE.SRGBColorSpace;
+ window.bodyTexture.wrapS=window.bodyTexture.wrapT=THREE.ClampToEdgeWrapping;
+
+ window.tailTexture=new THREE.CanvasTexture(layers.tail.tex);
+ window.tailTexture.colorSpace=THREE.SRGBColorSpace;
+ window.tailTexture.wrapS=window.tailTexture.wrapT=THREE.ClampToEdgeWrapping;
+
+ // Universal silhouette-to-mesh mapping.
+ // The current 2D side template is rasterised once; for every X-position
+ // we detect the actual top and bottom edge of the fish silhouette.
+ // The full 3D half-body is then mapped between those two contour points.
+ // This means different fish shapes can use the same mapping algorithm.
+
+ function buildContourMap(){
+   const mask=document.createElement('canvas');
+   mask.width=W; mask.height=H;
+   const m=mask.getContext('2d',{willReadFrequently:true});
+   m.clearRect(0,0,W,H);
+   m.fillStyle='#fff';
+   m.fill(bodyPath());
+
+   const img=m.getImageData(0,0,W,H).data;
+   const top=new Int16Array(W);
+   const bottom=new Int16Array(W);
+   top.fill(-1); bottom.fill(-1);
+
+   let minX=W-1,maxX=0;
+   for(let x=0;x<W;x++){
+     let t=-1,b=-1;
+     for(let y=0;y<H;y++){
+       if(img[(y*W+x)*4+3]>20){t=y;break}
+     }
+     if(t>=0){
+       for(let y=H-1;y>=0;y--){
+         if(img[(y*W+x)*4+3]>20){b=y;break}
+       }
+       top[x]=t; bottom[x]=b;
+       if(x<minX)minX=x;
+       if(x>maxX)maxX=x;
+     }
+   }
+
+   // Fill occasional empty columns caused by antialiasing / nose tip.
+   for(let x=minX;x<=maxX;x++){
+     if(top[x]<0){
+       let l=x-1,r=x+1;
+       while(l>=minX && top[l]<0)l--;
+       while(r<=maxX && top[r]<0)r++;
+       const ref=(l>=minX)?l:r;
+       if(ref>=minX && ref<=maxX){top[x]=top[ref];bottom[x]=bottom[ref]}
+     }
+   }
+   return {top,bottom,minX,maxX};
+ }
+
+ let contourMap=buildContourMap();
+
+ function buildTailContourMap(){
+   const mask=document.createElement('canvas');
+   mask.width=W;mask.height=H;
+   const m=mask.getContext('2d',{willReadFrequently:true});
+   m.clearRect(0,0,W,H);
+   m.fillStyle='#fff';
+   m.fill(tailPath());
+
+   const img=m.getImageData(0,0,W,H).data;
+   const top=new Int16Array(W);
+   const bottom=new Int16Array(W);
+   top.fill(-1);bottom.fill(-1);
+
+   let minX=W-1,maxX=0;
+   for(let x=0;x<W;x++){
+     let t=-1,b=-1;
+     for(let y=0;y<H;y++){
+       if(img[(y*W+x)*4+3]>20){t=y;break}
+     }
+     if(t>=0){
+       for(let y=H-1;y>=0;y--){
+         if(img[(y*W+x)*4+3]>20){b=y;break}
+       }
+       top[x]=t;bottom[x]=b;
+       if(x<minX)minX=x;
+       if(x>maxX)maxX=x;
+     }
+   }
+
+   for(let x=minX;x<=maxX;x++){
+     if(top[x]<0){
+       let l=x-1,r=x+1;
+       while(l>=minX&&top[l]<0)l--;
+       while(r<=maxX&&top[r]<0)r++;
+       const ref=(l>=minX)?l:r;
+       if(ref>=minX&&ref<=maxX){top[x]=top[ref];bottom[x]=bottom[ref]}
+     }
+   }
+   return {top,bottom,minX,maxX};
+ }
+
+ let tailContourMap=buildTailContourMap();
+
+ function tailContourUV(longitudinal, vertical){
+   const cm=tailContourMap;
+   const px=cm.minX + longitudinal*(cm.maxX-cm.minX);
+   const xi=Math.max(cm.minX,Math.min(cm.maxX,Math.round(px)));
+
+   let top=cm.top[xi],bottom=cm.bottom[xi];
+   if(top<0||bottom<0){top=H*.25;bottom=H*.75}
+
+   const height=Math.max(2,bottom-top);
+   const inset=Math.min(12,Math.max(6,height*.04));
+   top+=inset;bottom-=inset;
+
+   const py=top + vertical*(bottom-top);
+   const u=Math.max(.001,Math.min(.999,px/W));
+   // Tail artwork is authored root -> outer edge already, so unlike the blue
+   // body it must NOT be flipped longitudinally.
+   return [
+     u,
+     1-Math.max(.001,Math.min(.999,py/H))
+   ];
+ }
+
+ function contourUV(longitudinal, vertical){
+   // longitudinal: 0 tail base -> 1 nose
+   // vertical:     0 top/rug seam -> .5 side centre -> 1 belly seam
+   const cm=contourMap;
+   const px=cm.minX + longitudinal*(cm.maxX-cm.minX);
+   const xi=Math.max(cm.minX,Math.min(cm.maxX,Math.round(px)));
+
+   let top=cm.top[xi], bottom=cm.bottom[xi];
+   if(top<0 || bottom<0){ top=H*.25; bottom=H*.75; }
+
+   // Sample slightly INSIDE the silhouette so antialiased black/white outline
+   // pixels are never stretched over the 3D seam.
+   const height=Math.max(2,bottom-top);
+   const inset=Math.min(14,Math.max(7,height*.045));
+   top+=inset; bottom-=inset;
+
+   const py=top + vertical*(bottom-top);
+   let u=Math.max(.001,Math.min(.999,px/W));
+   // Blue story fish source artwork was authored in the opposite longitudinal direction.
+   // Flip only this species so head/tail orientation matches the intended template.
+   if(speciesEl.value==='storyblue') u=1-u;
+
+   // Canvas Y is top->bottom, WebGL V is bottom->top.
+   const v=1-Math.max(.001,Math.min(.999,py/H));
+   return [u,v];
+ }
+
+ function makeBodyGeometry(sx,sy,sz){
+   const segAround=80,segLong=64;
+   const pos=[],uv=[],idx=[];
+
+   // Build two halves. Each half uses the complete side template.
+   // The halves meet exactly at the top (rug) and bottom (buik) seam.
+   for(let side=0;side<2;side++){
+     const baseVertex=pos.length/3;
+     const sign=side===0?1:-1;
+
+     for(let iy=0;iy<=segAround;iy++){
+       const q=iy/segAround;              // 0 rug seam, .5 side, 1 belly seam
+       const ang=(q-.5)*Math.PI;
+       const yNorm=-Math.sin(ang);
+       const zNorm=Math.cos(ang)*sign;
+
+       for(let ix=0;ix<=segLong;ix++){
+         const u=ix/segLong;              // 0 tail base, 1 nose
+         const xNorm=-1+2*u;
+
+         // Ellipsoid cross-section.
+         const radial=Math.sqrt(Math.max(0,1-xNorm*xNorm));
+         const x=sx*xNorm;
+         const y=sy*yNorm*radial;
+         const z=sz*zNorm*radial;
+
+         pos.push(x,y,z);
+
+         // CRITICAL CHANGE:
+         // map to the TRUE curved silhouette edge at this exact X position.
+         const mapped=contourUV(u,q);
+         uv.push(mapped[0],mapped[1]);
+       }
+     }
+
+     for(let iy=0;iy<segAround;iy++){
+       for(let ix=0;ix<segLong;ix++){
+         const a=baseVertex+iy*(segLong+1)+ix;
+         const b=a+1,c=a+(segLong+1),d=c+1;
+         if(side===0) idx.push(a,c,b,b,c,d);
+         else idx.push(a,b,c,b,d,c);
+       }
+     }
+   }
+
+   const g=new THREE.BufferGeometry();
+   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+   g.setIndex(idx);
+   g.computeVertexNormals();
+   return g;
+ }
+
+ window.buildFish=function(){
+   if(fish)scene.remove(fish);
+   fish=new THREE.Group();
+   fish.name='DorcasFish';
+   fish.userData.species=speciesEl.value;
+   const [sx,sy,sz]=dims[speciesEl.value];
+
+   const bodyMat=new THREE.MeshStandardMaterial({map:window.bodyTexture,color:0xffffff,roughness:storybookMode?.88:.56,metalness:0});
+   const body=new THREE.Mesh(makeBodyGeometry(sx,sy,sz),bodyMat);
+   body.name='Body';
+   if(storybookMode){body.scale.set(1.0,1.04,1.06)}
+   fish.add(body);
+
+   // Species-specific tail geometry + universal contour-mapped UVs.
+   // The mesh shape differs per fish species, but the UVs are generated
+   // automatically from that species' actual 2D tail silhouette.
+
+   function makeTailGeometry(species,sx){
+     const g=new THREE.BufferGeometry();
+     const x0=-sx-.10; // slight overlap into body to hide seam
+
+     let profile=[];
+     // profile = ordered points from upper root around rear edge to lower root
+     if(species==='clown'){
+       profile=[
+         [x0,.34],
+         [-sx-1.00,.95],
+         [-sx-1.80,1.20],
+         [-sx-2.00,.72],
+         [-sx-2.05,0],
+         [-sx-2.00,-.72],
+         [-sx-1.80,-1.20],
+         [-sx-1.00,-.95],
+         [x0,-.34]
+       ];
+     }else if(species==='butterfly'){
+       profile=[
+         [x0,.30],
+         [-sx-.85,.72],
+         [-sx-1.45,.78],
+         [-sx-1.62,.50],
+         [-sx-1.68,0],
+         [-sx-1.62,-.50],
+         [-sx-1.45,-.78],
+         [-sx-.85,-.72],
+         [x0,-.30]
+       ];
+     }else if(species==='storyblue'){
+       profile=[
+         [x0,.38],[-sx-.95,1.00],[-sx-1.95,1.28],[-sx-1.35,.35],
+         [-sx-1.35,-.35],[-sx-1.95,-1.28],[-sx-.95,-1.00],[x0,-.38]
+       ];
+     }else if(species==='flatgreen'){
+       profile=[
+         [x0,.30],[-sx-.75,.60],[-sx-1.65,.72],[-sx-1.95,.48],
+         [-sx-2.00,0],[-sx-1.95,-.48],[-sx-1.65,-.72],[-sx-.75,-.60],[x0,-.30]
+       ];
+     }else if(species==='orange_story'){
+       profile=[
+         [x0,.36],[-sx-.90,.92],[-sx-1.75,1.18],[-sx-2.00,.88],
+         [-sx-2.05,0],[-sx-2.00,-.88],[-sx-1.75,-1.18],[-sx-.90,-.92],[x0,-.36]
+       ];
+     }else{
+       profile=[
+         [x0,.34],
+         [-sx-1.05,1.08],
+         [-sx-2.15,1.42],
+         [-sx-1.30,.38],
+         [-sx-1.30,-.38],
+         [-sx-2.15,-1.42],
+         [-sx-1.05,-1.08],
+         [x0,-.34]
+       ];
+     }
+
+     // Add centre root as fan origin.
+     const verts=[x0,0,0];
+     const uvs=[];
+     const xs=profile.map(p=>p[0]);
+     const ys=profile.map(p=>p[1]);
+     const xmin=Math.min(...xs),xmax=Math.max(...xs);
+     const ymin=Math.min(...ys),ymax=Math.max(...ys);
+
+     const centerU=tailContourUV(0,0.5);
+     uvs.push(centerU[0],centerU[1]);
+
+     // Convert profile positions to normalized 0..1 bounds, then map through
+     // the actual 2D tail contour.
+     for(const [x,y] of profile){
+       verts.push(x,y,0);
+       const lu=(x-xmax)/(xmin-xmax); // root 0 -> rear 1
+       const lv=(ymax-y)/(ymax-ymin); // top 0 -> bottom 1
+       const mapped=tailContourUV(lu,lv);
+       uvs.push(mapped[0],mapped[1]);
+     }
+
+     const indices=[];
+     for(let i=1;i<profile.length;i++){
+       indices.push(0,i,i+1);
+     }
+
+     g.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));
+     g.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
+     g.setIndex(indices);
+     g.computeVertexNormals();
+     return g;
+   }
+
+   // Rebuild tail contour map whenever species changes, so each tail reads
+   // its own current silhouette.
+   tailContourMap=buildTailContourMap();
+
+   const tailGeo=makeTailGeometry(speciesEl.value,sx);
+   tailMesh=new THREE.Mesh(
+     tailGeo,
+     new THREE.MeshStandardMaterial({
+       map:window.tailTexture,
+       color:0xffffff,
+       side:THREE.DoubleSide,
+       roughness:storybookMode?.90:.58
+     })
+   );
+   tailMesh.name='Tail';
+   fish.add(tailMesh);
+
+   const eyeMat=new THREE.MeshStandardMaterial({color:0x080808});
+   // Eyes: the white of the eye belongs to the 2D template.
+   // In 3D we only add a small dark pupil, avoiding protruding white spheres.
+   const pupilMat=new THREE.MeshStandardMaterial({color:0x090909,roughness:.72});
+   for(const sign of [1,-1]){
+     let ex=sx*.76, ey=sy*.22;
+     if(speciesEl.value==='storyblue'){ex=sx*.69;ey=sy*.20}
+     else if(speciesEl.value==='flatgreen'){ex=sx*.73;ey=sy*.48}
+     else if(speciesEl.value==='orange_story'){ex=sx*.75;ey=sy*.22}
+
+     const pupilRadius=.055;
+
+     const pupil=new THREE.Mesh(
+       new THREE.SphereGeometry(pupilRadius,16,12),
+       pupilMat
+     );
+     pupil.position.set(ex,ey,sign*(sz*1.015));
+     fish.add(pupil);
+   }
+
+   if(speciesEl.value==='storyblue'){
+     const finMat=new THREE.MeshStandardMaterial({color:0x116779,side:THREE.DoubleSide,roughness:.90});
+     // dorsal fin
+     const dg=new THREE.BufferGeometry();
+     dg.setAttribute('position',new THREE.Float32BufferAttribute([
+       -.35,sy*.92,0,
+       .25,sy*1.55,0,
+       .75,sy*.88,0
+     ],3));
+     dg.setIndex([0,1,2]);dg.computeVertexNormals();
+     const df=new THREE.Mesh(dg,finMat);fish.add(df);
+
+     // pectoral fins on both sides
+     for(const sign of [1,-1]){
+       const pg=new THREE.BufferGeometry();
+       pg.setAttribute('position',new THREE.Float32BufferAttribute([
+         .30,-.02,sign*sz*.82,
+         -.28,-.20,sign*(sz*1.45),
+         .05,-.62,sign*(sz*.92)
+       ],3));
+       pg.setIndex([0,1,2]);pg.computeVertexNormals();
+       fish.add(new THREE.Mesh(pg,finMat));
+     }
+   }
+
+
+   if(speciesEl.value==='flatgreen'){
+     const finMat=new THREE.MeshStandardMaterial({color:0x514d2b,side:THREE.DoubleSide,roughness:.94});
+
+     // Two low dorsal fins, matching the elongated reference silhouette.
+     const fins=[
+       [-1.55,sy*.86,-.45,sy*1.45,.20,sy*.92],
+       [.10,sy*.92,.55,sy*1.42,1.20,sy*.92]
+     ];
+     for(const f of fins){
+       const g=new THREE.BufferGeometry();
+       g.setAttribute('position',new THREE.Float32BufferAttribute([f[0],f[1],0,f[2],f[3],0,f[4],f[5],0],3));
+       g.setIndex([0,1,2]);g.computeVertexNormals();
+       fish.add(new THREE.Mesh(g,finMat));
+     }
+
+     // Long low pectoral fins along both sides.
+     for(const sign of [1,-1]){
+       const g=new THREE.BufferGeometry();
+       g.setAttribute('position',new THREE.Float32BufferAttribute([
+         -.85,-.10,sign*sz*.78,
+         -2.05,-.42,sign*(sz*1.20),
+         -.35,-.36,sign*(sz*.98)
+       ],3));
+       g.setIndex([0,1,2]);g.computeVertexNormals();
+       fish.add(new THREE.Mesh(g,finMat));
+     }
+   }
+
+
+   if(speciesEl.value==='orange_story'){
+     const finMat=new THREE.MeshStandardMaterial({color:0x5b4a5f,side:THREE.DoubleSide,roughness:.94});
+
+     // Tall main dorsal fin + smaller rear dorsal fin
+     const dorsalSets=[
+       [-.65,sy*.90,-.10,sy*1.65,.65,sy*.92],
+       [-1.55,sy*.80,-1.25,sy*1.12,-.85,sy*.82]
+     ];
+     for(const f of dorsalSets){
+       const g=new THREE.BufferGeometry();
+       g.setAttribute('position',new THREE.Float32BufferAttribute([f[0],f[1],0,f[2],f[3],0,f[4],f[5],0],3));
+       g.setIndex([0,1,2]);g.computeVertexNormals();
+       fish.add(new THREE.Mesh(g,finMat));
+     }
+
+     // Side / pectoral fins
+     for(const sign of [1,-1]){
+       const g=new THREE.BufferGeometry();
+       g.setAttribute('position',new THREE.Float32BufferAttribute([
+         .05,-.08,sign*sz*.84,
+         -.70,-.20,sign*(sz*1.42),
+         -.28,-.55,sign*(sz*.96)
+       ],3));
+       g.setIndex([0,1,2]);g.computeVertexNormals();
+       fish.add(new THREE.Mesh(g,finMat));
+     }
+
+     // Small ventral fins
+     for(const xpos of [-.95,.25]){
+       const g=new THREE.BufferGeometry();
+       g.setAttribute('position',new THREE.Float32BufferAttribute([
+         xpos,-sy*.88,0,
+         xpos+.22,-sy*1.35,.10,
+         xpos+.52,-sy*.90,0
+       ],3));
+       g.setIndex([0,1,2]);g.computeVertexNormals();
+       fish.add(new THREE.Mesh(g,finMat));
+     }
+   }
+
+   fish.rotation.set(pitch,yaw,0);
+   scene.add(fish);
+ };
+ window.buildFish();
+
+ preview.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;preview.setPointerCapture(e.pointerId)});
+ preview.addEventListener('pointermove',e=>{
+   if(!drag||swimming)return;
+   const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
+   yaw+=dx*.009;pitch=Math.max(-.8,Math.min(.8,pitch+dy*.006));
+   fish.rotation.y=yaw;fish.rotation.x=pitch
+ });
+ preview.addEventListener('pointerup',()=>drag=false);
+
+ $('#swim').onclick=()=>swimming=true;
+ $('#stop').onclick=()=>{swimming=false;fish.position.set(0,0,0)};
+
+ $('#exportGLB').onclick=async()=>{
+   if(!fish)return;
+   const btn=$('#exportGLB');
+   const oldText=btn.textContent;
+   btn.disabled=true;
+   btn.textContent='Exporteren…';
+   try{
+     // GLTFExporter embeds the current canvas textures into one portable GLB.
+     const {GLTFExporter}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/exporters/GLTFExporter.js/+esm');
+
+     const oldPos=fish.position.clone();
+     const oldRot=fish.rotation.clone();
+     const oldTailRot=tailMesh?tailMesh.rotation.clone():null;
+
+     // Export a neutral model; swimming motion is added by the simulator.
+     fish.position.set(0,0,0);
+     fish.rotation.set(0,0,0);
+     if(tailMesh)tailMesh.rotation.set(0,0,0);
+     fish.updateMatrixWorld(true);
+
+     const exporter=new GLTFExporter();
+     const result=await exporter.parseAsync(fish,{binary:true,onlyVisible:true});
+     const blob=new Blob([result],{type:'model/gltf-binary'});
+     const url=URL.createObjectURL(blob);
+     const a=document.createElement('a');
+     const safePattern=(patternEl.value||'custom').replace(/[^a-z0-9_-]+/gi,'-');
+     a.href=url;
+     a.download=`fish_${speciesEl.value}_${safePattern}.glb`;
+     document.body.appendChild(a);
+     a.click();
+     a.remove();
+     setTimeout(()=>URL.revokeObjectURL(url),1500);
+
+     fish.position.copy(oldPos);
+     fish.rotation.copy(oldRot);
+     if(tailMesh&&oldTailRot)tailMesh.rotation.copy(oldTailRot);
+     btn.textContent='✓ GLB geëxporteerd';
+     setTimeout(()=>btn.textContent=oldText,1400);
+   }catch(err){
+     console.error(err);
+     alert('Exporteren is niet gelukt. Open de studio in Chrome/Edge met internetverbinding en probeer opnieuw.');
+     btn.textContent=oldText;
+   }finally{
+     btn.disabled=false;
+   }
+ };
+
+ const clock=new THREE.Clock();
+ function animate(){
+   const r=preview.getBoundingClientRect();
+   renderer.setSize(Math.max(1,r.width|0),Math.max(1,r.height|0),false);
+   camera.aspect=r.width/r.height;camera.updateProjectionMatrix();
+
+   const t=clock.getElapsedTime();
+   if(swimming&&fish){
+     if(storybookMode){
+       fish.position.x=Math.sin(t*.38)*2.3;
+       fish.position.y=Math.sin(t*.75)*.28 + Math.sin(t*.19)*.12;
+       fish.rotation.y=Math.PI+Math.sin(t*.42)*.22;
+       fish.rotation.z=Math.sin(t*.55)*.035;
+       fish.rotation.x=Math.sin(t*.31)*.025;
+       if(tailMesh)tailMesh.rotation.y=Math.sin(t*5.2)*.26 + Math.sin(t*2.2)*.05;
+     }else{
+       fish.position.x=Math.sin(t*.6)*2.7;
+       fish.position.y=Math.sin(t*1.2)*.35;
+       fish.rotation.y=Math.PI+Math.sin(t*.6)*.3;
+       if(tailMesh)tailMesh.rotation.y=Math.sin(t*8)*.34;
+     }
+   }
+   renderer.render(scene,camera);
+   requestAnimationFrame(animate)
+ }
+ animate();
+}catch(err){console.error(err)}
+</script>
+</body>
+</html>
