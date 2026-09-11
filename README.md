@@ -11,6 +11,7 @@ Interactieve oceaansimulator gebouwd met Three.js.
 - GLB-vismodellen importeren
 - wereld opslaan en laden als JSON
 - lava en gezondheidseffecten
+- Fish Skin Studio met zes soorten, eigen patronen en GLB-export
 
 ## Openen
 
@@ -27,6 +28,7 @@ Open daarna `http://localhost:8000`.
 ## Versies
 
 De oorspronkelijke v20-versie staat ongewijzigd in `legacy/`.
+De Fish Skin Studio staat in `studio/index.html` en is vanuit de simulator te openen.
 
 ## Volgende ontwikkelfase
 
