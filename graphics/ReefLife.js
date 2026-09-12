@@ -65,23 +65,22 @@ export function makeReefGeometry(type,variant=0,low=false) {
     }
     const stem=new THREE.CylinderGeometry(.09,.17,1.2,low?6:10); stem.translate(0,.6,0); parts.push(stem);
   } else if(type==='fan') {
-    const rays=low?9:17;
-    parts.push(tube([point(0,0),point(0,.3),point(0,.65)],.09,steps,sides));
-    for(let i=0;i<rays;i++) {
-      const a=-1.05+i/(rays-1)*2.1, points=[];
-      for(let j=0;j<=5;j++) {
-        const t=j/5;
-        points.push(point(Math.sin(a)*t*1.6,.5+Math.cos(a)*t*2.2,Math.sin(t*3+a)*.06));
+    // Retain the internal slot, replace the wire fan with a rounded coral shrub.
+    const base=new THREE.IcosahedronGeometry(.27,low?0:1);
+    base.scale(1,.48,1); base.translate(0,.12,0); parts.push(base);
+    for(let i=0;i<9;i++) {
+      const a=i*2.399+random()*.3, r=.12+Math.sqrt(i/8)*.48;
+      const fork=point(Math.cos(a)*r,.48+(1-r)*.35+random()*.12,Math.sin(a)*r);
+      const start=point(fork.x*.26,.10,fork.z*.26);
+      parts.push(tube([start,start.clone().lerp(fork,.5),fork],.13,steps,sides));
+      for(let j=0;j<3;j++) {
+        const spread=a+j*2.1+random()*.4;
+        const tip=fork.clone().add(point(Math.cos(spread)*.14,.13+random()*.16,Math.sin(spread)*.14));
+        parts.push(tube([fork,fork.clone().lerp(tip,.5),tip],.09,low?2:3,sides));
+        const lobe=new THREE.SphereGeometry(.105+random()*.025,low?6:8,low?4:6);
+        lobe.scale(1,.9+random()*.4,1);
+        lobe.translate(tip.x,tip.y,tip.z); parts.push(lobe);
       }
-      parts.push(tube(points,.035,low?5:9,sides));
-    }
-    for(let row=1;row<=(low?3:6);row++) {
-      const t=row/(low?3:6), arc=[];
-      for(let j=0;j<=12;j++) {
-        const a=-1.05+j/12*2.1;
-        arc.push(point(Math.sin(a)*t*1.6,.5+Math.cos(a)*t*2.2,Math.sin(t*3+a)*.06));
-      }
-      parts.push(tube(arc,.017,low?8:16,4));
     }
   } else if(type==='sponge') {
     for(let i=0;i<5;i++) {
@@ -136,11 +135,11 @@ function reefMaterial(type,color,uniforms) {
       #include <begin_vertex>
       vReefLocal=position;
     `);
-    if(type==='grass'||type==='fan') {
+    if(type==='grass') {
       shader.vertexShader=`uniform float reefTime; uniform float reefMotion;
         float reefSway(float y) {
           float phase=reefTime*.8+modelMatrix[3].x*.23+modelMatrix[3].z*.17;
-          return y*y*sin(phase+y*2.3)*${type==='grass'?'.11':'.035'}*reefMotion;
+          return y*y*sin(phase+y*2.3)*.11*reefMotion;
         }
       `+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace('#include <beginnormal_vertex>',`
@@ -188,7 +187,12 @@ export function createReefLife(caustics) {
     for(const child of [...root.children]) basic.add(child);
     const detailed=new THREE.Mesh(shapes.near,materials.get(materialKey));
     detailed.name=`Detailed ${type}`; detailed.scale.copy(size); detailed.position.copy(box.min);
-    if(type==='fan') { detailed.scale.z*=.16; detailed.position.z+=size.z*.42; }
+    if(type==='fan') {
+      // A broad, low colony within the existing footprint, instead of a tall flat screen.
+      detailed.name='Compact bush coral';
+      detailed.scale.set(size.x*.95,Math.min(size.y*.48,Math.max(size.x,size.z)*.70),size.z*.95);
+      detailed.position.x+=size.x*.025; detailed.position.z+=size.z*.025;
+    }
     root.add(basic,detailed);
     // Three raycasts hidden meshes too. Only the displayed appearance supports new layers.
     basic.traverse(mesh=>{

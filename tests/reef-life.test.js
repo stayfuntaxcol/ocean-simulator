@@ -66,15 +66,17 @@ test('streaming disposes owned primitives and preserves cached colony geometry',
   assert.ok(b.detailed.geometry.attributes.position.count<a.detailed.geometry.attributes.position.count);
 });
 
-test('plant and fan shaders share a pausable current and retain caustics',()=>{
+test('plants sway while replacement bush coral stays rigid; both retain caustics',()=>{
   const library=createReefLife(light);
   const shaders=[];
   for(const type of ['grass','fan']) {
     const {detailed}=colony(library,type);
     const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
     detailed.material.onBeforeCompile(shader);
-    assert.match(shader.vertexShader,/y\*y\*sin/);
-    assert.match(shader.vertexShader,/transformed.x\+=reefSway/);
+    if(type==='grass') {
+      assert.match(shader.vertexShader,/y\*y\*sin/);
+      assert.match(shader.vertexShader,/transformed.x\+=reefSway/);
+    } else assert.doesNotMatch(shader.vertexShader,/reefSway/);
     assert.match(shader.fragmentShader,/outgoingLight \+= diffuseColor.rgb/);
     assert.equal(shader.uniforms.oceanTime,light.oceanTime);
     shaders.push(shader);
@@ -86,4 +88,11 @@ test('plant and fan shaders share a pausable current and retain caustics',()=>{
   assert.equal(shaders[0].uniforms.reefMotion.value,0);
   library.setTime(12,false);
   assert.equal(shaders[0].uniforms.reefMotion.value,1);
+});
+
+test('replacement coral uses a compact three-dimensional footprint',()=>{
+  const library=createReefLife(light),{detailed}=colony(library,'fan');
+  assert.ok(detailed.scale.y<=.96+1e-6,'less than half the old height');
+  assert.ok(detailed.scale.z>2.8,'full depth instead of a flat screen');
+  assert.equal(detailed.name,'Compact bush coral');
 });
