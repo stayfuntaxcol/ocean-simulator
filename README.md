@@ -74,3 +74,11 @@ De simulator gebruikt Firebase Authentication en Realtime Database voor online w
 
 Een opgeslagen wereld krijgt een deelbare URL met `?world=WORLD_ID`. De eigenaar kan
 de wereld aanpassen; vrienden en familie met de link krijgen alleen-lezen toegang.
+
+### Blauwe karaktervis — eerste modelstudie
+
+De turquoise school heeft een nieuw, rond en expressief vismodel. Gebruik
+**Bekijk blauwe voorbeeldvis** en **Blauwe karaktervis** in de vaste
+vergelijkingsscène. Dit werkpakket bevat vorm en basismateriaal; fijne huiddetails
+en lichaamsanimatie volgen apart. Er slagen nu 30 lokale tests.
+Zie [bekijken en beoordelen](docs/blue-character-fish.md).

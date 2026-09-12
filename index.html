@@ -114,7 +114,10 @@
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
-      <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk nieuwe vis</button>
+      <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
+      <label>Blauwe karaktervis <input id="blueFishDetail" type="checkbox" checked></label>
+      <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
+      <p id="blueFishStatus">Modelstudie · vorm en basismateriaal · vaste vinstand.</p>
       <button id="placeOrca" type="button" style="margin-top:9px">Plaats orka</button>
       <button id="removeOrca" type="button" hidden>Verwijder orka</button>
       <p id="orcaStatus">Eén orka · klik op de orka om zijn bek te openen.</p>
@@ -243,6 +246,7 @@ import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
 import { createRockLibrary } from './graphics/ReefRocks.js';
 import { createButterflyLibrary } from './graphics/ButterflyFish.js';
+import { createBlueReefLibrary } from './graphics/BlueReefFish.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
 import { createOrcaCruise, orcaRouteClear, validateOrcaRecord } from './graphics/OrcaNavigation.js';
@@ -1926,6 +1930,8 @@ const fishPalette = [
   0xffa45b,0x59c3c3,0xf4d35e,0xee6c8a,0x8ac6d1,0x9c89b8,0x76b947,0xf28f3b
 ];
 const butterflyLibrary = createButterflyLibrary();
+const blueReefLibrary = createBlueReefLibrary();
+const blueFishDetail = document.getElementById('blueFishDetail');
 const fishDetail = document.getElementById('fishDetail');
 
 
@@ -1952,6 +1958,7 @@ function createFish(color=0xffa45b, scale=1){
   group.userData.phase=oceanRandom()*Math.PI*2;
   group.userData.speed=.75+oceanRandom()*1.8;
   if(color===fishPalette[2]) butterflyLibrary.attach(group);
+  if(color===fishPalette[1]) blueReefLibrary.attach(group);
   return group;
 }
 
@@ -2688,12 +2695,24 @@ followSchoolBtn.addEventListener('click',e=>{e.stopPropagation();if(selectedFish
 stopFollowBtn.addEventListener('click',e=>{e.stopPropagation();stopFollowing(false);});
 document.getElementById('viewButterfly').addEventListener('click',()=>{
   if(editMode) { hint.textContent='Sluit de landschapseditor om een vis te volgen.'; return; }
-  const candidates=fishes.filter(f=>f.parent && !f.userData.dead && f.userData.visualSpecies);
+  const candidates=fishes.filter(f=>f.parent && !f.userData.dead && f.userData.visualSpecies==='Koraalvlindervis');
   candidates.sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
   if(candidates.length) {
     startFollowing(candidates[0],'fish');
     followDistance=4.8; followHeight=.3; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
   }
+});
+document.getElementById('viewBlueFish').addEventListener('click',()=>{
+  const status=document.getElementById('blueFishStatus');
+  if(editMode) { status.textContent='Sluit de landschapseditor om de voorbeeldvis te bekijken.'; return; }
+  const candidates=fishes.filter(f=>f.parent && !f.userData.dead && f.userData.visualSpecies==='Blauwe karaktervis');
+  candidates.sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
+  if(!candidates.length) { status.textContent='Geen blauwe vis aanwezig. Open de vaste vergelijkingsscène.'; return; }
+  blueFishDetail.checked=true;
+  if(!atmosphere.enabled) { status.textContent='Kies Nieuwe onderwatersfeer om het nieuwe model te zien.'; return; }
+  startFollowing(candidates[0],'fish');
+  followDistance=4.8; followHeight=.15; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
+  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Modelstudie: vaste vinstand.';
 });
 followPanel.addEventListener('click',e=>e.stopPropagation());
 
@@ -3046,6 +3065,7 @@ function animate(){
     if(fish.visible)orca.animate(dt,t,atmosphere.quality,distance);
   }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
+  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
