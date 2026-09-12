@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>5 Broden & 2 Vissen — 3D Oceaan v11 Minimap</title>
+  <title>Ocean Simulator — Water & Licht</title>
+  <link rel="stylesheet" href="./graphics/graphics.css">
   <style>
     :root{
       --bg:#061827;
@@ -102,10 +103,21 @@
 <body>
 <div id="app">
   <div id="hud">
-    <h1>3D Oceaan — Scholen, Habitat, Streaming & Minimap</h1>
-    <p><b>WASD</b> bewegen · <b>muis</b> rondkijken · <b>spatie</b> omhoog · <b>C</b> omlaag · <b>Shift</b> sneller.</p>
+    <h1>Ocean Simulator · levend rif</h1>
+    <p><b>WASD</b> bewegen · <b>muis</b> rondkijken · <b>Q</b> omhoog · <b>E</b> omlaag · <b>Shift</b> sneller.</p>
     <p>Vissen vormen organische scholen per soort, zoeken rijk onderwaterlandschap op en trekken soms gezamenlijk op ontdekking naar nieuwe gebieden.</p>
     <button id="startBtn">Start verkennen</button>
+    <details class="graphics-panel" open>
+      <summary>Water & licht</summary>
+      <label>Beeld <select id="visualStyle"><option value="upgraded">Nieuwe onderwatersfeer</option><option value="original">Oorspronkelijk beeld</option></select></label>
+      <label>Kwaliteit <select id="visualQuality"><option value="low">Licht</option><option value="medium" selected>Gebalanceerd</option><option value="high">Hoog</option></select></label>
+      <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
+      <div id="referenceControls" hidden>
+        <p>Demo · vaste scène · eigen lokale opslag</p>
+        <button id="referenceCamera" type="button">Herstel camera</button>
+        <button id="referencePause" type="button" aria-pressed="true">Animatie starten</button>
+      </div>
+    </details>
     <div class="toolrow" style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
       <button id="importBtn" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">Importeer GLB-soort</button>
       <button id="openFishStudioBtn" type="button" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">🎨 Open Fish Studio</button>
@@ -177,6 +189,7 @@
   </div>
 
   <div id="stats">
+    <div id="graphicsMetrics">Beeldmeting starten…</div>
     <div>Vissen: <span id="fishCount">0</span></div>
     <div>Snelheid: <span id="speedText">0</span></div>
     <div>Diepte: <span id="depthText">0</span> m</div>
@@ -218,6 +231,13 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
+import { REFERENCE } from './graphics/reference-scene.js';
+const visualParams = new URLSearchParams(location.search);
+const referenceMode = visualParams.get('scene') === 'reference';
+const oceanRandom = referenceMode ? seededRandom(REFERENCE.seed) : Math.random;
+let referencePaused = referenceMode;
+const localWorldKey = referenceMode ? 'fiveLoavesOceanReferenceV4' : 'fiveLoavesOceanWorldV4';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js';
 import { getDatabase, get, push, ref, serverTimestamp, set } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js';
@@ -331,7 +351,8 @@ controls.addEventListener('unlock', () => {
 });
 
 // Licht
-scene.add(new THREE.HemisphereLight(0x8fe7ff, 0x10242a, 1.6));
+const ambient = new THREE.HemisphereLight(0x8fe7ff, 0x10242a, 1.6);
+scene.add(ambient);
 
 const sun = new THREE.DirectionalLight(0xcaf8ff, 2.1);
 sun.position.set(-20, 60, 15);
@@ -340,6 +361,15 @@ scene.add(sun);
 const glow = new THREE.PointLight(0x2fb7ff, 12, 160, 2);
 glow.position.set(20, 20, -10);
 scene.add(glow);
+const atmosphere = createUnderwaterAtmosphere({ scene, renderer, camera, sun, ambient, glow });
+const visualStyle = document.getElementById('visualStyle');
+const visualQuality = document.getElementById('visualQuality');
+visualQuality.value = matchMedia('(max-width: 800px)').matches ? 'low' : 'medium';
+atmosphere.setQuality(visualQuality.value);
+visualStyle.value = visualParams.get('visual') === 'original' ? 'original' : 'upgraded';
+atmosphere.setEnabled(visualStyle.value === 'upgraded');
+visualStyle.addEventListener('change', () => atmosphere.setEnabled(visualStyle.value === 'upgraded'));
+visualQuality.addEventListener('change', () => atmosphere.setQuality(visualQuality.value));
 
 const terrainInspectLight = new THREE.HemisphereLight(0xe2f8ff, 0x51625a, 0);
 scene.add(terrainInspectLight);
@@ -411,6 +441,7 @@ function rebuildTerrainMesh(){
 rebuildTerrainMesh();
 
 const floorMat = new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,metalness:0,vertexColors:true});
+installCaustics(floorMat, atmosphere.uniforms);
 const floor = new THREE.Mesh(floorGeo,floorMat);
 floor.rotation.x=-Math.PI/2;
 floor.position.y=TERRAIN_BASE_Y;
@@ -539,17 +570,19 @@ function teleportEditorTo(x,z){
 
 
 
-// Lichtstralen
+// Original light cones are retained only for the comparison mode.
+const legacyRays = new THREE.Group();
+scene.add(legacyRays);
 const rayMat = new THREE.MeshBasicMaterial({
   color:0x7ccfff, transparent:true, opacity:.055,
   side:THREE.DoubleSide, depthWrite:false
 });
 for(let i=0;i<18;i++){
-  const g = new THREE.ConeGeometry(2 + Math.random()*3, 70 + Math.random()*80, 16, 1, true);
+  const g = new THREE.ConeGeometry(2 + oceanRandom()*3, 70 + oceanRandom()*80, 16, 1, true);
   const m = new THREE.Mesh(g, rayMat);
-  m.position.set((Math.random()-.5)*180, 20 + Math.random()*30, (Math.random()-.5)*180);
-  m.rotation.z = (Math.random()-.5)*0.25;
-  scene.add(m);
+  m.position.set((oceanRandom()-.5)*180, 20 + oceanRandom()*30, (oceanRandom()-.5)*180);
+  m.rotation.z = (oceanRandom()-.5)*0.25;
+  legacyRays.add(m);
 }
 
 // Spectaculair rif: rotsen, koraal, sponzen, anemonen en zeewier
@@ -566,22 +599,22 @@ const rockColors = [0x58645f,0x66736c,0x4c5653,0x756b61,0x526a65];
 const matCache = new Map();
 function reefMat(color, rough=.9){
   const key=color+'_'+rough;
-  if(!matCache.has(key)) matCache.set(key,new THREE.MeshStandardMaterial({color,roughness:rough,metalness:0}));
+  if(!matCache.has(key)) matCache.set(key,installCaustics(new THREE.MeshStandardMaterial({color,roughness:rough,metalness:0}), atmosphere.uniforms));
   return matCache.get(key);
 }
 function randXZ(radius=250){
-  const a=Math.random()*Math.PI*2, r=12+Math.pow(Math.random(),.72)*radius;
+  const a=oceanRandom()*Math.PI*2, r=12+Math.pow(oceanRandom(),.72)*radius;
   return [Math.cos(a)*r,Math.sin(a)*r];
 }
 function addRockCluster(x,z,scale=1){
   const g=new THREE.Group();
-  const n=2+Math.floor(Math.random()*5);
+  const n=2+Math.floor(oceanRandom()*5);
   for(let i=0;i<n;i++){
-    const r=(1.2+Math.random()*4.8)*scale;
-    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0),reefMat(rockColors[Math.floor(Math.random()*rockColors.length)]));
-    m.scale.set(1+.8*Math.random(),.55+Math.random()*.8,.8+Math.random()*.9);
-    m.position.set((Math.random()-.5)*5*scale,(r*.35)-.5,(Math.random()-.5)*5*scale);
-    m.rotation.set(Math.random(),Math.random()*Math.PI,Math.random()*.35);
+    const r=(1.2+oceanRandom()*4.8)*scale;
+    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0),reefMat(rockColors[Math.floor(oceanRandom()*rockColors.length)]));
+    m.scale.set(1+.8*oceanRandom(),.55+oceanRandom()*.8,.8+oceanRandom()*.9);
+    m.position.set((oceanRandom()-.5)*5*scale,(r*.35)-.5,(oceanRandom()-.5)*5*scale);
+    m.rotation.set(oceanRandom(),oceanRandom()*Math.PI,oceanRandom()*.35);
     g.add(m);
   }
   g.position.set(x,-17.7,z); reef.add(g);
@@ -590,28 +623,28 @@ function addBranchCoral(x,z,scale=1,color=0xff7f6e){
   const g=new THREE.Group(), mat=reefMat(color,.82);
   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.22*scale,.34*scale,3.8*scale,7),mat);
   trunk.position.y=1.9*scale; g.add(trunk);
-  const branches=4+Math.floor(Math.random()*4);
+  const branches=4+Math.floor(oceanRandom()*4);
   for(let i=0;i<branches;i++){
-    const h=(1.5+Math.random()*2.8)*scale;
+    const h=(1.5+oceanRandom()*2.8)*scale;
     const b=new THREE.Mesh(new THREE.CylinderGeometry(.12*scale,.2*scale,h,6),mat);
-    const ang=(i/branches)*Math.PI*2+Math.random()*.5;
-    b.position.set(Math.cos(ang)*(.45+.35*Math.random())*scale,(2.4+Math.random()*1.4)*scale,Math.sin(ang)*(.45+.35*Math.random())*scale);
-    b.rotation.z=(Math.random()*.55+.2)*(Math.cos(ang)>=0?-1:1);
-    b.rotation.x=(Math.random()-.5)*.35;
+    const ang=(i/branches)*Math.PI*2+oceanRandom()*.5;
+    b.position.set(Math.cos(ang)*(.45+.35*oceanRandom())*scale,(2.4+oceanRandom()*1.4)*scale,Math.sin(ang)*(.45+.35*oceanRandom())*scale);
+    b.rotation.z=(oceanRandom()*.55+.2)*(Math.cos(ang)>=0?-1:1);
+    b.rotation.x=(oceanRandom()-.5)*.35;
     g.add(b);
     const tip=new THREE.Mesh(new THREE.SphereGeometry(.18*scale,8,6),reefMat(0xffc0b0,.75));
     tip.position.set(b.position.x,b.position.y+h*.42,b.position.z); g.add(tip);
   }
-  g.position.set(x,-17.5,z); g.rotation.y=Math.random()*Math.PI*2; reef.add(g);
+  g.position.set(x,-17.5,z); g.rotation.y=oceanRandom()*Math.PI*2; reef.add(g);
 }
 function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
   const g=new THREE.Group(), mat=reefMat(color,.86);
-  const levels=2+Math.floor(Math.random()*3);
+  const levels=2+Math.floor(oceanRandom()*3);
   for(let i=0;i<levels;i++){
-    const r=(1.2+i*.75+Math.random()*.4)*scale;
+    const r=(1.2+i*.75+oceanRandom()*.4)*scale;
     const p=new THREE.Mesh(new THREE.CylinderGeometry(r*.75,r,.18*scale,16),mat);
     p.position.y=(.6+i*.72)*scale;
-    p.rotation.x=(Math.random()-.5)*.12; p.rotation.z=(Math.random()-.5)*.12;
+    p.rotation.x=(oceanRandom()-.5)*.12; p.rotation.z=(oceanRandom()-.5)*.12;
     g.add(p);
     const stem=new THREE.Mesh(new THREE.CylinderGeometry(.14*scale,.22*scale,.7*scale,7),mat);
     stem.position.y=(.25+i*.72)*scale; g.add(stem);
@@ -620,13 +653,13 @@ function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
 }
 function addSponge(x,z,scale=1,color=0xffb347){
   const g=new THREE.Group(), mat=reefMat(color,.92);
-  const n=2+Math.floor(Math.random()*5);
+  const n=2+Math.floor(oceanRandom()*5);
   for(let i=0;i<n;i++){
-    const h=(.8+Math.random()*2.6)*scale;
-    const tube=new THREE.Mesh(new THREE.CylinderGeometry((.15+.18*Math.random())*scale,(.25+.22*Math.random())*scale,h,9,1,true),mat);
-    tube.position.set((Math.random()-.5)*1.3*scale,h/2,(Math.random()-.5)*1.3*scale);
-    tube.rotation.z=(Math.random()-.5)*.18; g.add(tube);
-    const rim=new THREE.Mesh(new THREE.TorusGeometry((.16+.17*Math.random())*scale,.055*scale,6,12),reefMat(0xffd18a,.78));
+    const h=(.8+oceanRandom()*2.6)*scale;
+    const tube=new THREE.Mesh(new THREE.CylinderGeometry((.15+.18*oceanRandom())*scale,(.25+.22*oceanRandom())*scale,h,9,1,true),mat);
+    tube.position.set((oceanRandom()-.5)*1.3*scale,h/2,(oceanRandom()-.5)*1.3*scale);
+    tube.rotation.z=(oceanRandom()-.5)*.18; g.add(tube);
+    const rim=new THREE.Mesh(new THREE.TorusGeometry((.16+.17*oceanRandom())*scale,.055*scale,6,12),reefMat(0xffd18a,.78));
     rim.rotation.x=Math.PI/2; rim.position.set(tube.position.x,h,tube.position.z); g.add(rim);
   }
   g.position.set(x,-17.55,z); reef.add(g);
@@ -637,11 +670,11 @@ function addAnemone(x,z,scale=1,color=0xd96aa7){
   base.scale.y=.55; base.position.y=.25*scale; g.add(base);
   const tentMat=reefMat(color,.75);
   for(let i=0;i<18;i++){
-    const h=(.65+Math.random()*1.2)*scale;
+    const h=(.65+oceanRandom()*1.2)*scale;
     const t=new THREE.Mesh(new THREE.CylinderGeometry(.035*scale,.07*scale,h,5),tentMat);
-    const a=Math.random()*Math.PI*2, r=Math.random()*.42*scale;
+    const a=oceanRandom()*Math.PI*2, r=oceanRandom()*.42*scale;
     t.position.set(Math.cos(a)*r,.55*scale+h/2,Math.sin(a)*r);
-    t.rotation.z=(Math.random()-.5)*.55; t.rotation.x=(Math.random()-.5)*.4; g.add(t);
+    t.rotation.z=(oceanRandom()-.5)*.55; t.rotation.x=(oceanRandom()-.5)*.4; g.add(t);
   }
   g.position.set(x,-17.55,z); reef.add(g);
 }
@@ -654,17 +687,17 @@ function addStarfish(x,z,scale=1,color=0xf28f5b){
   }
   shape.closePath();
   const geo=new THREE.ExtrudeGeometry(shape,{depth:.12*scale,bevelEnabled:true,bevelSize:.06*scale,bevelThickness:.04*scale,bevelSegments:1});
-  const m=new THREE.Mesh(geo,reefMat(color,.95)); m.rotation.x=-Math.PI/2; m.rotation.z=Math.random()*Math.PI;
+  const m=new THREE.Mesh(geo,reefMat(color,.95)); m.rotation.x=-Math.PI/2; m.rotation.z=oceanRandom()*Math.PI;
   m.position.set(x,-17.25,z); reef.add(m);
 }
 function addSeaweed(x,z,scale=1){
   const g=new THREE.Group(), colors=[0x317a64,0x3f8d72,0x597f55,0x6c9058];
-  const blades=3+Math.floor(Math.random()*6);
+  const blades=3+Math.floor(oceanRandom()*6);
   for(let i=0;i<blades;i++){
-    const h=(1.8+Math.random()*5.5)*scale;
-    const weed=new THREE.Mesh(new THREE.CylinderGeometry(.035*scale,.11*scale,h,5),reefMat(colors[Math.floor(Math.random()*colors.length)],.96));
-    weed.position.set((Math.random()-.5)*.8*scale,h/2,(Math.random()-.5)*.8*scale);
-    weed.rotation.z=(Math.random()-.5)*.4; g.add(weed);
+    const h=(1.8+oceanRandom()*5.5)*scale;
+    const weed=new THREE.Mesh(new THREE.CylinderGeometry(.035*scale,.11*scale,h,5),reefMat(colors[Math.floor(oceanRandom()*colors.length)],.96));
+    weed.position.set((oceanRandom()-.5)*.8*scale,h/2,(oceanRandom()-.5)*.8*scale);
+    weed.rotation.z=(oceanRandom()-.5)*.4; g.add(weed);
   }
   g.position.set(x,-17.7,z); reef.add(g);
 }
@@ -1350,7 +1383,7 @@ function terrainHash(ix,iz,seed){
 
 function generateRandomTerrain(){
   // Alleen bodemhoogtes. worldCells (rotsen/koraal/gras/spons) blijven onaangeroerd.
-  const seed=Math.random()*10000;
+  const seed=oceanRandom()*10000;
   const minI=Math.floor(-WORLD_HALF/CELL)-2;
   const maxI=Math.ceil(WORLD_HALF/CELL)+2;
   const generated=new Map();
@@ -1679,6 +1712,7 @@ shareWorldBtn.addEventListener('click',async()=>{
   }
 });
 
+if (!referenceMode) {
 onAuthStateChanged(firebaseAuth,user=>{
   firebaseUser=user;
   setCloudBusy(false);
@@ -1691,14 +1725,18 @@ signInAnonymously(firebaseAuth).catch(err=>{
   console.error(err);
   cloudStatus.textContent='Firebase-login mislukt. Activeer Anonymous Authentication in de Firebase Console.';
 });
+} else {
+  setCloudBusy(true);
+  cloudStatus.textContent='Vergelijkingsscène · online opslag uitgeschakeld.';
+}
 
 saveWorldBtn.addEventListener('click',()=>{
-  try{localStorage.setItem('fiveLoavesOceanWorldV4',JSON.stringify(worldData()));editorInfo.textContent=`Wereld lokaal opgeslagen: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;}
+  try{localStorage.setItem(localWorldKey,JSON.stringify(worldData()));editorInfo.textContent=`Wereld lokaal opgeslagen: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;}
   catch(err){editorInfo.textContent='Lokaal opslaan lukte niet. Gebruik “JSON” om een bestand te bewaren.';}
 });
 loadWorldBtn.addEventListener('click',()=>{
   try{
-    const raw=localStorage.getItem('fiveLoavesOceanWorldV4') || localStorage.getItem('fiveLoavesOceanWorldV3') || localStorage.getItem('fiveLoavesOceanWorldV2') || localStorage.getItem('fiveLoavesOceanWorldV1');
+    const raw=localStorage.getItem(localWorldKey) || (!referenceMode && (localStorage.getItem('fiveLoavesOceanWorldV3') || localStorage.getItem('fiveLoavesOceanWorldV2') || localStorage.getItem('fiveLoavesOceanWorldV1')));
     if(!raw){editorInfo.textContent='Nog geen lokaal opgeslagen wereld gevonden.';return;}
     restoreWorld(JSON.parse(raw));
   }catch(err){editorInfo.textContent='Opgeslagen wereld kon niet worden geladen.';}
@@ -1758,10 +1796,10 @@ function addLavaVent(x,z,data=null){
   const bubbleMat=new THREE.MeshBasicMaterial({color:0xff9a4a,transparent:true,opacity:.75});
   const bubbles=[];
   for(let i=0;i<12;i++){
-    const b=new THREE.Mesh(new THREE.SphereGeometry(.07+Math.random()*.08,6,5),bubbleMat);
-    b.userData.phase=Math.random();
-    b.userData.angle=Math.random()*Math.PI*2;
-    b.userData.rad=.2+Math.random()*1.0;
+    const b=new THREE.Mesh(new THREE.SphereGeometry(.07+oceanRandom()*.08,6,5),bubbleMat);
+    b.userData.phase=oceanRandom();
+    b.userData.angle=oceanRandom()*Math.PI*2;
+    b.userData.rad=.2+oceanRandom()*1.0;
     root.add(b); bubbles.push(b);
   }
 
@@ -1834,10 +1872,10 @@ const bubbleGeo = new THREE.BufferGeometry();
 const bubblePositions = new Float32Array(bubbleCount*3);
 const bubbleSpeeds = new Float32Array(bubbleCount);
 for(let i=0;i<bubbleCount;i++){
-  bubblePositions[i*3]=(Math.random()-.5)*260;
-  bubblePositions[i*3+1]=-18+Math.random()*70;
-  bubblePositions[i*3+2]=(Math.random()-.5)*260;
-  bubbleSpeeds[i]=.01+Math.random()*.04;
+  bubblePositions[i*3]=(oceanRandom()-.5)*260;
+  bubblePositions[i*3+1]=-18+oceanRandom()*70;
+  bubblePositions[i*3+2]=(oceanRandom()-.5)*260;
+  bubbleSpeeds[i]=.01+oceanRandom()*.04;
 }
 bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePositions,3));
 const bubbleMat = new THREE.PointsMaterial({
@@ -1872,13 +1910,13 @@ function createFish(color=0xffa45b, scale=1){
   group.scale.setScalar(scale);
   group.userData.isFishRoot=true;
   group.userData.tail=tail;
-  group.userData.phase=Math.random()*Math.PI*2;
-  group.userData.speed=.75+Math.random()*1.8;
+  group.userData.phase=oceanRandom()*Math.PI*2;
+  group.userData.speed=.75+oceanRandom()*1.8;
   return group;
 }
 
 const isMobile = matchMedia('(max-width: 800px)').matches;
-const FISH_COUNT = isMobile ? 90 : 220;
+const FISH_COUNT = referenceMode ? REFERENCE.fishCount : (isMobile ? 90 : 220);
 const fishes = [];
 const schools = new Map();
 const gltfLoader = new GLTFLoader();
@@ -1903,12 +1941,12 @@ function makeSchool(speciesId,opts={}){
     targetLayer:null,
     targetHabitat:0,
     mode:'habitat',
-    cohesion:opts.cohesion??(.52+Math.random()*.18),
-    alignment:opts.alignment??(.42+Math.random()*.16),
-    separation:opts.separation??(.72+Math.random()*.16),
-    habitatPull:opts.habitatPull??(.48+Math.random()*.14),
-    exploration:opts.exploration??(.12+Math.random()*.12),
-    cruiseSpeed:opts.cruiseSpeed??(1.15+Math.random()*.65),
+    cohesion:opts.cohesion??(.52+oceanRandom()*.18),
+    alignment:opts.alignment??(.42+oceanRandom()*.16),
+    separation:opts.separation??(.72+oceanRandom()*.16),
+    habitatPull:opts.habitatPull??(.48+oceanRandom()*.14),
+    exploration:opts.exploration??(.12+oceanRandom()*.12),
+    cruiseSpeed:opts.cruiseSpeed??(1.15+oceanRandom()*.65),
     retargetAt:0,
     navWaypoint:null,
     navHoldUntil:0,
@@ -1924,10 +1962,10 @@ function registerFish(fish,speciesId,school){
   fish.userData.isFishRoot=true;
   fish.userData.speciesId=speciesId;
   fish.userData.schoolId=school.id;
-  fish.userData.phase=fish.userData.phase??Math.random()*Math.PI*2;
-  fish.userData.speed=fish.userData.speed??(.85+Math.random()*1.15);
-  fish.userData.personality=.82+Math.random()*.36;
-  fish.userData.wanderPhase=Math.random()*Math.PI*2;
+  fish.userData.phase=fish.userData.phase??oceanRandom()*Math.PI*2;
+  fish.userData.speed=fish.userData.speed??(.85+oceanRandom()*1.15);
+  fish.userData.personality=.82+oceanRandom()*.36;
+  fish.userData.wanderPhase=oceanRandom()*Math.PI*2;
   fish.userData.panicStart=0;
   fish.userData.panicPeakUntil=0;
   fish.userData.panicEnd=0;
@@ -1943,10 +1981,11 @@ const baseSchools=[];
 for(let si=0;si<fishPalette.length;si++) baseSchools.push(makeSchool(`reef_${si}`,{exploration:.18}));
 for(let i=0;i<FISH_COUNT;i++){
   const speciesIndex=i%fishPalette.length;
-  const fish=createFish(fishPalette[speciesIndex],.35+Math.random()*.8);
-  const angle=Math.random()*Math.PI*2, radius=12+Math.random()*150;
-  fish.position.set(Math.cos(angle)*radius,-12+Math.random()*42,Math.sin(angle)*radius);
-  const dir=new THREE.Vector3(Math.random()-.5,(Math.random()-.5)*.08,Math.random()-.5).normalize();
+  const fish=createFish(fishPalette[speciesIndex],.35+oceanRandom()*.8);
+  const angle=oceanRandom()*Math.PI*2, radius=12+oceanRandom()*150;
+  fish.position.set(Math.cos(angle)*radius,-12+oceanRandom()*42,Math.sin(angle)*radius);
+  if(referenceMode) fish.position.set((oceanRandom()-.5)*30,-13+oceanRandom()*9,-12+oceanRandom()*22);
+  const dir=new THREE.Vector3(oceanRandom()-.5,(oceanRandom()-.5)*.08,oceanRandom()-.5).normalize();
   fish.userData.velocity=dir.multiplyScalar(fish.userData.speed);
   registerFish(fish,`reef_${speciesIndex}`,baseSchools[speciesIndex]);
   orientFishForward(fish,fish.position.clone().add(dir)); scene.add(fish); fishes.push(fish);
@@ -2033,7 +2072,7 @@ function weightedRandom(items){
   if(!items.length)return null;
   let total=0;
   for(const item of items)total+=Math.max(.001,item.weight);
-  let r=Math.random()*total;
+  let r=oceanRandom()*total;
   for(const item of items){
     r-=Math.max(.001,item.weight);
     if(r<=0)return item.value;
@@ -2048,7 +2087,7 @@ function chooseSchoolTarget(school,t){
 
   // Meestal echte, door de gebruiker geplaatste levende habitat.
   // Soms bewust een kale rots verkennen, maar daar kort blijven.
-  const exploreRock=rockOnlyCells.length>0 && Math.random()<.10;
+  const exploreRock=rockOnlyCells.length>0 && oceanRandom()<.10;
   let chosenCell=null;
 
   if(!exploreRock && livingCells.length){
@@ -2067,14 +2106,14 @@ function chooseSchoolTarget(school,t){
       options.push({value:h,weight});
     }
     chosenCell=weightedRandom(options);
-    if(!chosenCell && livingCells.length)chosenCell=livingCells[Math.floor(Math.random()*livingCells.length)];
+    if(!chosenCell && livingCells.length)chosenCell=livingCells[Math.floor(oceanRandom()*livingCells.length)];
   }
 
   if(chosenCell){
-    const point=chosenCell.livingPoints[Math.floor(Math.random()*chosenCell.livingPoints.length)];
-    const jitterX=(Math.random()-.5)*4.5;
-    const jitterZ=(Math.random()-.5)*4.5;
-    const jitterY=(Math.random()-.5)*3.2;
+    const point=chosenCell.livingPoints[Math.floor(oceanRandom()*chosenCell.livingPoints.length)];
+    const jitterX=(oceanRandom()-.5)*4.5;
+    const jitterZ=(oceanRandom()-.5)*4.5;
+    const jitterY=(oceanRandom()-.5)*3.2;
 
     school.target.set(
       THREE.MathUtils.clamp(point.x+jitterX,-WORLD_HALF+3,WORLD_HALF-3),
@@ -2085,7 +2124,7 @@ function chooseSchoolTarget(school,t){
     school.targetHabitat=point.score;
     school.targetLayer=point.layerId;
     school.mode='habitat';
-    school.retargetAt=t+12+Math.random()*22;
+    school.retargetAt=t+12+oceanRandom()*22;
     return;
   }
 
@@ -2098,33 +2137,33 @@ function chooseSchoolTarget(school,t){
       const crowd=schoolCrowdingNearCell(h,school);
       options.push({value:h,weight:novelty/(1+crowd)});
     }
-    chosenCell=weightedRandom(options) || rockOnlyCells[Math.floor(Math.random()*rockOnlyCells.length)];
-    const point=chosenCell.rockPoints[Math.floor(Math.random()*chosenCell.rockPoints.length)];
+    chosenCell=weightedRandom(options) || rockOnlyCells[Math.floor(oceanRandom()*rockOnlyCells.length)];
+    const point=chosenCell.rockPoints[Math.floor(oceanRandom()*chosenCell.rockPoints.length)];
     school.target.set(
-      point.x+(Math.random()-.5)*6,
-      Math.max(MIN_SWIM_Y,point.y+(Math.random()-.5)*2.5),
-      point.z+(Math.random()-.5)*6
+      point.x+(oceanRandom()-.5)*6,
+      Math.max(MIN_SWIM_Y,point.y+(oceanRandom()-.5)*2.5),
+      point.z+(oceanRandom()-.5)*6
     );
     school.targetCell=chosenCell.key;
     school.targetHabitat=.2;
     school.targetLayer=point.layerId;
     school.mode='rock-explore';
-    school.retargetAt=t+5+Math.random()*7; // kale rots: kort onderzoeken en weer verder
+    school.retargetAt=t+5+oceanRandom()*7; // kale rots: kort onderzoeken en weer verder
     return;
   }
 
   // Alleen als de gebruiker nog nergens landschap heeft gebouwd: vrije exploratie.
-  const a=Math.random()*Math.PI*2, d=35+Math.random()*80;
+  const a=oceanRandom()*Math.PI*2, d=35+oceanRandom()*80;
   school.target.set(
     THREE.MathUtils.clamp(c.x+Math.cos(a)*d,-WORLD_HALF+8,WORLD_HALF-8),
-    Math.max(MIN_SWIM_Y,c.y+(Math.random()-.5)*8),
+    Math.max(MIN_SWIM_Y,c.y+(oceanRandom()-.5)*8),
     THREE.MathUtils.clamp(c.z+Math.sin(a)*d,-WORLD_HALF+8,WORLD_HALF-8)
   );
   school.targetCell=null;
   school.targetHabitat=0;
   school.targetLayer=null;
   school.mode='explore';
-  school.retargetAt=t+8+Math.random()*12;
+  school.retargetAt=t+8+oceanRandom()*12;
 }
 
 function chooseBestCorridor(school,t){
@@ -2273,19 +2312,19 @@ function spawnImportedSchool(source,fileName,count){
   const spawnCenter=camera.position.clone().addScaledVector(forward,13);
   for(let i=0;i<count;i++){
     const fish=source.clone(true);
-    fish.scale.multiplyScalar(.76+Math.random()*.28);
-    const a=Math.random()*Math.PI*2, r=Math.sqrt(Math.random())*(2.2+Math.sqrt(count)*.55);
+    fish.scale.multiplyScalar(.76+oceanRandom()*.28);
+    const a=oceanRandom()*Math.PI*2, r=Math.sqrt(oceanRandom())*(2.2+Math.sqrt(count)*.55);
     fish.position.copy(spawnCenter).addScaledVector(rightVec,Math.cos(a)*r);
-    fish.position.y=THREE.MathUtils.clamp(spawnCenter.y+Math.sin(a)*r*.45+(Math.random()-.5)*2,-12,38);
-    fish.position.z+=(Math.random()-.5)*r;
-    const dir=new THREE.Vector3(forward.x+(Math.random()-.5)*.22,(Math.random()-.5)*.06,forward.z+(Math.random()-.5)*.22).normalize();
-    fish.userData.velocity=dir.multiplyScalar(.95+Math.random()*.65);
+    fish.position.y=THREE.MathUtils.clamp(spawnCenter.y+Math.sin(a)*r*.45+(oceanRandom()-.5)*2,-12,38);
+    fish.position.z+=(oceanRandom()-.5)*r;
+    const dir=new THREE.Vector3(forward.x+(oceanRandom()-.5)*.22,(oceanRandom()-.5)*.06,forward.z+(oceanRandom()-.5)*.22).normalize();
+    fish.userData.velocity=dir.multiplyScalar(.95+oceanRandom()*.65);
     fish.userData.speed=fish.userData.velocity.length(); fish.userData.tail=fish.getObjectByName('Tail')||null;
     fish.userData.imported=true; fish.userData.sourceName=fileName;
     registerFish(fish,speciesId,school);
     orientFishForward(fish,fish.position.clone().add(dir)); scene.add(fish); fishes.push(fish);
   }
-  school.center.copy(spawnCenter); chooseSchoolTarget(school,performance.now()/1000);
+  school.center.copy(spawnCenter); chooseSchoolTarget(school,simulationTime());
   fishCountEl.textContent=fishes.length; schoolCountText.textContent=schools.size;
   return school;
 }
@@ -2326,7 +2365,7 @@ function disturbSchool(clickedFish,wholeSchool=false){
   if(!clickedFish?.parent)return;
   const school=schools.get(clickedFish.userData.schoolId);
   if(!school)return;
-  const now=performance.now()/1000;
+  const now=simulationTime();
   const epicenter=clickedFish.position.clone();
   const localRadius=wholeSchool?Infinity:11.5;
   const baseStrength=wholeSchool?1.18:1.0;
@@ -2339,24 +2378,24 @@ function disturbSchool(clickedFish,wholeSchool=false){
 
     // Lokale klik plant zich als een kleine golf door de school voort.
     const delay=wholeSchool?Math.min(.32,dist*.018):Math.min(.55,dist*.045);
-    const distanceFalloff=wholeSchool?(.78+Math.random()*.22):THREE.MathUtils.clamp(1-dist/localRadius*.58,.38,1);
+    const distanceFalloff=wholeSchool?(.78+oceanRandom()*.22):THREE.MathUtils.clamp(1-dist/localRadius*.58,.38,1);
     const outward=fish.position.clone().sub(epicenter);
     if(outward.lengthSq()<.01){
-      outward.set(Math.random()-.5,(Math.random()-.5)*.35,Math.random()-.5);
+      outward.set(oceanRandom()-.5,(oceanRandom()-.5)*.35,oceanRandom()-.5);
     }
     outward.normalize();
 
     // Iedere vis krijgt net een andere vluchtvector; geen perfect radiale "explosie".
-    outward.x+=(Math.random()-.5)*.55;
-    outward.y+=(Math.random()-.5)*.28;
-    outward.z+=(Math.random()-.5)*.55;
+    outward.x+=(oceanRandom()-.5)*.55;
+    outward.y+=(oceanRandom()-.5)*.28;
+    outward.z+=(oceanRandom()-.5)*.55;
     outward.normalize();
 
-    const strength=baseStrength*distanceFalloff*(.82+Math.random()*.28);
+    const strength=baseStrength*distanceFalloff*(.82+oceanRandom()*.28);
     fish.userData.panicDir.copy(outward);
     fish.userData.panicStart=now+delay;
-    fish.userData.panicPeakUntil=fish.userData.panicStart+(wholeSchool?.95:.72)+Math.random()*.28;
-    fish.userData.panicEnd=fish.userData.panicPeakUntil+(wholeSchool?5.8:4.8)+Math.random()*1.8;
+    fish.userData.panicPeakUntil=fish.userData.panicStart+(wholeSchool?.95:.72)+oceanRandom()*.28;
+    fish.userData.panicEnd=fish.userData.panicPeakUntil+(wholeSchool?5.8:4.8)+oceanRandom()*1.8;
     fish.userData.panicStrength=strength;
     affected++;
   }
@@ -2416,7 +2455,7 @@ function updateFish(dt,t){
         }
       }
       desiredV.set(0,0,0);
-      const panic=disturbanceLevel(fish,performance.now()/1000);
+      const panic=disturbanceLevel(fish,simulationTime());
       if(neighbours){
         aliV.multiplyScalar(1/neighbours); if(aliV.lengthSq())aliV.normalize();
         cohV.multiplyScalar(1/neighbours).sub(p); if(cohV.lengthSq())cohV.normalize();
@@ -2845,25 +2884,61 @@ function updateBubbles(){
   a.needsUpdate=true;
 }
 
+if (referenceMode) {
+  for (const [x, z, type] of REFERENCE.cells) addLayerToCell(x, z, type);
+  document.getElementById('referenceControls').hidden = false;
+  const resetCamera = () => {
+    if (editMode) return;
+    if (followMode) stopFollowing(false);
+    controls.unlock();
+    camera.position.fromArray(REFERENCE.camera);
+    camera.lookAt(...REFERENCE.target);
+  };
+  document.getElementById('referenceCamera').addEventListener('click', resetCamera);
+  document.getElementById('referencePause').addEventListener('click', event => {
+    referencePaused = !referencePaused;
+    event.currentTarget.textContent = referencePaused ? 'Animatie starten' : 'Animatie pauzeren';
+    event.currentTarget.setAttribute('aria-pressed', String(referencePaused));
+  });
+  resetCamera();
+}
+const graphicsMetrics = document.getElementById('graphicsMetrics');
+let visualTime = referenceMode ? REFERENCE.time : 0;
+function simulationTime() { return referenceMode ? visualTime : performance.now()/1000; }
+let metricStart = performance.now(), metricFrames = 0;
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
-  const t = performance.now()/1000;
+  if (!referencePaused && !editMode) visualTime += dt;
+  const t = simulationTime();
+  const streamingTime = performance.now()/1000;
 
   updateMovement(dt);
-  if(!editMode && t-lastStreamingUpdate>.20){ refreshWorldStreaming(); lastStreamingUpdate=t; }
-  if(!editMode){
+  if(!editMode && streamingTime-lastStreamingUpdate>.20){ refreshWorldStreaming(); lastStreamingUpdate=streamingTime; }
+  if(!editMode && !referencePaused){
     updateLava(dt,t);
     updateFish(dt,t);
     updateHazardHealth(dt);
     updateBubbles();
   }
-  if(t-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=t; }
+  if(streamingTime-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=streamingTime; }
 
   glow.position.x = Math.sin(t*.18)*35;
   glow.position.z = Math.cos(t*.15)*35;
 
+  atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
+  legacyRays.visible = !atmosphere.enabled && !landscapeEditorActive && !terrainInspectActive;
+  bubbles.visible = !atmosphere.enabled && !landscapeEditorActive;
   renderer.render(scene,camera);
+  metricFrames++;
+  const metricNow = performance.now();
+  if (metricNow - metricStart >= 1000) {
+    graphicsMetrics.textContent = Math.round(metricFrames * 1000 / (metricNow - metricStart)) + ' FPS · '
+      + renderer.info.render.calls + ' draw calls · '
+      + Math.round(renderer.info.render.triangles / 1000) + 'k driehoeken';
+    metricFrames = 0;
+    metricStart = metricNow;
+  }
 }
 refreshWorldStreaming(true);
 drawMinimap();

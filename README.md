@@ -2,6 +2,19 @@
 
 Interactieve oceaansimulator gebouwd met Three.js.
 
+## Grafische upgrade: water en licht
+
+Deze branch bevat de eerste grafische stap: een bewegend wateroppervlak, dieptemist,
+lichtpatronen op het rif en zwevende deeltjes. Kies bij **Water & licht** een
+kwaliteitsstand of vergelijk met het oorspronkelijke beeld.
+
+Open `http://localhost:8000/?scene=reference` na het starten van de webserver voor
+de vaste demonstratiescène. Deze opent met 40 vissen en een gepauzeerde camera-opstelling.
+De [testinstructies en vervolgstappen](docs/visual-upgrade.md) beschrijven de vergelijking.
+Visuele browsercontrole en apparaatmetingen staan nog open.
+
+Ontwikkelaars kunnen de zes automatische controles uitvoeren met `npm ci && npm test`.
+
 ## Huidige functies
 
 - 3D-onderwaterwereld met bestuurbare camera
