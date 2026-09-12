@@ -16,12 +16,16 @@ de vaste demonstratiescène. Deze opent met 40 vissen en een gepauzeerde camera-
 De [testinstructies en vervolgstappen](docs/visual-upgrade.md) beschrijven de vergelijking.
 Visuele browsercontrole en apparaatmetingen staan nog open.
 
-Ontwikkelaars kunnen de 21 automatische controles uitvoeren met `npm ci && npm test`.
+Ontwikkelaars kunnen de 27 automatische controles uitvoeren met `npm ci && npm test`.
 Gebruik je Codespaces? Zie [stap 2 testen](docs/seabed-upgrade.md).
 De [instructies voor stap 3](docs/fish-upgrade.md) beschrijven de nieuwe vis.
 Stap 4 voegt vertakt koraal, plaatkoraal, compact struikkoraal, holle buissponzen en bewegend
 zeegras toe aan de bestaande rifvakken. Gebruik **Levend rifdetail** voor de vergelijking.
 Zie [stap 4 testen](docs/reef-life-upgrade.md).
+Stap 6 voegt één plaatsbare orka toe: **Plaats orka** zoekt ruimte in de buurt en
+start de volgcamera. Klik op zijn lichaam om de bek te openen. De orka wordt met
+de wereld opgeslagen. Zie [stap 6 testen](docs/orca-upgrade.md). Stap 5 is overgeslagen
+op verzoek van de gebruiker en blijft openstaan.
 
 ## Huidige functies
 

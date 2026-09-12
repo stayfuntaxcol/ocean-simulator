@@ -1,0 +1,153 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+export const ORCA_CLEARANCE=4;
+const profile=[[-3,.09,.08],[-2.5,.18,.15],[-1.8,.48,.38],[-.8,.82,.67],
+  [.3,.94,.76],[1.2,.78,.62],[1.9,.51,.43],[2.5,.28,.27],[2.85,.08,.08]];
+
+export function createOrcaBody(rings=48,sides=28) {
+  const curve=new THREE.CatmullRomCurve3(profile.map(p=>new THREE.Vector3(...p)));
+  const positions=[],indices=[];
+  for(let i=0;i<=rings;i++) {
+    const p=curve.getPoint(i/rings);
+    for(let j=0;j<sides;j++) {
+      const a=j/sides*Math.PI*2;
+      let y=Math.cos(a)*p.y;
+      if(p.x>1.18)y=Math.max(y,-.18); // Flat upper palate above the articulated jaw.
+      positions.push(p.x,y,Math.sin(a)*p.z);
+    }
+  }
+  for(let i=0;i<rings;i++)for(let j=0;j<sides;j++) {
+    const a=i*sides+j,b=i*sides+(j+1)%sides;
+    indices.push(a,b,a+sides,b,b+sides,a+sides);
+  }
+  const back=positions.length/3; positions.push(-3,0,0);
+  const front=positions.length/3; positions.push(2.85,0,0);
+  for(let j=0;j<sides;j++) {
+    const k=(j+1)%sides;
+    indices.push(back,k,j,front,rings*sides+j,rings*sides+k);
+  }
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.setIndex(indices);geometry.computeVertexNormals();geometry.computeBoundingSphere();
+  geometry.boundingSphere.radius+=.25;
+  return geometry;
+}
+
+export function orcaBend(x,phase,amplitude) {
+  const u=THREE.MathUtils.clamp((.6-x)/3.6,0,1);
+  return amplitude*u*u*Math.sin(phase+x*.85);
+}
+
+function extrudedFin(points,depth=.09) {
+  const shape=new THREE.Shape();shape.moveTo(...points[0]);
+  for(let i=1;i<points.length;i+=3)shape.bezierCurveTo(...points[i],...points[i+1],...points[i+2]);
+  shape.closePath();
+  const geometry=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelSize:.025,
+    bevelThickness:.025,bevelSegments:2,steps:1,curveSegments:10});
+  geometry.translate(0,0,-depth/2);return geometry;
+}
+
+function teeth(lower=false) {
+  const parts=[];
+  for(const side of [-1,1])for(let i=0;i<9;i++) {
+    const u=i/8,x=1.35+u*1.28,z=side*(.30-u*.13);
+    const geometry=new THREE.ConeGeometry(.037,.13,7);
+    if(!lower)geometry.rotateZ(Math.PI);
+    geometry.translate(lower?x-1.18:x,lower?.07:-.23,z);parts.push(geometry);
+  }
+  const result=mergeGeometries(parts);
+  for(const p of parts)p.dispose();return result;
+}
+
+export function createOrca() {
+  const root=new THREE.Group();root.name='Orka';
+  root.userData={isFishRoot:true,isOrca:true,visualSpecies:'Orka',phase:.6,speed:1.7,
+    velocity:new THREE.Vector3(1.7,0,0),health:100};
+  const black=new THREE.MeshStandardMaterial({color:0x071219,roughness:.32,metalness:.02});
+  const white=new THREE.MeshStandardMaterial({color:0xe8e6cd,roughness:.4});
+  const mouthMaterial=new THREE.MeshStandardMaterial({color:0x382124,roughness:.75});
+  const toothMaterial=new THREE.MeshStandardMaterial({color:0xf2eed6,roughness:.38});
+  const eyeMaterial=new THREE.MeshStandardMaterial({color:0x010305,roughness:.09});
+  const uniforms={orcaPhase:{value:0},orcaAmplitude:{value:.17}};
+  const skin=black.clone();
+  skin.onBeforeCompile=shader=>{
+    Object.assign(shader.uniforms,uniforms);
+    shader.vertexShader=`varying vec3 vOrcaLocal;uniform float orcaPhase;uniform float orcaAmplitude;
+      float orcaWave(float x){float u=clamp((.6-x)/3.6,0.0,1.0);
+        return orcaAmplitude*u*u*sin(orcaPhase+x*.85);}
+    `+shader.vertexShader;
+    shader.vertexShader=shader.vertexShader.replace('#include <beginnormal_vertex>',`
+      #include <beginnormal_vertex>
+      objectNormal.x-=(orcaWave(position.x+.001)-orcaWave(position.x-.001))/.002*objectNormal.y;
+    `).replace('#include <begin_vertex>',`
+      #include <begin_vertex>
+      vOrcaLocal=position;transformed.y+=orcaWave(position.x);
+    `);
+    shader.fragmentShader='varying vec3 vOrcaLocal;\n'+shader.fragmentShader;
+    shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`
+      #include <color_fragment>
+      vec3 p=vOrcaLocal;
+      float belly=1.0-smoothstep(-.38,-.25,p.y+sin(p.x*1.1)*.10);
+      belly*=smoothstep(-2.5,-1.5,p.x);
+      float eyePatch=1.0-smoothstep(.88,1.05,length((p.xy-vec2(1.17,.39))/vec2(.39,.17)));
+      eyePatch*=smoothstep(.26,.40,abs(p.z));
+      float saddle=(1.0-smoothstep(.8,1.05,length((p.xz-vec2(-.8,0.0))/vec2(.66,.53))))*smoothstep(.40,.65,p.y);
+      vec3 coat=mix(vec3(.012,.023,.032),vec3(.22,.26,.27),saddle*.8);
+      diffuseColor.rgb=mix(coat,vec3(.90,.91,.85),max(belly,eyePatch));
+    `);
+  };
+  skin.customProgramCacheKey=()=>'orca-skin-v1';
+  const near=createOrcaBody(),far=createOrcaBody(24,16);
+  const body=new THREE.Mesh(near,skin);body.name='Body';root.add(body);
+  const dorsal=new THREE.Mesh(extrudedFin([[.65,.72],[.20,1.25],[.05,2.2],[-.35,2.45],
+    [-.28,1.65],[-.43,1.12],[-.95,.70],[-.48,.73],[.18,.72],[.65,.72]]),black);
+  dorsal.name='Dorsal fin';root.add(dorsal);
+  const flipperGeometry=extrudedFin([[0,0],[-.25,.44],[-.63,1.17],[-1.02,1.19],
+    [-1.25,1.02],[-.86,.26],[-.42,.06],[-.22,.02],[-.1,0],[0,0]]);
+  flipperGeometry.rotateX(Math.PI/2);
+  const pectorals=[];
+  for(const side of [-1,1]) {
+    const fin=new THREE.Mesh(flipperGeometry,black);fin.name='Pectoral fin';
+    fin.position.set(1,-.37,side*.48);fin.scale.z=side;root.add(fin);pectorals.push(fin);
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(.065,12,8),eyeMaterial);
+    eye.position.set(1.79,.14,side*.44);root.add(eye);
+  }
+  const flukesGeometry=extrudedFin([[0,0],[-.17,.70],[-.38,1.26],[-.65,1.4],
+    [-.90,1.18],[-.79,.38],[-.71,.08],[-.84,.035],[-.84,-.035],[-.71,-.08],
+    [-.79,-.38],[-.90,-1.18],[-.65,-1.4],[-.38,-1.26],[-.17,-.7],[0,0]],.075);
+  flukesGeometry.rotateX(Math.PI/2);
+  const flukes=new THREE.Mesh(flukesGeometry,black);flukes.name='Horizontal flukes';flukes.position.x=-3;root.add(flukes);
+  const jaw=new THREE.Group();jaw.name='Lower jaw';jaw.position.set(1.18,-.18,0);root.add(jaw);
+  const lower=new THREE.Mesh(new THREE.SphereGeometry(1,20,12),white);
+  lower.position.set(.80,-.10,0);lower.scale.set(.87,.19,.33);jaw.add(lower);
+  const gums=new THREE.Mesh(new THREE.SphereGeometry(1,16,8),mouthMaterial);
+  gums.position.set(.78,.025,0);gums.scale.set(.77,.028,.29);jaw.add(gums);
+  const upper=new THREE.Mesh(gums.geometry,mouthMaterial);
+  upper.position.set(1.96,-.18,0);upper.scale.set(.77,.025,.29);root.add(upper);
+  const upperTeeth=new THREE.Mesh(teeth(),toothMaterial),lowerTeeth=new THREE.Mesh(teeth(true),toothMaterial);
+  upperTeeth.name='Upper teeth';lowerTeeth.name='Lower teeth';root.add(upperTeeth);jaw.add(lowerTeeth);
+  let jawTimer=0,jawAmount=0,disposed=false;
+  function animate(dt,time,quality='medium',distance=0) {
+    uniforms.orcaPhase.value=time*2.35+.6;
+    uniforms.orcaAmplitude.value=.13+Math.min(2.5,root.userData.velocity.length())*.035;
+    flukes.position.y=orcaBend(-3,uniforms.orcaPhase.value,uniforms.orcaAmplitude.value);
+    const slope=(orcaBend(-2.999,uniforms.orcaPhase.value,uniforms.orcaAmplitude.value)-
+      orcaBend(-3.001,uniforms.orcaPhase.value,uniforms.orcaAmplitude.value))/.002;
+    flukes.rotation.z=Math.atan(slope)+Math.sin(uniforms.orcaPhase.value-2.0)*.12;
+    pectorals.forEach((fin,i)=>fin.rotation.x=(i===0?-1:1)*(.10+Math.sin(time*1.7+i*.35)*.08));
+    jawTimer=Math.max(0,jawTimer-dt);
+    jawAmount=THREE.MathUtils.lerp(jawAmount,jawTimer>0?1:0,1-Math.exp(-dt*5));
+    jaw.rotation.z=-jawAmount*.43;
+    upperTeeth.visible=lowerTeeth.visible=jawAmount>.08;
+    const detailed=distance<(quality==='low'?20:40);
+    body.geometry=detailed?near:far;
+  }
+  function dispose() {
+    if(disposed)return;disposed=true;
+    const geometries=new Set([near,far]),materials=new Set();
+    root.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)materials.add(o.material);});
+    geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
+  }
+  return {root,animate,openMouth(){jawTimer=3.2;},dispose};
+}

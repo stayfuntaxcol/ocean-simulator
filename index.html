@@ -115,6 +115,9 @@
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk nieuwe vis</button>
+      <button id="placeOrca" type="button" style="margin-top:9px">Plaats orka</button>
+      <button id="removeOrca" type="button" hidden>Verwijder orka</button>
+      <p id="orcaStatus">Eén orka · klik op de orka om zijn bek te openen.</p>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
         <p>Demo · vaste scène · eigen lokale opslag</p>
@@ -241,6 +244,8 @@ import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
 import { createRockLibrary } from './graphics/ReefRocks.js';
 import { createButterflyLibrary } from './graphics/ButterflyFish.js';
 import { createReefLife } from './graphics/ReefLife.js';
+import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
+import { createOrcaCruise, orcaRouteClear, validateOrcaRecord } from './graphics/OrcaNavigation.js';
 const visualParams = new URLSearchParams(location.search);
 const referenceMode = visualParams.get('scene') === 'reference';
 const oceanRandom = referenceMode ? seededRandom(REFERENCE.seed) : Math.random;
@@ -626,6 +631,7 @@ function randXZ(radius=250){
 }
 function addRockCluster(x,z,scale=1){
   const g=new THREE.Group();
+  g.userData.orcaRock=true;
   const n=2+Math.floor(oceanRandom()*5);
   for(let i=0;i<n;i++){
     const r=(1.2+oceanRandom()*4.8)*scale;
@@ -1608,6 +1614,8 @@ function worldData(){
     nextLayerId,
     terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
+    orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
+      heading:Math.atan2(orca.root.userData.velocity.z,orca.root.userData.velocity.x),health:orca.root.userData.health} : null,
     cells:[...worldCells.entries()].map(([key,layers])=>({
       key,
       layers:layers.map(l=>({
@@ -1619,6 +1627,9 @@ function worldData(){
   };
 }
 function restoreWorld(data){
+  const savedOrca=validateOrcaRecord(data?.orca);
+  if(data?.orca && !savedOrca)throw new Error('Ongeldige orkapositie in dit wereldbestand.');
+  clearOrca();
   habitatRevision++;
   // Alleen door de editor geplaatste objecten verwijderen; het basisrif blijft intact.
   for(let i=reef.children.length-1;i>=0;i--){
@@ -1660,6 +1671,7 @@ function restoreWorld(data){
     }
   }
   if(editMode) renderAllWorldCellsForEditor(); else { lastStreamingCell=''; refreshWorldStreaming(true); }
+  if(savedOrca)placeOrcaAt(savedOrca);
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
 }
 
@@ -1947,6 +1959,61 @@ const isMobile = matchMedia('(max-width: 800px)').matches;
 const FISH_COUNT = referenceMode ? REFERENCE.fishCount : (isMobile ? 90 : 220);
 const fishes = [];
 const schools = new Map();
+let orca=null,orcaCruise=null;
+const placeOrcaBtn=document.getElementById('placeOrca');
+const removeOrcaBtn=document.getElementById('removeOrca');
+const orcaStatus=document.getElementById('orcaStatus');
+
+function orcaPathClear(from,to){
+  const rocks=reef.children.filter(root=>root.userData.orcaRock).map(root=>new THREE.Box3().setFromObject(root));
+  return orcaRouteClear(from,to,{rocks,terrain:terrainHeightAt,boundary:WORLD_HALF});
+}
+function clearOrca(){
+  if(!orca)return;
+  const fish=orca.root;
+  if(selectedFish===fish)stopFollowing(false);
+  scene.remove(fish);
+  const index=fishes.indexOf(fish);if(index>=0)fishes.splice(index,1);
+  schools.delete(fish.userData.schoolId);orca.dispose();orca=null;orcaCruise=null;
+  placeOrcaBtn.textContent='Plaats orka';removeOrcaBtn.hidden=true;
+  fishCountEl.textContent=fishes.length;schoolCountText.textContent=schools.size;
+  orcaStatus.textContent='Eén orka · klik op de orka om zijn bek te openen.';
+}
+function placeOrcaAt(record){
+  orca=createOrca();const fish=orca.root;
+  fish.position.fromArray(record.position);
+  fish.userData.velocity.set(Math.cos(record.heading)*1.7,0,Math.sin(record.heading)*1.7);
+  fish.userData.health=record.health;fish.userData.dead=record.health<=0;
+  const school=makeSchool('orca',{cruiseSpeed:1.7});registerFish(fish,'orca',school);
+  orientFishForward(fish,fish.position.clone().add(fish.userData.velocity));
+  scene.add(fish);fishes.push(fish);school.center.copy(fish.position);
+  orcaCruise=createOrcaCruise(fish,(from,to)=>to.distanceTo(camera.position)<ACTIVE_RADIUS-ORCA_CLEARANCE && orcaPathClear(from,to));
+  placeOrcaBtn.textContent='Volg orka';removeOrcaBtn.hidden=false;
+  fishCountEl.textContent=fishes.length;
+  orcaStatus.textContent='Orka aanwezig · klik op zijn lichaam om de bek te openen.';
+}
+placeOrcaBtn.addEventListener('click',()=>{
+  if(editMode){orcaStatus.textContent='Sluit de landschapseditor om de orka te plaatsen of volgen.';return;}
+  if(orca?.root.userData.dead)clearOrca();
+  if(!orca){
+    refreshWorldStreaming(true);
+    const forward=new THREE.Vector3();camera.getWorldDirection(forward);forward.y=0;
+    if(forward.lengthSq()<.01)forward.set(0,0,-1);forward.normalize();
+    const heading=Math.atan2(forward.z,forward.x);let chosen=null;
+    for(const distance of [14,22,30]){
+      for(const turn of [0,.8,-.8,1.6,-1.6,Math.PI]){
+        const p=camera.position.clone().add(new THREE.Vector3(Math.cos(heading+turn)*distance,0,Math.sin(heading+turn)*distance));
+        p.y=THREE.MathUtils.clamp(Math.max(terrainHeightAt(p.x,p.z)+ORCA_CLEARANCE+1,camera.position.y+3,0),0,10);
+        if(orcaPathClear(p,p)){chosen={position:p.toArray(),heading,health:100};break;}
+      }
+      if(chosen)break;
+    }
+    if(!chosen){orcaStatus.textContent='Geen ruime plek dichtbij. Zwem naar opener water en probeer opnieuw.';return;}
+    placeOrcaAt(chosen);
+  }
+  startFollowing(orca.root,'fish');followDistance=10;followHeight=1;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
+});
+removeOrcaBtn.addEventListener('click',clearOrca);
 const gltfLoader = new GLTFLoader();
 let nextSchoolId=1;
 let habitatRevision=0;
@@ -2284,6 +2351,7 @@ function markSchoolRouteProgress(school,t){
 
 function updateSchoolBrains(t){
   for(const school of schools.values()){
+    if(school.speciesId==='orca')continue;
     const members=school.members.filter(f=>f.parent);
     if(!members.length)continue;
 
@@ -2440,12 +2508,13 @@ function disturbSchool(clickedFish,wholeSchool=false){
 }
 
 function updateFish(dt,t){
-  let visibleCount=0;
+  let visibleCount=orca?.root.visible && !orca.root.userData.dead ? 1 : 0;
   schoolThinkAccumulator+=dt;
   if(schoolThinkAccumulator>.35){updateSchoolBrains(t);schoolThinkAccumulator=0;}
   const camX=camera.position.x,camY=camera.position.y,camZ=camera.position.z;
 
   for(const school of schools.values()){
+    if(school.speciesId==='orca')continue;
     const members=school.members;
     school.avgVelocity.set(0,0,0);
     let avgN=0;
@@ -2664,7 +2733,7 @@ function pickFishAtPointerEvent(e){
 renderer.domElement.addEventListener('mousedown',e=>{
   if(e.button!==0 || editMode || followMode)return;
   const fish=pickFishAtCenter();
-  if(fish){ e.preventDefault(); e.stopPropagation(); startFollowing(fish,'fish'); }
+  if(fish){ e.preventDefault(); e.stopPropagation(); if(fish.userData.isOrca)orca?.openMouth(); startFollowing(fish,'fish'); }
 },true);
 
 renderer.domElement.addEventListener('wheel',e=>{
@@ -2684,6 +2753,7 @@ renderer.domElement.addEventListener('click',e=>{
   e.preventDefault();
   e.stopPropagation();
   if(disturbClickTimer)clearTimeout(disturbClickTimer);
+  if(fish.userData.isOrca){orca?.openMouth();return;}
   disturbClickTimer=setTimeout(()=>{
     disturbSchool(fish,false);
     disturbClickTimer=null;
@@ -2697,6 +2767,7 @@ renderer.domElement.addEventListener('dblclick',e=>{
   e.preventDefault();
   e.stopPropagation();
   if(disturbClickTimer){clearTimeout(disturbClickTimer);disturbClickTimer=null;}
+  if(fish.userData.isOrca){orca?.openMouth();return;}
   disturbSchool(fish,true);
 },true);
 
@@ -2966,6 +3037,14 @@ function animate(){
   glow.position.z = Math.cos(t*.15)*35;
 
   atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
+  if(orca){
+    const fish=orca.root,distance=fish.position.distanceTo(camera.position);
+    fish.visible=!editMode && !fish.userData.dead && distance<CULL_RADIUS;
+    if(!editMode && !referencePaused && distance<ACTIVE_RADIUS-ORCA_CLEARANCE*2)orcaCruise.update(dt,t);
+    const school=schools.get(fish.userData.schoolId);
+    school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
+    if(fish.visible)orca.animate(dt,t,atmosphere.quality,distance);
+  }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
