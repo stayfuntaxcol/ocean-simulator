@@ -28,7 +28,7 @@ export function createBlueBody(rings=40,sides=24) {
   g.setIndex(indices); g.computeVertexNormals(); g.computeBoundingSphere(); return g;
 }
 
-function fin(points,depth=.035) {
+export function fin(points,depth=.035) {
   const shape=new THREE.Shape(); shape.moveTo(...points[0]);
   for(let i=1;i<points.length;i+=3) shape.bezierCurveTo(...points[i],...points[i+1],...points[i+2]);
   shape.closePath();
@@ -48,10 +48,21 @@ export function createBlueReefLibrary() {
       float belly=1.0-smoothstep(-.78,-.12,vBluePosition.y);
       float crown=smoothstep(.25,1.05,vBluePosition.y);
       vec3 blue=mix(vec3(.09,.47,.62),vec3(.045,.27,.39),crown*.48);
+      // Staggered curved scales; preserve the smooth face and fade below pixel size.
+      vec2 grid=vec2(vBluePosition.x*5.8,vBluePosition.y*5.8);
+      grid.x+=mod(floor(grid.y),2.0)*.5;
+      vec2 cell=fract(grid)-.5;
+      float arc=abs(length(vec2(cell.x,cell.y+.42))-.49);
+      float aa=max(fwidth(arc),.018);
+      float scales=(1.0-smoothstep(.026,.026+aa,arc))*smoothstep(-.35,-.08,cell.y);
+      float readable=1.0-smoothstep(.30,.85,max(fwidth(grid.x),fwidth(grid.y)));
+      float face=1.0-smoothstep(.10,.65,vBluePosition.x);
+      blue*=1.0-scales*face*readable*.24;
+      blue+=vec3(.025,.045,.04)*sin(vBluePosition.x*7.0+vBluePosition.y*2.0)*face;
       diffuseColor.rgb=mix(blue,vec3(.43,.72,.72),belly*.80);
     `);
   };
-  skin.customProgramCacheKey=()=>'blue-reef-skin-v1';
+  skin.customProgramCacheKey=()=>'blue-reef-skin-v2';
   const mat=(color,roughness=.6)=>new THREE.MeshStandardMaterial({color,roughness});
   const cheekMat=mat(0x55acbc),lipMat=mat(0x6ebcc5),finMat=mat(0x286b80);
   const white=mat(0xfff4df,.3),pupilMat=mat(0x092937,.17),mouthMat=mat(0x153d49),browMat=mat(0x327488);
@@ -59,6 +70,13 @@ export function createBlueReefLibrary() {
   const tail=fin([[0,.09],[-.30,.22],[-.75,.75],[-.85,.64],[-.94,.39],[-.57,.14],[-.65,0],[-.57,-.14],[-.94,-.39],[-.85,-.64],[-.75,-.75],[-.30,-.22],[0,-.09],[.06,-.04],[.06,.04],[0,.09]]);
   const pectoral=fin([[0,.10],[-.22,.29],[-.55,.23],[-.63,-.02],[-.65,-.25],[-.40,-.40],[-.18,-.25],[-.06,-.18],[.04,-.04],[0,.10]]);
   const anal=fin([[-.97,-.46],[-.70,-1.14],[-.28,-1.25],[-.16,-.95],[-.19,-.78],[-.64,-.54],[-.97,-.46]]);
+  const smile=new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    new THREE.Vector3(.73,-.20,.435),new THREE.Vector3(.92,-.29,.38),
+    new THREE.Vector3(1.15,-.29,.28),new THREE.Vector3(1.30,-.22,.11),
+  ]),20,.022,6,false);
+  const browGeometry=new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    new THREE.Vector3(.48,.78,.39),new THREE.Vector3(.64,.88,.40),new THREE.Vector3(.84,.85,.37),
+  ]),12,.043,6,false);
   const members=new Map(); let disposed=false;
   function attach(fish) {
     if(disposed) throw new Error('Blue reef library disposed');
@@ -79,10 +97,10 @@ export function createBlueReefLibrary() {
       // Cheeks sit inside the body silhouette; the eye whites project from both sides.
       details.push(mesh(sphere,cheekMat,'Cheek',[.83,-.15,side*.26],[.46,.32,.21]));
       details.push(mesh(sphere,white,'Eye white',[.75,.42,side*.405],[.31,.34,.18]));
-      details.push(mesh(sphere,pupilMat,'Pupil',[.86,.43,side*.552],[.115,.15,.062]));
+      details.push(mesh(sphere,pupilMat,'Pupil',[.86,.43,side*.552],[.14,.175,.065]));
       details.push(mesh(sphere,white,'Eye glint',[.89,.49,side*.603],[.035,.041,.016]));
-      const brow=mesh(sphere,browMat,'Brow',[.71,.79,side*.36],[.23,.056,.065]);
-      brow.rotation.z=-.18; details.push(brow);
+      const brow=mesh(browGeometry,browMat,'Brow'); brow.scale.z=side; details.push(brow);
+      const smileSide=mesh(smile,mouthMat,'Smile'); smileSide.scale.z=side;
       const p=mesh(pectoral,finMat,'Pectoral fin',[.03,-.09,side*.48]); p.rotation.y=-side*.45;
     }
     // Dark inset framed by upper/lower lips: a real silhouette, not a painted smile.
@@ -112,7 +130,7 @@ export function createBlueReefLibrary() {
       fish.remove(m.basic);delete fish.userData.visualSpecies;
     }
     members.clear();
-    for(const g of [near,far,sphere,dorsal,tail,pectoral,anal])g.dispose();
+    for(const g of [near,far,sphere,dorsal,tail,pectoral,anal,smile,browGeometry])g.dispose();
     for(const m of [skin,cheekMat,lipMat,finMat,white,pupilMat,mouthMat,browMat])m.dispose();
   }
   return {attach,update,dispose,get size(){return members.size;}};

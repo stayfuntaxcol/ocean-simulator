@@ -117,7 +117,10 @@
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
       <label>Blauwe karaktervis <input id="blueFishDetail" type="checkbox" checked></label>
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
-      <p id="blueFishStatus">Modelstudie · vorm en basismateriaal · vaste vinstand.</p>
+      <label>Groene platvis <input id="greenFishDetail" type="checkbox" checked></label>
+      <button id="viewGreenFish" type="button">Bekijk groene platvis</button>
+      <p id="greenFishStatus">Brede platvis · gevlekte huid en ogen bovenop.</p>
+      <p id="blueFishStatus">Blauwe rifvis · schubbenpatroon en vriendelijke glimlach.</p>
       <button id="placeOrca" type="button" style="margin-top:9px">Plaats orka</button>
       <button id="removeOrca" type="button" hidden>Verwijder orka</button>
       <p id="orcaStatus">Eén orka · klik op de orka om zijn bek te openen.</p>
@@ -247,6 +250,7 @@ import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
 import { createRockLibrary } from './graphics/ReefRocks.js';
 import { createButterflyLibrary } from './graphics/ButterflyFish.js';
 import { createBlueReefLibrary } from './graphics/BlueReefFish.js';
+import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
 import { createOrcaCruise, orcaRouteClear, validateOrcaRecord } from './graphics/OrcaNavigation.js';
@@ -1931,6 +1935,8 @@ const fishPalette = [
 ];
 const butterflyLibrary = createButterflyLibrary();
 const blueReefLibrary = createBlueReefLibrary();
+const greenReefLibrary = createGreenReefLibrary();
+const greenFishDetail = document.getElementById('greenFishDetail');
 const blueFishDetail = document.getElementById('blueFishDetail');
 const fishDetail = document.getElementById('fishDetail');
 
@@ -1959,6 +1965,7 @@ function createFish(color=0xffa45b, scale=1){
   group.userData.speed=.75+oceanRandom()*1.8;
   if(color===fishPalette[2]) butterflyLibrary.attach(group);
   if(color===fishPalette[1]) blueReefLibrary.attach(group);
+  if(color===fishPalette[6]) greenReefLibrary.attach(group);
   return group;
 }
 
@@ -2714,6 +2721,18 @@ document.getElementById('viewBlueFish').addEventListener('click',()=>{
   followDistance=4.8; followHeight=.15; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
   status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Modelstudie: vaste vinstand.';
 });
+document.getElementById('viewGreenFish').addEventListener('click',()=>{
+  const status=document.getElementById('greenFishStatus');
+  if(editMode) { status.textContent='Sluit de landschapseditor om de voorbeeldvis te bekijken.'; return; }
+  const candidates=fishes.filter(f=>f.parent && !f.userData.dead && f.userData.visualSpecies==='Groene platvis');
+  candidates.sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
+  if(!candidates.length) { status.textContent='Geen groene vis aanwezig. Open de vaste vergelijkingsscène.'; return; }
+  greenFishDetail.checked=true;
+  if(!atmosphere.enabled) { status.textContent='Kies Nieuwe onderwatersfeer om het nieuwe model te zien.'; return; }
+  startFollowing(candidates[0],'fish');
+  followDistance=4.8; followHeight=1.1; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
+  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Modelstudie: vaste vinstand.';
+});
 followPanel.addEventListener('click',e=>e.stopPropagation());
 
 function fishRootFromObject(obj){
@@ -3066,6 +3085,7 @@ function animate(){
   }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
   blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled);
+  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){

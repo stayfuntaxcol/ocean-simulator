@@ -82,3 +82,10 @@ De turquoise school heeft een nieuw, rond en expressief vismodel. Gebruik
 vergelijkingsscène. Dit werkpakket bevat vorm en basismateriaal; fijne huiddetails
 en lichaamsanimatie volgen apart. Er slagen nu 30 lokale tests.
 Zie [bekijken en beoordelen](docs/blue-character-fish.md).
+
+### Patroon, expressie en groene platvis
+
+De blauwe vis heeft nu schubbenlijnen en een vriendelijker gezicht. De groene
+school heeft een breed, plat olijfgroen model met vlekjes en ogen bovenop.
+Beide modellen hebben een eigen kijkknop en vergelijkingsschakelaar.
+Er slagen nu 32 lokale tests. Zie [testinstructies en afbakening](docs/character-fish-patterns.md).
