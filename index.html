@@ -112,6 +112,8 @@
       <label>Beeld <select id="visualStyle"><option value="upgraded">Nieuwe onderwatersfeer</option><option value="original">Oorspronkelijk beeld</option></select></label>
       <label>Kwaliteit <select id="visualQuality"><option value="low">Licht</option><option value="medium" selected>Gebalanceerd</option><option value="high">Hoog</option></select></label>
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
+      <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
+      <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk nieuwe vis</button>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
         <p>Demo · vaste scène · eigen lokale opslag</p>
@@ -236,6 +238,7 @@ import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './gra
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
 import { createRockLibrary } from './graphics/ReefRocks.js';
+import { createButterflyLibrary } from './graphics/ButterflyFish.js';
 const visualParams = new URLSearchParams(location.search);
 const referenceMode = visualParams.get('scene') === 'reference';
 const oceanRandom = referenceMode ? seededRandom(REFERENCE.seed) : Math.random;
@@ -1897,6 +1900,8 @@ scene.add(bubbles);
 const fishPalette = [
   0xffa45b,0x59c3c3,0xf4d35e,0xee6c8a,0x8ac6d1,0x9c89b8,0x76b947,0xf28f3b
 ];
+const butterflyLibrary = createButterflyLibrary();
+const fishDetail = document.getElementById('fishDetail');
 
 
 function orientFishForward(fish,target){
@@ -1921,6 +1926,7 @@ function createFish(color=0xffa45b, scale=1){
   group.userData.tail=tail;
   group.userData.phase=oceanRandom()*Math.PI*2;
   group.userData.speed=.75+oceanRandom()*1.8;
+  if(color===fishPalette[2]) butterflyLibrary.attach(group);
   return group;
 }
 
@@ -2583,7 +2589,7 @@ function startFollowing(fish,mode='fish'){
   const school=selectedSchool();
   followTitle.textContent=mode==='school'
     ? `School volgen · ${school?.speciesId||'onbekend'}`
-    : `Vis volgen · ${fish.userData.speciesId||'onbekend'}`;
+    : `Vis volgen · ${fish.userData.visualSpecies||fish.userData.speciesId||'onbekend'}`;
   setFollowButtonState();
   if(controls.isLocked) controls.unlock();
   startBtn.textContent='Vrij zwemmen';
@@ -2598,6 +2604,15 @@ function stopFollowing(relock=false){
 followFishBtn.addEventListener('click',e=>{e.stopPropagation();if(selectedFish)startFollowing(selectedFish,'fish');});
 followSchoolBtn.addEventListener('click',e=>{e.stopPropagation();if(selectedFish)startFollowing(selectedFish,'school');});
 stopFollowBtn.addEventListener('click',e=>{e.stopPropagation();stopFollowing(false);});
+document.getElementById('viewButterfly').addEventListener('click',()=>{
+  if(editMode) { hint.textContent='Sluit de landschapseditor om een vis te volgen.'; return; }
+  const candidates=fishes.filter(f=>f.parent && !f.userData.dead && f.userData.visualSpecies);
+  candidates.sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
+  if(candidates.length) {
+    startFollowing(candidates[0],'fish');
+    followDistance=4.8; followHeight=.3; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
+  }
+});
 followPanel.addEventListener('click',e=>e.stopPropagation());
 
 function fishRootFromObject(obj){
@@ -2937,6 +2952,7 @@ function animate(){
   glow.position.z = Math.cos(t*.15)*35;
 
   atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
+  butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
   const detailedSeabed = seabedDetail.checked && atmosphere.enabled;
   sandDetail.value = detailedSeabed && !terrainInspectActive ? 1 : 0;
   if (streamingTime-lastRockDetailUpdate > .25 || detailedSeabed !== previousSeabedDetail) {

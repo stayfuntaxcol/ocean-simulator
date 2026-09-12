@@ -2,19 +2,23 @@
 
 Interactieve oceaansimulator gebouwd met Three.js.
 
-## Grafische upgrade: water, licht, zand en rotsen
+## Grafische upgrade: water, rif en eerste gedetailleerde vis
 
 Deze branch bevat water en licht (stap 1), plus geribbeld zand en verweerde
 kalksteen-/basaltrotsen (stap 2). Kies bij **Water & licht** een kwaliteitsstand.
 Met **Zand & rotsdetail** vergelijk je de nieuwe bodem met stap 1.
+Stap 3 geeft de gele school een eigen koraalvlindervis, met een bewegende romp,
+huidpatroon, ogen en dunne vinnen. Klik **Bekijk nieuwe vis** om hem van dichtbij te
+volgen. Gebruik **Gedetailleerde koraalvis** voor de vergelijking met de oude vorm.
 
 Open `http://localhost:8000/?scene=reference` na het starten van de webserver voor
 de vaste demonstratiescène. Deze opent met 40 vissen en een gepauzeerde camera-opstelling.
 De [testinstructies en vervolgstappen](docs/visual-upgrade.md) beschrijven de vergelijking.
 Visuele browsercontrole en apparaatmetingen staan nog open.
 
-Ontwikkelaars kunnen de tien automatische controles uitvoeren met `npm ci && npm test`.
+Ontwikkelaars kunnen de vijftien automatische controles uitvoeren met `npm ci && npm test`.
 Gebruik je Codespaces? Zie [stap 2 testen](docs/seabed-upgrade.md).
+De [instructies voor stap 3](docs/fish-upgrade.md) beschrijven de nieuwe vis.
 
 ## Huidige functies
 
