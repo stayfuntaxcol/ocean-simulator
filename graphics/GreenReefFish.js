@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createCharacterMotion,addFinDetail} from './CharacterMotion.js';
 import {createBlueBody,fin} from './BlueReefFish.js';
 
 // Broad, flat original character inspired by the olive-green reference.
@@ -8,6 +9,7 @@ export function createGreenBody(rings=40,sides=24) {
 }
 export function createGreenReefLibrary() {
   const near=createGreenBody(),far=createGreenBody(20,12);
+  for(const g of [near,far])g.boundingSphere.radius=3;
   const sphere=new THREE.SphereGeometry(1,16,12);
   const material=(color,roughness=.65)=>new THREE.MeshStandardMaterial({color,roughness});
   const skin=material(0xffffff),olive=material(0x899343),lip=material(0xa6ae55);
@@ -33,6 +35,7 @@ export function createGreenReefLibrary() {
     `);
   };
   skin.customProgramCacheKey=()=>'green-flatfish-skin-v1';
+  addFinDetail(finMat);
   const sideFin=fin([[.80,0],[.33,.30],[-.47,.45],[-1.22,.25],[-1.42,.12],[-1.42,-.05],[-1.10,-.10],[-.40,-.16],[.39,-.11],[.80,0]]);
   const tail=fin([[0,.08],[-.25,.22],[-.59,.48],[-.74,.39],[-.85,.18],[-.79,-.18],[-.74,-.39],[-.59,-.48],[-.25,-.22],[0,-.08],[.04,-.05],[.04,.05],[0,.08]]);
   const dorsal=fin([[-1,.20],[-.82,.70],[-.34,.76],[-.12,.32],[-.3,.20],[-.8,.15],[-1,.20]]);
@@ -61,21 +64,22 @@ export function createGreenReefLibrary() {
     const caudal=mesh(tail,finMat,'Tail',[-1.55,0,0]);caudal.rotation.x=Math.PI/2;
     mesh(dorsal,finMat,'Dorsal fin',[-.14,.02,0]);
     fish.userData.visualSpecies='Groene platvis';
-    const m={body,basic,detailed,details};members.set(fish,m);basic.visible=false;return m;
+    const motion=createCharacterMotion(detailed,fish,{flat:true});
+    const m={body,basic,detailed,details,motion};members.set(fish,m);basic.visible=false;return m;
   }
-  function update(camera,quality,enabled=true) {
+  function update(camera,quality,enabled=true,time=0) {
     const limit=quality==='low'?14:quality==='high'?38:24;
     for(const [fish,m] of members) {
-      if(!fish.parent){members.delete(fish);continue;}
+      if(!fish.parent){m.motion.dispose();members.delete(fish);continue;}
       m.basic.visible=!enabled;m.detailed.visible=enabled;
-      if(!enabled||!fish.visible)continue;
+      if(!enabled||!fish.visible||fish.userData.dead)continue;
       const close=fish.position.distanceToSquared(camera.position)<limit*limit;
-      m.body.geometry=close?near:far;for(const d of m.details)d.visible=close;
+      m.body.geometry=close?near:far;m.motion.update(time,close);for(const d of m.details)d.visible=close;
     }
   }
   function dispose() {
     if(disposed)return;disposed=true;
-    for(const [fish,m] of members){fish.remove(m.detailed);for(const c of [...m.basic.children])fish.add(c);fish.remove(m.basic);delete fish.userData.visualSpecies;}
+    for(const [fish,m] of members){m.motion.dispose();fish.remove(m.detailed);for(const c of [...m.basic.children])fish.add(c);fish.remove(m.basic);delete fish.userData.visualSpecies;}
     members.clear();
     for(const g of [near,far,sphere,sideFin,tail,dorsal,smile,lowerLip])g.dispose();
     for(const m of [skin,olive,lip,white,dark,finMat])m.dispose();

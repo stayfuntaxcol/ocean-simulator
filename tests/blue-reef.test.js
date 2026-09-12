@@ -26,7 +26,7 @@ test('blue appearance preserves school state and shares assets across fish with 
     return {fish,tail,parts:library.attach(fish)};};
   const a=make(),b=make();
   assert.equal(a.parts.body.geometry,b.parts.body.geometry);
-  assert.equal(a.parts.body.material,b.parts.body.material);
+  assert.notEqual(a.parts.body.material,b.parts.body.material);
   library.update(camera,'high',false);
   assert.equal(a.parts.basic.visible,true);assert.equal(a.parts.detailed.visible,false);
   assert.equal(a.fish.userData.tail,a.tail);assert.equal(a.fish.userData.schoolId,'reef_1');
@@ -48,7 +48,7 @@ test('blue model geometry stays finite and its skin retains standard lighting ho
     triangles+=(m.geometry.index?.count??m.geometry.attributes.position.count)/3;
   });
   assert.ok(triangles<15000,`model triangles: ${triangles}`);
-  const shader={vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  const shader={vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader,uniforms:{}};
   body.material.onBeforeCompile(shader);
   assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
   assert.match(shader.vertexShader,/vBluePosition=position/);

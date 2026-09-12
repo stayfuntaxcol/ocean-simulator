@@ -117,6 +117,9 @@
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
       <label>Blauwe karaktervis <input id="blueFishDetail" type="checkbox" checked></label>
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
+      <label>Clownvis <input id="clownFishDetail" type="checkbox" checked></label>
+      <button id="viewClownFish" type="button">Bekijk clownvis</button>
+      <p id="clownFishStatus">Oranje-witte clownvis · speelse zwemslag.</p>
       <label>Groene platvis <input id="greenFishDetail" type="checkbox" checked></label>
       <button id="viewGreenFish" type="button">Bekijk groene platvis</button>
       <p id="greenFishStatus">Brede platvis · gevlekte huid en ogen bovenop.</p>
@@ -1935,6 +1938,8 @@ const fishPalette = [
 ];
 const butterflyLibrary = createButterflyLibrary();
 const blueReefLibrary = createBlueReefLibrary();
+const clownReefLibrary = createBlueReefLibrary({clown:true});
+const clownFishDetail = document.getElementById('clownFishDetail');
 const greenReefLibrary = createGreenReefLibrary();
 const greenFishDetail = document.getElementById('greenFishDetail');
 const blueFishDetail = document.getElementById('blueFishDetail');
@@ -1965,6 +1970,7 @@ function createFish(color=0xffa45b, scale=1){
   group.userData.speed=.75+oceanRandom()*1.8;
   if(color===fishPalette[2]) butterflyLibrary.attach(group);
   if(color===fishPalette[1]) blueReefLibrary.attach(group);
+  if(color===fishPalette[0]) clownReefLibrary.attach(group);
   if(color===fishPalette[6]) greenReefLibrary.attach(group);
   return group;
 }
@@ -2719,7 +2725,19 @@ document.getElementById('viewBlueFish').addEventListener('click',()=>{
   if(!atmosphere.enabled) { status.textContent='Kies Nieuwe onderwatersfeer om het nieuwe model te zien.'; return; }
   startFollowing(candidates[0],'fish');
   followDistance=4.8; followHeight=.15; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
-  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Modelstudie: vaste vinstand.';
+  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Start de animatie om vinnen, staart en ademhaling te bekijken.';
+});
+document.getElementById('viewClownFish').addEventListener('click',()=>{
+  const status=document.getElementById('clownFishStatus');
+  if(editMode) { status.textContent='Sluit de landschapseditor om de voorbeeldvis te bekijken.'; return; }
+  const candidates=fishes.filter(f=>f.parent && !f.userData.dead && f.userData.visualSpecies==='Clownvis');
+  candidates.sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
+  if(!candidates.length) { status.textContent='Geen clownvis aanwezig. Open de vaste vergelijkingsscène.'; return; }
+  clownFishDetail.checked=true;
+  if(!atmosphere.enabled) { status.textContent='Kies Nieuwe onderwatersfeer om het nieuwe model te zien.'; return; }
+  startFollowing(candidates[0],'fish');
+  followDistance=4.8; followHeight=.15; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
+  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Start de animatie om vinnen, staart en ademhaling te bekijken.';
 });
 document.getElementById('viewGreenFish').addEventListener('click',()=>{
   const status=document.getElementById('greenFishStatus');
@@ -2731,7 +2749,7 @@ document.getElementById('viewGreenFish').addEventListener('click',()=>{
   if(!atmosphere.enabled) { status.textContent='Kies Nieuwe onderwatersfeer om het nieuwe model te zien.'; return; }
   startFollowing(candidates[0],'fish');
   followDistance=4.8; followHeight=1.1; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
-  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Modelstudie: vaste vinstand.';
+  status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Start de animatie om vinnen, staart en ademhaling te bekijken.';
 });
 followPanel.addEventListener('click',e=>e.stopPropagation());
 
@@ -3084,8 +3102,9 @@ function animate(){
     if(fish.visible)orca.animate(dt,t,atmosphere.quality,distance);
   }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
-  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled);
-  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled);
+  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t);
+  clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t);
+  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){

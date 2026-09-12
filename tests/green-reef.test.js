@@ -22,7 +22,7 @@ test('green fish keeps its school, top-mounted eyes and shared resources across 
   const fish=new THREE.Group(),tail=new THREE.Object3D();fish.add(tail);scene.add(fish);
   fish.userData={schoolId:'reef_6',tail};const a=lib.attach(fish);
   const other=new THREE.Group();scene.add(other);const b=lib.attach(other);
-  assert.equal(a.body.geometry,b.body.geometry);assert.equal(a.body.material,b.body.material);
+  assert.equal(a.body.geometry,b.body.geometry);assert.notEqual(a.body.material,b.body.material);
   for(const m of a.detailed.children){
     for(const p of m.geometry.attributes.position.array)assert.ok(Number.isFinite(p));
     if(m.name==='Eye white')assert.ok(m.position.y>.36);
@@ -31,7 +31,7 @@ test('green fish keeps its school, top-mounted eyes and shared resources across 
   assert.equal(fish.userData.tail,tail);assert.equal(fish.userData.schoolId,'reef_6');
   lib.update(camera,'high');const count=a.body.geometry.index.count;
   camera.position.z=100;lib.update(camera,'low');assert.ok(a.body.geometry.index.count<count);
-  const shader={vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  const shader={vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader,uniforms:{}};
   a.body.material.onBeforeCompile(shader);assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
   assert.match(shader.fragmentShader,/fwidth/);
   scene.remove(other);lib.update(camera,'low');assert.equal(lib.size,1);

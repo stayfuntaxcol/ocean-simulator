@@ -89,3 +89,12 @@ De blauwe vis heeft nu schubbenlijnen en een vriendelijker gezicht. De groene
 school heeft een breed, plat olijfgroen model met vlekjes en ogen bovenop.
 Beide modellen hebben een eigen kijkknop en vergelijkingsschakelaar.
 Er slagen nu 32 lokale tests. Zie [testinstructies en afbakening](docs/character-fish-patterns.md).
+
+### Zwemanimatie en clownvis
+
+Blauwe en groene karaktervissen bewegen nu met een buigende romp, gekoppelde
+staartslag, afzonderlijke vinbeweging, vinstralen en subtiele gezichtsanimatie.
+De oranje school heeft een expressieve clownvis met drie witte banden en één
+kleinere borstvin. Klik **Animatie starten** in de referentiescène.
+De eerdere beschrijving van vaste poses is hiermee achterhaald.
+37 lokale tests slagen; [testinstructies en grenzen](docs/animated-character-fish.md).
