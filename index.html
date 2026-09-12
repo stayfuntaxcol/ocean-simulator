@@ -113,6 +113,7 @@
       <label>Kwaliteit <select id="visualQuality"><option value="low">Licht</option><option value="medium" selected>Gebalanceerd</option><option value="high">Hoog</option></select></label>
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
+      <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk nieuwe vis</button>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
@@ -239,6 +240,7 @@ import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
 import { createRockLibrary } from './graphics/ReefRocks.js';
 import { createButterflyLibrary } from './graphics/ButterflyFish.js';
+import { createReefLife } from './graphics/ReefLife.js';
 const visualParams = new URLSearchParams(location.search);
 const referenceMode = visualParams.get('scene') === 'reference';
 const oceanRandom = referenceMode ? seededRandom(REFERENCE.seed) : Math.random;
@@ -597,10 +599,17 @@ for(let i=0;i<18;i++){
 // Spectaculair rif: rotsen, koraal, sponzen, anemonen en zeewier
 const reef = new THREE.Group();
 scene.add(reef);
+const reefLife = createReefLife(atmosphere.uniforms);
+const reefDetail = document.getElementById('reefDetail');
+function styleReef(root,type,color){
+  const seed=Math.abs(Math.round(root.position.x*37+root.position.z*71));
+  const design=type==='branch' && seed%3===0 ? 'fan' : type;
+  reefLife.attach(root,design,color,seed);
+}
 
 // Massieve natuurwet: rotslagen zijn ondoordringbaar voor camera en vissen.
 const rockCollisionRoots = new Set();
-function removeReefRoot(root){ rockLibrary.release(root); rockCollisionRoots.delete(root); reef.remove(root); }
+function removeReefRoot(root){ reefLife.release(root); rockLibrary.release(root); rockCollisionRoots.delete(root); reef.remove(root); }
 const reefMobile = matchMedia('(max-width: 800px)').matches;
 const reefScale = reefMobile ? .55 : 1;
 const coralColors = [0xff6f61,0xf3a6c8,0xd96aa7,0xffb347,0xf5d76e,0x8f79c6,0x58b7a7,0x77c46b,0xe67e50];
@@ -648,6 +657,7 @@ function addBranchCoral(x,z,scale=1,color=0xff7f6e){
     tip.position.set(b.position.x,b.position.y+h*.42,b.position.z); g.add(tip);
   }
   g.position.set(x,-17.5,z); g.rotation.y=oceanRandom()*Math.PI*2; reef.add(g);
+  styleReef(g,'branch',color);
 }
 function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
   const g=new THREE.Group(), mat=reefMat(color,.86);
@@ -662,6 +672,7 @@ function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
     stem.position.y=(.25+i*.72)*scale; g.add(stem);
   }
   g.position.set(x,-17.5,z); reef.add(g);
+  styleReef(g,'plate',color);
 }
 function addSponge(x,z,scale=1,color=0xffb347){
   const g=new THREE.Group(), mat=reefMat(color,.92);
@@ -675,6 +686,7 @@ function addSponge(x,z,scale=1,color=0xffb347){
     rim.rotation.x=Math.PI/2; rim.position.set(tube.position.x,h,tube.position.z); g.add(rim);
   }
   g.position.set(x,-17.55,z); reef.add(g);
+  styleReef(g,'sponge',color);
 }
 function addAnemone(x,z,scale=1,color=0xd96aa7){
   const g=new THREE.Group();
@@ -712,6 +724,7 @@ function addSeaweed(x,z,scale=1){
     weed.rotation.z=(oceanRandom()-.5)*.4; g.add(weed);
   }
   g.position.set(x,-17.7,z); reef.add(g);
+  styleReef(g,'grass',0x689653);
 }
 
 // -------- WORLD EDITOR: persistente, gelaagde biodiversiteit --------
@@ -2931,6 +2944,7 @@ let visualTime = referenceMode ? REFERENCE.time : 0;
 function simulationTime() { return referenceMode ? visualTime : performance.now()/1000; }
 let metricStart = performance.now(), metricFrames = 0;
 let lastRockDetailUpdate = -Infinity, previousSeabedDetail = null;
+let lastReefDetailUpdate = -Infinity, previousReefDetail = null;
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
@@ -2953,6 +2967,12 @@ function animate(){
 
   atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
+  reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
+  const detailedReef=reefDetail.checked && atmosphere.enabled;
+  if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
+    reefLife.update(camera,atmosphere.quality,detailedReef);
+    lastReefDetailUpdate=streamingTime; previousReefDetail=detailedReef;
+  }
   const detailedSeabed = seabedDetail.checked && atmosphere.enabled;
   sandDetail.value = detailedSeabed && !terrainInspectActive ? 1 : 0;
   if (streamingTime-lastRockDetailUpdate > .25 || detailedSeabed !== previousSeabedDetail) {
