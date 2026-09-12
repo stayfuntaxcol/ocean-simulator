@@ -111,6 +111,7 @@
       <summary>Water & licht</summary>
       <label>Beeld <select id="visualStyle"><option value="upgraded">Nieuwe onderwatersfeer</option><option value="original">Oorspronkelijk beeld</option></select></label>
       <label>Kwaliteit <select id="visualQuality"><option value="low">Licht</option><option value="medium" selected>Gebalanceerd</option><option value="high">Hoog</option></select></label>
+      <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
         <p>Demo · vaste scène · eigen lokale opslag</p>
@@ -233,6 +234,8 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
 import { REFERENCE } from './graphics/reference-scene.js';
+import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
+import { createRockLibrary } from './graphics/ReefRocks.js';
 const visualParams = new URLSearchParams(location.search);
 const referenceMode = visualParams.get('scene') === 'reference';
 const oceanRandom = referenceMode ? seededRandom(REFERENCE.seed) : Math.random;
@@ -362,6 +365,9 @@ const glow = new THREE.PointLight(0x2fb7ff, 12, 160, 2);
 glow.position.set(20, 20, -10);
 scene.add(glow);
 const atmosphere = createUnderwaterAtmosphere({ scene, renderer, camera, sun, ambient, glow });
+const sandDetail = { value: 1 };
+const rockLibrary = createRockLibrary(atmosphere.uniforms);
+const seabedDetail = document.getElementById('seabedDetail');
 const visualStyle = document.getElementById('visualStyle');
 const visualQuality = document.getElementById('visualQuality');
 visualQuality.value = matchMedia('(max-width: 800px)').matches ? 'low' : 'medium';
@@ -441,7 +447,7 @@ function rebuildTerrainMesh(){
 rebuildTerrainMesh();
 
 const floorMat = new THREE.MeshStandardMaterial({color:0xffffff,roughness:1,metalness:0,vertexColors:true});
-installCaustics(floorMat, atmosphere.uniforms);
+installSeabedMaterial(floorMat, atmosphere.uniforms, sandDetail, 'sand');
 const floor = new THREE.Mesh(floorGeo,floorMat);
 floor.rotation.x=-Math.PI/2;
 floor.position.y=TERRAIN_BASE_Y;
@@ -591,7 +597,7 @@ scene.add(reef);
 
 // Massieve natuurwet: rotslagen zijn ondoordringbaar voor camera en vissen.
 const rockCollisionRoots = new Set();
-function removeReefRoot(root){ rockCollisionRoots.delete(root); reef.remove(root); }
+function removeReefRoot(root){ rockLibrary.release(root); rockCollisionRoots.delete(root); reef.remove(root); }
 const reefMobile = matchMedia('(max-width: 800px)').matches;
 const reefScale = reefMobile ? .55 : 1;
 const coralColors = [0xff6f61,0xf3a6c8,0xd96aa7,0xffb347,0xf5d76e,0x8f79c6,0x58b7a7,0x77c46b,0xe67e50];
@@ -611,10 +617,13 @@ function addRockCluster(x,z,scale=1){
   const n=2+Math.floor(oceanRandom()*5);
   for(let i=0;i<n;i++){
     const r=(1.2+oceanRandom()*4.8)*scale;
-    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0),reefMat(rockColors[Math.floor(oceanRandom()*rockColors.length)]));
+    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),reefMat(rockColors[Math.floor(oceanRandom()*rockColors.length)]));
     m.scale.set(1+.8*oceanRandom(),.55+oceanRandom()*.8,.8+oceanRandom()*.9);
     m.position.set((oceanRandom()-.5)*5*scale,(r*.35)-.5,(oceanRandom()-.5)*5*scale);
     m.rotation.set(oceanRandom(),oceanRandom()*Math.PI,oceanRandom()*.35);
+    // Position-derived appearance survives streaming without consuming the scene RNG.
+    const stoneSeed = Math.abs(Math.round(x*73856093 + z*19349663 + i*83492791)) >>> 0;
+    rockLibrary.decorate(m,r,stoneSeed);
     g.add(m);
   }
   g.position.set(x,-17.7,z); reef.add(g);
@@ -2906,6 +2915,7 @@ const graphicsMetrics = document.getElementById('graphicsMetrics');
 let visualTime = referenceMode ? REFERENCE.time : 0;
 function simulationTime() { return referenceMode ? visualTime : performance.now()/1000; }
 let metricStart = performance.now(), metricFrames = 0;
+let lastRockDetailUpdate = -Infinity, previousSeabedDetail = null;
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
@@ -2927,6 +2937,13 @@ function animate(){
   glow.position.z = Math.cos(t*.15)*35;
 
   atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
+  const detailedSeabed = seabedDetail.checked && atmosphere.enabled;
+  sandDetail.value = detailedSeabed && !terrainInspectActive ? 1 : 0;
+  if (streamingTime-lastRockDetailUpdate > .25 || detailedSeabed !== previousSeabedDetail) {
+    rockLibrary.update(camera, atmosphere.quality, detailedSeabed);
+    lastRockDetailUpdate = streamingTime;
+    previousSeabedDetail = detailedSeabed;
+  }
   legacyRays.visible = !atmosphere.enabled && !landscapeEditorActive && !terrainInspectActive;
   bubbles.visible = !atmosphere.enabled && !landscapeEditorActive;
   renderer.render(scene,camera);
