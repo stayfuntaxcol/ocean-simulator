@@ -123,3 +123,10 @@ voeg je een blauwgrijze walvis van circa 27 meter toe, met keelplooien, lange
 borstvinnen en een rustige staartslag. Volgen, verwijderen en een optioneel
 walvisrecord in wereldopslag zijn aangesloten. 53 lokale tests slagen.
 Zie [testinstructies en beperkingen](docs/whale-and-orca-jaw.md).
+
+### Kogelvis met opblaasreactie
+
+Klik op een kogelvis om hem op te blazen. Ook een nabije orka activeert de reactie.
+Na twee minuten zonder nieuwe dreiging loopt hij in dertig seconden leeg.
+Gebruik **Bekijk kogelvis**; start de animatie in de referentiescène.
+57 lokale tests slagen. Zie [testinstructies](docs/puffer-fish.md).

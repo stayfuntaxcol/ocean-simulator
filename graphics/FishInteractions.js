@@ -4,6 +4,7 @@ import * as THREE from 'three';
 export const WATER_CEILING=19.55;
 export function fishExtent(fish){
   const s=Math.max(fish.scale.x,fish.scale.y,fish.scale.z);
+  if(fish.userData.isPuffer){const a=fish.userData.pufferInflation||0;return new THREE.Vector3(2.3,.98+a*.75,.87+a*.8).multiplyScalar(s);}
   if(fish.userData.isWhale)return new THREE.Vector3(15,5.5,9);
   if(fish.userData.isOrca)return new THREE.Vector3(4,2.6,1.8).multiplyScalar(s);
   if(fish.userData.imported){const r=fish.userData.contactRadius||2.2;return new THREE.Vector3(r,r,r);}

@@ -119,6 +119,8 @@
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
       <label>Clownvis <input id="clownFishDetail" type="checkbox" checked></label>
       <button id="viewClownFish" type="button">Bekijk clownvis</button>
+      <button id="viewPuffer" type="button">Bekijk kogelvis</button>
+      <p>Kogelvis · klik om op te blazen · 2 minuten bol, daarna langzaam leeglopen.</p>
       <p id="clownFishStatus">Oranje-witte clownvis · speelse zwemslag.</p>
       <label>Groene platvis <input id="greenFishDetail" type="checkbox" checked></label>
       <button id="viewGreenFish" type="button">Bekijk groene platvis</button>
@@ -261,6 +263,7 @@ import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveF
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest } from './graphics/SpeciesBehavior.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
+import { createPufferLibrary } from './graphics/PufferFish.js';
 import { createWhaleCruise, whaleRouteClear, validateWhaleRecord } from './graphics/WhaleNavigation.js';
 import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
 import { createOrcaCruise, orcaRouteClear, validateOrcaRecord } from './graphics/OrcaNavigation.js';
@@ -1949,6 +1952,7 @@ const fishPalette = [
 ];
 const butterflyLibrary = createButterflyLibrary();
 const blueReefLibrary = createBlueReefLibrary();
+const pufferLibrary = createPufferLibrary();
 const clownReefLibrary = createBlueReefLibrary({clown:true});
 const clownFishDetail = document.getElementById('clownFishDetail');
 const greenReefLibrary = createGreenReefLibrary();
@@ -1983,6 +1987,7 @@ function createFish(color=0xffa45b, scale=1){
   if(color===fishPalette[1]) blueReefLibrary.attach(group);
   if(color===fishPalette[0]) clownReefLibrary.attach(group);
   if(color===fishPalette[6]) greenReefLibrary.attach(group);
+  if(color===fishPalette[4]) pufferLibrary.attach(group);
   return group;
 }
 
@@ -2674,6 +2679,8 @@ function updateFish(dt,t){
     for(const fish of members){
       if(!fish.parent || fish.userData.dead) continue;
       const p=fish.position;
+      const contactRadius=fish.userData.isPuffer?Math.max(FISH_RADIUS,(.98+(fish.userData.pufferInflation||0)*.8)*fish.scale.x):FISH_RADIUS;
+      if(fish.userData.isPuffer){p.y=Math.max(p.y,terrainHeightAt(p.x,p.z)+(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x);constrainWater(fish);}
       const dx=p.x-camX,dy=p.y-camY,dz=p.z-camZ,distSq=dx*dx+dy*dy+dz*dz;
       const visible=editMode || distSq<=CULL_RADIUS*CULL_RADIUS;
       fish.visible=visible;
@@ -2754,7 +2761,7 @@ function updateFish(dt,t){
       if(fish.userData.velocity.lengthSq()>.001){
         collisionTmp.copy(fish.userData.velocity).normalize();
         collisionTmp2.copy(p).addScaledVector(collisionTmp,2.8);
-        const rockAhead=segmentRockHit(p,collisionTmp2,FISH_RADIUS);
+        const rockAhead=segmentRockHit(p,collisionTmp2,contactRadius);
         if(rockAhead && rockAhead.solidRoot){
           collisionBox.setFromObject(rockAhead.solidRoot);
           const center=collisionBox.getCenter(collisionTmp2);
@@ -2782,7 +2789,7 @@ function updateFish(dt,t){
             if(young&&p.distanceTo(young.position)>3.5)pairPace=.6;
           }
         }
-        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed*(policy?rhythm:1)*pairPace);
+        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed*(policy?rhythm:1)*pairPace*(fish.userData.isPuffer?1-(fish.userData.pufferInflation||0)*.65:1));
       }
       const turnCross=fish.userData.velocity.x*desiredV.z-fish.userData.velocity.z*desiredV.x;
       fish.userData.turnLean=THREE.MathUtils.lerp(fish.userData.turnLean||0,THREE.MathUtils.clamp(turnCross,-1,1),1-Math.exp(-dt*3));
@@ -2790,17 +2797,17 @@ function updateFish(dt,t){
       collisionTmp.copy(p);
       collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
       // Sample terrain along this frame's travel; do not tunnel through a raised seabed.
-      const clearance=policy?.kind==='bottom'?bottomClearance(fish.scale.x):.45;
+      const clearance=policy?.kind==='bottom'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:.45;
       const ground=Math.max(...[0,.5,1].map(a=>terrainHeightAt(THREE.MathUtils.lerp(p.x,collisionTmp2.x,a),THREE.MathUtils.lerp(p.z,collisionTmp2.z,a))));
       if(collisionTmp2.y<ground+clearance){
         if(ground+clearance-p.y>.25){collisionTmp2.x=p.x;collisionTmp2.z=p.z;fish.userData.velocity.y=Math.max(.2,fish.userData.velocity.y);}
         else collisionTmp2.y=ground+clearance;
       }
-      const fishHit=segmentRockHit(collisionTmp,collisionTmp2,FISH_RADIUS);
+      const fishHit=segmentRockHit(collisionTmp,collisionTmp2,contactRadius);
       if(fishHit){
         const travel=collisionTmp2.clone().sub(collisionTmp);
         if(travel.lengthSq())travel.normalize();
-        p.copy(fishHit.point).addScaledVector(travel,-FISH_RADIUS-.04);
+        p.copy(fishHit.point).addScaledVector(travel,-contactRadius-.04);
 
         const nav=school.navWaypoint||school.target;
         const reroute=nav.clone().sub(p);
@@ -2825,7 +2832,7 @@ function updateFish(dt,t){
   }
   for(const f of frameFish)constrainWater(f);
   resolveFishContacts(frameFish.filter(f=>f.visible),previous,(fish,next)=>{
-    const clearance=fish.userData.speciesId==='reef_6'?bottomClearance(fish.scale.x):.45;
+    const clearance=fish.userData.speciesId==='reef_6'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:.45;
     return next.y<=waterLimit(fish)&&next.y>=terrainHeightAt(next.x,next.z)+clearance
       && !segmentRockHit(fish.position,next,FISH_RADIUS);
   });
@@ -2910,6 +2917,14 @@ document.getElementById('viewBlueFish').addEventListener('click',()=>{
   followDistance=4.8; followHeight=.15; followOrbitAngle=Math.PI/2; followOrbitInitialized=true;
   status.textContent='Bekijk ook de kop en andere zijde met de volgcamera. Start de animatie om vinnen, staart en ademhaling te bekijken.';
 });
+document.getElementById('viewPuffer').addEventListener('click',()=>{
+  if(editMode){hint.textContent='Sluit de landschapseditor om de kogelvis te bekijken.';return;}
+  const candidates=fishes.filter(f=>f.parent&&!f.userData.dead&&f.userData.isPuffer);
+  candidates.sort((a,b)=>a.position.distanceToSquared(camera.position)-b.position.distanceToSquared(camera.position));
+  if(!candidates.length){hint.textContent='Geen kogelvis aanwezig. Open de vaste vergelijkingsscène.';return;}
+  startFollowing(candidates[0],'fish');followDistance=5;followHeight=.4;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
+  hint.textContent='Klik op de kogelvis om op te blazen. Start de animatie als de scène gepauzeerd is.';
+});
 document.getElementById('viewClownFish').addEventListener('click',()=>{
   const status=document.getElementById('clownFishStatus');
   if(editMode) { status.textContent='Sluit de landschapseditor om de voorbeeldvis te bekijken.'; return; }
@@ -2972,7 +2987,7 @@ function pickFishAtPointerEvent(e){
 renderer.domElement.addEventListener('mousedown',e=>{
   if(e.button!==0 || editMode || followMode)return;
   const fish=pickFishAtCenter();
-  if(fish){ e.preventDefault(); e.stopPropagation(); if(fish.userData.isOrca)orca?.openMouth(); startFollowing(fish,'fish'); }
+  if(fish){ e.preventDefault(); e.stopPropagation(); if(fish.userData.isOrca)orca?.openMouth(); if(fish.userData.isPuffer)pufferLibrary.trigger(fish); startFollowing(fish,'fish'); }
 },true);
 
 renderer.domElement.addEventListener('wheel',e=>{
@@ -2993,6 +3008,7 @@ renderer.domElement.addEventListener('click',e=>{
   e.stopPropagation();
   if(disturbClickTimer)clearTimeout(disturbClickTimer);
   if(fish.userData.isOrca){orca?.openMouth();return;}
+  if(fish.userData.isPuffer){pufferLibrary.trigger(fish);return;}
   if(fish.userData.isWhale)return;
   disturbClickTimer=setTimeout(()=>{
     disturbSchool(fish,false);
@@ -3008,6 +3024,7 @@ renderer.domElement.addEventListener('dblclick',e=>{
   e.stopPropagation();
   if(disturbClickTimer){clearTimeout(disturbClickTimer);disturbClickTimer=null;}
   if(fish.userData.isOrca){orca?.openMouth();return;}
+  if(fish.userData.isPuffer){pufferLibrary.trigger(fish);return;}
   if(fish.userData.isWhale)return;
   disturbSchool(fish,true);
 },true);
@@ -3267,6 +3284,7 @@ function animate(){
   updateMovement(dt);
   if(!editMode && streamingTime-lastStreamingUpdate>.20){ refreshWorldStreaming(); lastStreamingUpdate=streamingTime; }
   if(!editMode && !referencePaused){
+    pufferLibrary.step(dt,orca?.root);
     updateLava(dt,t);
     updateFish(dt,t);
     updateHazardHealth(dt);
@@ -3297,6 +3315,7 @@ function animate(){
   blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t);
   clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t);
   greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t);
+  pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
