@@ -126,6 +126,9 @@
       <p id="blueFishStatus">Blauwe rifvis · schubbenpatroon en vriendelijke glimlach.</p>
       <button id="placeOrca" type="button" style="margin-top:9px">Plaats orka</button>
       <button id="removeOrca" type="button" hidden>Verwijder orka</button>
+      <button id="placeWhale" type="button" style="margin-top:9px">Plaats walvis</button>
+      <button id="removeWhale" type="button" hidden>Verwijder walvis</button>
+      <p id="whaleStatus">Grote walvis · heeft ruim open water nodig.</p>
       <p id="orcaStatus">Eén orka · klik op de orka om zijn bek te openen.</p>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
@@ -257,6 +260,8 @@ import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveFishContacts } from './graphics/FishInteractions.js';
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest } from './graphics/SpeciesBehavior.js';
 import { createReefLife } from './graphics/ReefLife.js';
+import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
+import { createWhaleCruise, whaleRouteClear, validateWhaleRecord } from './graphics/WhaleNavigation.js';
 import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
 import { createOrcaCruise, orcaRouteClear, validateOrcaRecord } from './graphics/OrcaNavigation.js';
 const visualParams = new URLSearchParams(location.search);
@@ -1629,6 +1634,7 @@ function worldData(){
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
     orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
       heading:Math.atan2(orca.root.userData.velocity.z,orca.root.userData.velocity.x),health:orca.root.userData.health} : null,
+    whale:whale && !whale.root.userData.dead ? {position:whale.root.position.toArray(),heading:Math.atan2(whale.root.userData.velocity.z,whale.root.userData.velocity.x),health:whale.root.userData.health}:null,
     cells:[...worldCells.entries()].map(([key,layers])=>({
       key,
       layers:layers.map(l=>({
@@ -1642,7 +1648,9 @@ function worldData(){
 function restoreWorld(data){
   const savedOrca=validateOrcaRecord(data?.orca);
   if(data?.orca && !savedOrca)throw new Error('Ongeldige orkapositie in dit wereldbestand.');
-  clearOrca();
+  const savedWhale=validateWhaleRecord(data?.whale);
+  if(data?.whale && !savedWhale)throw new Error('Ongeldige walvispositie in dit wereldbestand.');
+  clearOrca();clearWhale();
   habitatRevision++;
   // Alleen door de editor geplaatste objecten verwijderen; het basisrif blijft intact.
   for(let i=reef.children.length-1;i>=0;i--){
@@ -1685,6 +1693,7 @@ function restoreWorld(data){
   }
   if(editMode) renderAllWorldCellsForEditor(); else { lastStreamingCell=''; refreshWorldStreaming(true); }
   if(savedOrca)placeOrcaAt(savedOrca);
+  if(savedWhale)placeWhaleAt(savedWhale);
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
 }
 
@@ -1982,12 +1991,14 @@ const FISH_COUNT = referenceMode ? REFERENCE.fishCount : (isMobile ? 90 : 220);
 const fishes = [];
 const schools = new Map();
 let orca=null,orcaCruise=null;
+let whale=null,whaleCruise=null;
 const placeOrcaBtn=document.getElementById('placeOrca');
 const removeOrcaBtn=document.getElementById('removeOrca');
 const orcaStatus=document.getElementById('orcaStatus');
 
 function orcaPathClear(from,to){
   const rocks=reef.children.filter(root=>root.userData.orcaRock).map(root=>new THREE.Box3().setFromObject(root));
+  if(whale&&!whale.root.userData.dead){whale.root.updateMatrixWorld(true);rocks.push(new THREE.Box3().setFromObject(whale.root));}
   return orcaRouteClear(from,to,{rocks,terrain:terrainHeightAt,boundary:WORLD_HALF});
 }
 function clearOrca(){
@@ -2036,6 +2047,50 @@ placeOrcaBtn.addEventListener('click',()=>{
   startFollowing(orca.root,'fish');followDistance=16;followHeight=2;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
 });
 removeOrcaBtn.addEventListener('click',clearOrca);
+const placeWhaleBtn=document.getElementById('placeWhale'),removeWhaleBtn=document.getElementById('removeWhale'),whaleStatus=document.getElementById('whaleStatus');
+function whalePathClear(from,to){
+  const rocks=reef.children.filter(root=>root.userData.orcaRock).map(root=>new THREE.Box3().setFromObject(root));
+  if(orca&&!orca.root.userData.dead){orca.root.updateMatrixWorld(true);rocks.push(new THREE.Box3().setFromObject(orca.root));}
+  return whaleRouteClear(from,to,{rocks,terrain:terrainHeightAt,boundary:WORLD_HALF});
+}
+function clearWhale(){
+  if(!whale)return;const fish=whale.root;
+  if(selectedFish===fish)stopFollowing(false);
+  scene.remove(fish);const index=fishes.indexOf(fish);if(index>=0)fishes.splice(index,1);
+  schools.delete(fish.userData.schoolId);whale.dispose();whale=null;whaleCruise=null;
+  placeWhaleBtn.textContent='Plaats walvis';removeWhaleBtn.hidden=true;
+  whaleStatus.textContent='Grote walvis · heeft ruim open water nodig.';
+  fishCountEl.textContent=fishes.length;schoolCountText.textContent=schools.size;
+}
+function placeWhaleAt(record){
+  whale=createWhale();const fish=whale.root;fish.position.fromArray(record.position);
+  fish.userData.velocity.set(Math.cos(record.heading)*1.15,0,Math.sin(record.heading)*1.15);
+  fish.userData.health=record.health;fish.userData.dead=record.health<=0;
+  const school=makeSchool('whale',{cruiseSpeed:1.15});registerFish(fish,'whale',school);
+  orientFishForward(fish,fish.position.clone().add(fish.userData.velocity));
+  scene.add(fish);fishes.push(fish);school.center.copy(fish.position);
+  whaleCruise=createWhaleCruise(fish,(from,to)=>to.distanceTo(camera.position)<ACTIVE_RADIUS-WHALE_MARGIN&&whalePathClear(from,to));
+  placeWhaleBtn.textContent='Volg walvis';removeWhaleBtn.hidden=false;
+  whaleStatus.textContent='Walvis aanwezig · circa 27 meter lang.';fishCountEl.textContent=fishes.length;
+}
+placeWhaleBtn.addEventListener('click',()=>{
+  if(editMode){whaleStatus.textContent='Sluit de landschapseditor om de walvis te plaatsen.';return;}
+  if(whale?.root.userData.dead)clearWhale();
+  if(!whale){
+    refreshWorldStreaming(true);let chosen=null;
+    const forward=new THREE.Vector3();camera.getWorldDirection(forward);const heading=Math.atan2(forward.z,forward.x);
+    search:for(const distance of [20,25,29])for(const turn of [0,.7,-.7,1.4,-1.4,2.2,-2.2,Math.PI])for(const height of [0,5,10,13]){
+      const p=camera.position.clone().add(new THREE.Vector3(Math.cos(heading+turn)*distance,0,Math.sin(heading+turn)*distance));p.y=height;
+      if(p.distanceTo(camera.position)>ACTIVE_RADIUS-WHALE_MARGIN)continue;
+      if(whalePathClear(p,p)){chosen={position:p.toArray(),heading,health:100};break search;}
+    }
+    if(!chosen){whaleStatus.textContent='Hier is te weinig ruimte. Zwem naar opener water en probeer opnieuw.';return;}
+    placeWhaleAt(chosen);
+  }
+  startFollowing(whale.root,'fish');followDistance=27;followHeight=3;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
+});
+removeWhaleBtn.addEventListener('click',clearWhale);
+
 const gltfLoader = new GLTFLoader();
 let nextSchoolId=1;
 let habitatRevision=0;
@@ -2436,7 +2491,7 @@ function markSchoolRouteProgress(school,t){
 
 function updateSchoolBrains(t){
   for(const school of schools.values()){
-    if(school.speciesId==='orca')continue;
+    if(school.speciesId==='orca'||school.speciesId==='whale')continue;
     const members=school.members.filter(f=>f.parent&&!f.userData.dead);
     if(!members.length)continue;
 
@@ -2601,13 +2656,13 @@ function updateFish(dt,t){
   const previous=new Map(frameFish.map(f=>[f,f.position.clone()]));
   const neighborhood=createFishNeighborhood(frameFish.filter(f=>f.position.distanceToSquared(camera.position)<=CULL_RADIUS*CULL_RADIUS));
   const avoidV=new THREE.Vector3();
-  let visibleCount=orca?.root.visible && !orca.root.userData.dead ? 1 : 0;
+  let visibleCount=(orca?.root.visible && !orca.root.userData.dead ? 1 : 0)+(whale?.root.visible&&!whale.root.userData.dead?1:0);
   schoolThinkAccumulator+=dt;
   if(schoolThinkAccumulator>.35){updateSchoolBrains(t);schoolThinkAccumulator=0;}
   const camX=camera.position.x,camY=camera.position.y,camZ=camera.position.z;
 
   for(const school of schools.values()){
-    if(school.speciesId==='orca')continue;
+    if(school.speciesId==='orca'||school.speciesId==='whale')continue;
     const members=school.members;
     const policy=SPECIES_POLICY[school.speciesId];
     const rhythm=swimRhythm(school.speciesId,t,school.behaviorPhase);
@@ -2938,6 +2993,7 @@ renderer.domElement.addEventListener('click',e=>{
   e.stopPropagation();
   if(disturbClickTimer)clearTimeout(disturbClickTimer);
   if(fish.userData.isOrca){orca?.openMouth();return;}
+  if(fish.userData.isWhale)return;
   disturbClickTimer=setTimeout(()=>{
     disturbSchool(fish,false);
     disturbClickTimer=null;
@@ -2952,6 +3008,7 @@ renderer.domElement.addEventListener('dblclick',e=>{
   e.stopPropagation();
   if(disturbClickTimer){clearTimeout(disturbClickTimer);disturbClickTimer=null;}
   if(fish.userData.isOrca){orca?.openMouth();return;}
+  if(fish.userData.isWhale)return;
   disturbSchool(fish,true);
 },true);
 
@@ -3228,6 +3285,13 @@ function animate(){
     const school=schools.get(fish.userData.schoolId);
     school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
     if(fish.visible)orca.animate(dt,t,atmosphere.quality,distance);
+  }
+  if(whale){
+    const fish=whale.root,distance=fish.position.distanceTo(camera.position);
+    fish.visible=!editMode&&!fish.userData.dead&&distance<CULL_RADIUS;
+    if(!editMode&&!referencePaused&&distance<ACTIVE_RADIUS-WHALE_MARGIN)whaleCruise.update(dt,t);
+    const school=schools.get(fish.userData.schoolId);school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
+    if(fish.visible)whale.animate(dt,t,atmosphere.quality,distance);
   }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
   blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t);

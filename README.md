@@ -115,3 +115,11 @@ Clownvissen leven in gezinnen met twee ouders en wisselende aantallen kinderen.
 De karakteranimatie volgt de echte verplaatsing. Vissen blijven onder het water
 oppervlak en ontwijken ook andere soorten; contact wordt zonder stuiteren opgelost.
 48 lokale tests slagen. Zie [testinstructies en grenzen](docs/families-rest-and-contact.md).
+
+### Grote walvis en vollere orka-onderkaak
+
+De orka heeft een afgeronde onderkaak met meer volume. Via **Plaats walvis**
+voeg je een blauwgrijze walvis van circa 27 meter toe, met keelplooien, lange
+borstvinnen en een rustige staartslag. Volgen, verwijderen en een optioneel
+walvisrecord in wereldopslag zijn aangesloten. 53 lokale tests slagen.
+Zie [testinstructies en beperkingen](docs/whale-and-orca-jaw.md).

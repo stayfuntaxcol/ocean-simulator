@@ -35,6 +35,28 @@ export function createOrcaBody(rings=48,sides=28) {
   return geometry;
 }
 
+// A rounded mandible with a broad rear attachment and a tapered chin.
+export function createOrcaJaw(rings=30,sides=20){
+  const curve=new THREE.CatmullRomCurve3([
+    [-.24,.25,.20],[0,.59,.60],[.36,.55,.55],[.88,.39,.39],[1.35,.25,.23],[1.65,.045,.07],
+  ].map(p=>new THREE.Vector3(...p)));
+  const positions=[],indices=[];
+  for(let i=0;i<=rings;i++){
+    const p=curve.getPoint(i/rings);
+    for(let j=0;j<sides;j++){
+      const a=j/sides*Math.PI*2,c=Math.cos(a);
+      const chinRise=.10*THREE.MathUtils.smoothstep(p.x,1.35,1.65);
+      positions.push(p.x,(c>=0?c*.018:c*p.z)+chinRise,Math.sin(a)*p.y);
+    }
+  }
+  for(let i=0;i<rings;i++)for(let j=0;j<sides;j++){
+    const a=i*sides+j,b=i*sides+(j+1)%sides;indices.push(a,b,a+sides,b,b+sides,a+sides);
+  }
+  const back=positions.length/3;positions.push(-.24,-.05,0,1.65,-.02,0);
+  for(let j=0;j<sides;j++){const k=(j+1)%sides;indices.push(back,k,j,back+1,rings*sides+j,rings*sides+k);}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setIndex(indices);g.computeVertexNormals();g.computeBoundingSphere();return g;
+}
+
 export function orcaBend(x,phase,amplitude) {
   const u=THREE.MathUtils.clamp((.6-x)/3.6,0,1);
   return amplitude*u*u*Math.sin(phase+x*.85);
@@ -120,8 +142,7 @@ export function createOrca() {
   flukesGeometry.rotateX(Math.PI/2);
   const flukes=new THREE.Mesh(flukesGeometry,black);flukes.name='Horizontal flukes';flukes.position.x=-3;root.add(flukes);
   const jaw=new THREE.Group();jaw.name='Lower jaw';jaw.position.set(1.18,-.18,0);root.add(jaw);
-  const lower=new THREE.Mesh(new THREE.SphereGeometry(1,20,12),white);
-  lower.position.set(.80,-.10,0);lower.scale.set(.87,.19,.33);jaw.add(lower);
+  const lower=new THREE.Mesh(createOrcaJaw(),white);lower.name='Rounded mandible';jaw.add(lower);
   const gums=new THREE.Mesh(new THREE.SphereGeometry(1,16,8),mouthMaterial);
   gums.position.set(.78,.025,0);gums.scale.set(.77,.028,.29);jaw.add(gums);
   const upper=new THREE.Mesh(gums.geometry,mouthMaterial);

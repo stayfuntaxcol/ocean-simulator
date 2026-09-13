@@ -4,6 +4,7 @@ import * as THREE from 'three';
 export const WATER_CEILING=19.55;
 export function fishExtent(fish){
   const s=Math.max(fish.scale.x,fish.scale.y,fish.scale.z);
+  if(fish.userData.isWhale)return new THREE.Vector3(15,5.5,9);
   if(fish.userData.isOrca)return new THREE.Vector3(4,2.6,1.8).multiplyScalar(s);
   if(fish.userData.imported){const r=fish.userData.contactRadius||2.2;return new THREE.Vector3(r,r,r);}
   return new THREE.Vector3(...(fish.userData.speciesId==='reef_6'?[2.5,.8,1.25]:[2.4,1.6,.75])).multiplyScalar(s);
@@ -59,7 +60,7 @@ export function resolveFishContacts(fishes,previous,canMove=()=>true){
         }
       }
       if(distance>=gap+.001)continue;
-      const fixedA=a.userData.sleeping||a.userData.isOrca,fixedB=b.userData.sleeping||b.userData.isOrca;
+      const fixedA=a.userData.sleeping||a.userData.isOrca||a.userData.isWhale,fixedB=b.userData.sleeping||b.userData.isOrca||b.userData.isWhale;
       if(fixedA&&fixedB)continue;
       contacts++;
       const amount=gap-distance+.002;
