@@ -2,7 +2,7 @@
 
 Doel: dezelfde oceaan kunnen beleven met cartoonvissen of met hyperrealistische dieren. Elke fase levert een afzonderlijk testbare wijziging op. Geen vervanging van werelddata, scholen, gezondheid of interacties bij een stijlwissel.
 
-## Fase 1 — eerste vergelijking (nu)
+## Fase 1a — eerste vergelijking (afgerond)
 
 - Visstijl-keuze met cartoon als standaard.
 - Blauwe vis als eerste realistische vormstudie: natuurlijker profiel, kleinere ogen, kieuwlijnen, fijne schubben en slanke vinnen.
@@ -10,28 +10,36 @@ Doel: dezelfde oceaan kunnen beleven met cartoonvissen of met hyperrealistische 
 - De overige soorten blijven voorlopig cartoon. Dit is een eerste procedureel model, nog geen afgerond hyperrealistisch resultaat. Het mist onder meer hoogwaardige huid-normalmaps en verfijnde vinmembranen.
 - Wisselen werkt tijdens zwemmen en pauze. De stijlkeuze geldt voor deze sessie; opslaan van de wereld verandert niet.
 
+## Fase 1b — kogelvis en koraalvlindervis (nu)
+
+- Kogelvis: aparte realistische lichaamsvorm met kleine natuurlijke ogen, bekplaten, 96 fijne stekels, gevlekte huid en een bleke buik. Opblazen door klikken of een nabije orka blijft in beide stijlen identiek werken.
+- Koraalvlindervis: de bestaande gedetailleerde anatomische uitvoering is de realistische stijl. Er is nu ook een nieuwe cartoonvariant met grotere ogen en vereenvoudigde vormen.
+- Koraalvlindervissen leven in paren, blijven dicht bij koraal, zwemmen beheerst met korte versnellingen en zoeken ongeveer 5–14 meter diepte.
+- Kogelvissen leven grotendeels alleen, zwemmen langzaam, sturen traag, blijven bij rif/rotsen en zoeken ongeveer 8–18 meter diepte. De diepte wordt begrensd door terrein en wateroppervlak.
+- De stijlen delen één gedragstoestand. Wisselen verandert geen positie, snelheid, school, gezondheid of opblaastimer.
+
+Test beide stijlen met **Bekijk kogelvis** en **Bekijk koraalvlindervis**. Klik daarna op de kogelvis, wissel tijdens het opblazen van stijl en controleer of de toestand doorloopt.
+
 ## Fase 2 — blauwe vis op eindkwaliteit
 
 Beoordeel zij-, voor- en achteraanzicht en een bewegende opname op hetzelfde apparaat. Verfijn anatomie, huidreliëf, reflecties, vinstralen en de overgang van lijf naar staart. Indien het procedurele model onvoldoende kwaliteit oplevert: een gericht gemaakt GLB-model met eigen PBR-texturen en animatierig inzetten. Eerst deze kwaliteitsstandaard vastleggen, daarna andere soorten uitwerken.
 
-## Fase 3 — clownvis en groene platvis
+## Fase 3 — groene platvis en clownvis
 
 Realistische vormen, huid en vinnen per soort. Clownvis behoudt ouder/kind-verhoudingen en sprintgedrag. Platvis behoudt bodemgedrag, rustplaatsen en gesloten ogen tijdens slapen. Test alle gezinsgroottes en slapende/stilstaande dieren bij wisselen.
 
-## Fase 4 — vlindervis en kogelvis
-
-Vlindervis: dun profiel en nauwkeurige kleurpatronen. Kogelvis: gedetailleerde huid en stekels in beide toestanden. Klik, orka-nabijheid, twee minuten opgeblazen blijven en langzaam leeglopen moeten ook bij tussentijds wisselen doorlopen.
-
-## Fase 5 — orka en walvis
+## Fase 4 — orka en walvis
 
 Grote dieren krijgen passende anatomie, natuurlijke ogen, huidnuance, mond en vinnen. Behoud schaal, orka-kaakinteractie en walvisbeweging. Controleer staartaanhechting en belichting op korte afstand; test watergrens en botsingsruimte opnieuw als de buitenvorm verandert.
 
-## Fase 6 — complete stijlen en prestaties
+Orka en walvis krijgen bovendien een ademcyclus. Ze zwemmen incidenteel gecontroleerd naar het oppervlak, ademen daar uit met een zichtbare spuit en duiken daarna weer. De frequentie, spuitvorm en duikbeweging worden per soort apart ingesteld; ze mogen niet door het oppervlak of de bodem bewegen.
+
+## Fase 5 — complete stijlen en prestaties
 
 Alle zeven ontwikkelde soorten ondersteunen beide stijlen. Controleer ook nieuwe dieren, laden/opslaan en verwijderen. Zelf geïmporteerde GLB-vissen blijven hun eigen model gebruiken; automatische omzetting van imports valt buiten deze reeks. Overige eenvoudige paletvissen vragen daarna eigen ontwerpen.
 
 Per fase: één beperkte commit, automatische gedragstests en een visuele beoordeling in de browser. Vergelijk dezelfde camera, scène, verlichting en kwaliteit. Streef naar 60 fps op de afgesproken desktop en minstens 30 fps bij de lagere kwaliteit; meet dit eerst voordat het als garantie wordt gegeven. Controleer geheugen bij herhaald wisselen. Bij verslechtering van vorm of prestaties blijft cartoon direct beschikbaar.
 
-## Validatie van fase 1
+## Validatie van fase 1b
 
-Automatische tests controleren wisselen zonder simulatiestatus te verliezen, detailniveaus, materiaalopruiming en behoud van cartoon/clown-gedrag. De uiteindelijke beeldkwaliteit en GPU-shadercompilatie moeten nog in de browser worden beoordeeld. Een cijfer 8–10 is een visueel acceptatiedoel, geen reeds gemeten resultaat.
+Automatische tests controleren wisselen zonder simulatiestatus te verliezen, detailniveaus, materiaalopruiming, opblazen en de nieuwe soortgroepen. De uiteindelijke beeldkwaliteit en GPU-shadercompilatie moeten nog in de browser worden beoordeeld. Een cijfer 8–10 is een visueel acceptatiedoel, geen reeds gemeten resultaat.

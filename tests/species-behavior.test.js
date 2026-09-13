@@ -7,7 +7,7 @@ import {populationPlan,SPECIES_POLICY,habitatPreference,swimRhythm,bottomClearan
 import {constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts} from '../graphics/FishInteractions.js';
 import {createOrca,ORCA_CLEARANCE,ORCA_SCALE} from '../graphics/Orca.js';
 
-test('desktop, mobile and reference populations preserve counts with variable families and groups of 2–3',()=>{
+test('populations preserve counts with families, pairs, solitary puffers and bottom groups',()=>{
   for(const count of [40,90,220]){
     const groups=populationPlan(count);
     assert.equal(groups.reduce((n,g)=>n+g.count,0),count);
@@ -15,12 +15,18 @@ test('desktop, mobile and reference populations preserve counts with variable fa
     assert.ok(groups.filter(g=>g.species===6).every(g=>g.count>=2&&g.count<=3));
     assert.ok(groups.filter(g=>g.species===1).some(g=>g.count>=5));
     assert.ok(groups.filter(g=>g.species===1).every(g=>g.count<=12));
+    assert.ok(groups.filter(g=>g.species===2).every(g=>g.count<=2));
+    assert.ok(groups.filter(g=>g.species===4).every(g=>g.count===1));
   }
 });
 test('clown pairs prefer coral; blue shoals prefer grass with rocks; rhythm alternates dart and glide',()=>{
   const cell=(types,rocks=[])=>({livingPoints:types.map(type=>({type})),rockPoints:rocks});
   assert.ok(habitatPreference('reef_0',cell(['coral']))>habitatPreference('reef_0',cell(['seagrass'])));
   assert.ok(habitatPreference('reef_1',cell(['seagrass'],[{}]))>habitatPreference('reef_1',cell(['coral'])));
+  assert.ok(habitatPreference('reef_2',cell(['coral']))>habitatPreference('reef_2',cell(['seagrass'])));
+  assert.ok(habitatPreference('reef_4',cell(['coral'],[{}]))>habitatPreference('reef_4',cell(['seagrass'])));
+  assert.ok(SPECIES_POLICY.reef_4.cruiseSpeed<SPECIES_POLICY.reef_2.cruiseSpeed);
+  assert.ok(SPECIES_POLICY.reef_2.depthMin<SPECIES_POLICY.reef_4.depthMin);
   const speeds=Array.from({length:300},(_,i)=>swimRhythm('reef_0',i*.04,.4));
   assert.ok(Math.max(...speeds)>2);assert.ok(Math.min(...speeds)<.4);
   assert.equal(swimRhythm('reef_0',2,.4),swimRhythm('reef_0',2,.4));

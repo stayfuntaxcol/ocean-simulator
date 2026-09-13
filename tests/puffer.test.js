@@ -41,3 +41,12 @@ test('library detects distance to the orca body, ignores dead orca, and releases
   let released=0;m.spikes.addEventListener('dispose',()=>released++);scene.remove(fish);lib.step(.04,orca);assert.equal(released,1);assert.equal(lib.size,0);
   lib.dispose();orca.geometry.dispose();orca.material.dispose();
 });
+test('puffer switches to a detailed realistic body without resetting inflation',()=>{
+  const lib=createPufferLibrary(),scene=new THREE.Scene(),fish=new THREE.Group(),camera=new THREE.PerspectiveCamera();scene.add(fish);fish.userData={velocity:new THREE.Vector3(.3,0,0)};
+  const m=lib.attach(fish);lib.trigger(fish);lib.step(.6);lib.update(.6,camera,'high',true,'realistic');
+  assert.equal(m.detailed.visible,false);assert.equal(m.realistic.group.visible,true);assert.equal(m.state.amount,.5);
+  assert.ok(m.realistic.body.geometry.attributes.position.count>300);
+  const shader={vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};m.realistic.body.material.onBeforeCompile(shader);
+  assert.match(shader.fragmentShader,/vRealPuffer/);assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
+  lib.update(.6,camera,'high',true,'cartoon');assert.equal(m.detailed.visible,true);assert.equal(m.realistic.group.visible,false);assert.equal(m.state.amount,.5);lib.dispose();
+});

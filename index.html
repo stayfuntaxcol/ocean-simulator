@@ -115,8 +115,8 @@
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
-      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistisch · blauwe vis (proef)</option></select></label>
-      <small>De realistische stijl is in ontwikkeling. Voorlopig wisselt alleen de blauwe vis.</small>
+      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Hyperrealistisch (gefaseerd)</option></select></label>
+      <small>Fase 1: blauwe vis, kogelvis en koraalvlindervis kunnen al wisselen.</small>
       <label>Blauwe vis detail <input id="blueFishDetail" type="checkbox" checked></label>
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
       <label>Clownvis <input id="clownFishDetail" type="checkbox" checked></label>
@@ -2312,17 +2312,18 @@ function chooseSchoolTarget(school,t){
         weight:habitatPreference(school.speciesId,h)/(1+Math.hypot(h.x-c.x,h.z-c.z)*.07+schoolCrowdingNearCell(h,school)*.7)})));
       school.homeCell=cell?.key??null;
     }
-    const preferred=cell?.livingPoints.filter(p=>school.speciesId==='reef_0'?['coral','mixed','anemone'].includes(p.type):school.speciesId==='reef_1'?['seagrass','mixed'].includes(p.type):true);
+    const preferred=cell?.livingPoints.filter(p=>school.speciesId==='reef_0'?['coral','mixed','anemone'].includes(p.type):school.speciesId==='reef_1'?['seagrass','mixed'].includes(p.type):school.speciesId==='reef_2'?['coral','mixed'].includes(p.type):school.speciesId==='reef_4'?['coral','mixed','seagrass'].includes(p.type):true);
     const point=preferred?.length?preferred[0]:cell?.livingPoints[0];
-    const radius=policy.kind==='family'?2.2:policy.kind==='bottom'?4:7;
+    const radius=policy.kind==='family'?2.2:policy.kind==='bottom'?4:policy.kind==='puffer'?3.2:policy.kind==='coral-pair'?3.8:7;
     const angle=oceanRandom()*Math.PI*2;
     const x=THREE.MathUtils.clamp((point?.x??c.x)+Math.cos(angle)*radius,-WORLD_HALF+4,WORLD_HALF-4);
     const z=THREE.MathUtils.clamp((point?.z??c.z)+Math.sin(angle)*radius,-WORLD_HALF+4,WORLD_HALF-4);
     const floor=terrainHeightAt(x,z);
-    const y=policy.kind==='bottom'?floor+.5:Math.max(floor+1.1,(point?.y??floor)+(policy.kind==='family'?1.2:2.5));
+    const naturalY=policy.depthMin===undefined?null:20-(policy.depthMin+oceanRandom()*(policy.depthMax-policy.depthMin));
+    const y=policy.kind==='bottom'?floor+.5:naturalY===null?Math.max(floor+1.1,(point?.y??floor)+(policy.kind==='family'?1.2:2.5)):Math.max(floor+1.1,naturalY);
     school.target.set(x,Math.min(12,y),z);
     school.targetCell=cell?.key??null;school.targetLayer=point?.layerId??null;school.targetHabitat=point?.score??0;
-    school.mode=policy.kind;school.retargetAt=t+(policy.kind==='family'?3:policy.kind==='bottom'?9:8)+oceanRandom()*5;
+    school.mode=policy.kind;school.retargetAt=t+(policy.kind==='family'?3:policy.kind==='bottom'?9:policy.kind==='puffer'?14:policy.kind==='coral-pair'?6:8)+oceanRandom()*5;
     return;
   }
   const livingCells=habitatCells.filter(h=>h.hasLife);
@@ -2748,7 +2749,7 @@ function updateFish(dt,t){
       desiredV.addScaledVector(targetV,school.habitatPull*(1-panic*.72));
       // Organische individuele variatie voorkomt een mechanische zwerm.
       wanderV.set(Math.sin(t*.73+fish.userData.wanderPhase),Math.sin(t*.49+fish.userData.phase)*.22,Math.cos(t*.67+fish.userData.wanderPhase));
-      desiredV.addScaledVector(wanderV,(policy?.kind==='bottom'?.06:policy?.kind==='family'?.09:.19)*fish.userData.personality);
+      desiredV.addScaledVector(wanderV,(policy?.kind==='bottom'?.06:policy?.kind==='family'?.09:policy?.kind==='puffer'?.045:policy?.kind==='coral-pair'?.11:.19)*fish.userData.personality);
       if(policy?.kind==='bottom'){
         const ahead=p.clone().addScaledVector(fish.userData.velocity,.8);
         const floor=terrainHeightAt(ahead.x,ahead.z)+bottomClearance(fish.scale.x);
@@ -2796,7 +2797,7 @@ function updateFish(dt,t){
       }
       const turnCross=fish.userData.velocity.x*desiredV.z-fish.userData.velocity.z*desiredV.x;
       fish.userData.turnLean=THREE.MathUtils.lerp(fish.userData.turnLean||0,THREE.MathUtils.clamp(turnCross,-1,1),1-Math.exp(-dt*3));
-      fish.userData.velocity.lerp(desiredV,Math.min(1,dt*(panic>0?2.35:policy?.kind==='family'?3.4:1.45)));
+      fish.userData.velocity.lerp(desiredV,Math.min(1,dt*(panic>0?2.35:policy?.kind==='family'?3.4:policy?.kind==='coral-pair'?2.7:policy?.kind==='puffer'?.72:1.45)));
       collisionTmp.copy(p);
       collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
       // Sample terrain along this frame's travel; do not tunnel through a raised seabed.
@@ -3314,11 +3315,11 @@ function animate(){
     const school=schools.get(fish.userData.schoolId);school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
     if(fish.visible)whale.animate(dt,t,atmosphere.quality,distance);
   }
-  butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
+  butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled,fishRenderStyle.value);
   blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
   clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t);
   greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t);
-  pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled);
+  pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled,fishRenderStyle.value);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){

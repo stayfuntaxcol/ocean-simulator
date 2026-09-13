@@ -90,3 +90,11 @@ test('skin and fin shaders keep lighting hooks and use separate program keys',()
   }
   assert.equal(keys.size,3);
 });
+test('coral fish has independent cartoon and realistic appearances with one behavior root',()=>{
+  const library=createButterflyLibrary(),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(),{fish,parts,tail}=specimen(library,scene);
+  fish.userData.schoolId='reef_2';library.update(4,camera,'high',true,'cartoon');
+  assert.ok(parts.cartoon.group.visible);assert.equal(parts.detailed.visible,false);
+  const cartoonTail=parts.cartoon.tail.rotation.y;library.update(4.2,camera,'high',true,'cartoon');assert.notEqual(parts.cartoon.tail.rotation.y,cartoonTail);
+  library.update(4.2,camera,'high',true,'realistic');assert.equal(parts.cartoon.group.visible,false);assert.ok(parts.detailed.visible);
+  assert.equal(fish.userData.schoolId,'reef_2');assert.equal(fish.userData.tail,tail);library.dispose();assert.equal(tail.parent,fish);
+});

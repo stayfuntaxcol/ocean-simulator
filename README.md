@@ -130,8 +130,10 @@ Klik op een kogelvis om hem op te blazen. Ook een nabije orka activeert de react
 Na twee minuten zonder nieuwe dreiging loopt hij in dertig seconden leeg.
 Gebruik **Bekijk kogelvis**; start de animatie in de referentiescène.
 57 lokale tests slagen. Zie [testinstructies](docs/puffer-fish.md).
-# Twee visstijlen — eerste proef
+# Twee visstijlen — gefaseerde uitrol
 
-Bij **Visstijl** kun je nu kiezen tussen cartoon en een eerste realistische blauwe vis. De overige soorten volgen gefaseerd. Houd **Nieuwe onderwatersfeer** en **Blauwe vis detail** aan. De stijlwissel behoudt de bestaande scholen en animatiestatus. Dit is een vormstudie, nog geen afgeronde hyperrealistische weergave.
+Bij **Visstijl** kun je kiezen tussen cartoon en hyperrealistisch. De blauwe vis, kogelvis en koraalvlindervis ondersteunen de wissel nu. De koraalvis heeft daarbij voor het eerst een eigen cartoonversie gekregen. De overige soorten volgen in paren. Houd **Nieuwe onderwatersfeer** en de gewenste visdetails aan. Positie, zwemgedrag, gezondheid en interactiestatus blijven behouden tijdens wisselen.
+
+Koraalvlindervissen zwemmen als paar dicht bij koraal op een eigen voorkeursdiepte. Kogelvissen zwemmen veel langzamer, meestal alleen en dieper bij het rif. Hun klik- en orka-gestuurde opblaasgedrag werkt in beide stijlen.
 
 Zie [het uitrolplan](docs/fish-style-rollout.md) voor alle zeven soorten en de beoordelingsmomenten.

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createCartoonCoralAssets} from './CartoonCoralFish.js';
 
 // An original reef-fish design inspired by butterflyfish. Local +X is the nose.
 const PROFILE = [
@@ -146,6 +147,7 @@ function membrane(inner, outer, segments = 20) {
 }
 
 export function createButterflyLibrary() {
+  const cartoonAssets=createCartoonCoralAssets();
   const bodyNear=createButterflyBody(),bodyFar=createButterflyBody(20,12);
   const fin=finMaterial();
   const tailGeometry=membrane([[0,.06,0],[0,0,0],[0,-.06,0]],
@@ -187,17 +189,19 @@ export function createButterflyLibrary() {
     const mouth=new THREE.Mesh(mouthGeometry,mouthMaterial);
     mouth.position.x=1.49; mouth.rotation.y=Math.PI/2; detailed.add(mouth);
     fish.userData.visualSpecies='Koraalvlindervis';
-    const member={basic,detailed,body,tail,dorsal,anal,pectorals,eyes,mouth,uniforms};
+    const cartoon=cartoonAssets.create(fish);
+    const member={basic,detailed,body,tail,dorsal,anal,pectorals,eyes,mouth,uniforms,cartoon};
     members.set(fish,member);
     basic.visible=false;
     return member;
   }
 
-  function update(time,camera,quality,enabled=true) {
+  function update(time,camera,quality,enabled=true,style='realistic') {
     const limit=quality==='low'?14:quality==='high'?38:24;
     for(const [fish,m] of members) {
       if(!fish.parent) { m.body.material.dispose(); m.dorsal.material.dispose(); members.delete(fish); continue; }
-      m.basic.visible=!enabled; m.detailed.visible=enabled;
+      const cartoon=enabled&&style==='cartoon';
+      m.basic.visible=!enabled; m.detailed.visible=enabled&&!cartoon;m.cartoon.group.visible=cartoon;
       if(!enabled || !fish.visible || fish.userData.dead) continue;
       const near=fish.position.distanceToSquared(camera.position)<limit*limit;
       m.body.geometry=near?bodyNear:bodyFar;
@@ -206,6 +210,12 @@ export function createButterflyLibrary() {
       const speed=THREE.MathUtils.clamp(fish.userData.velocity?.length() ?? 1, .2,3);
       // Fixed frequency keeps motion continuous when the fish changes speed.
       const phase=time*5.4+(fish.userData.phase||0), amplitude=.12+speed*.035;
+      if(cartoon){
+        m.cartoon.tail.rotation.y=Math.sin(phase)*.38;
+        m.cartoon.dorsal.rotation.z=Math.sin(phase*.55)*.045;
+        m.cartoon.pectorals.forEach((p,i)=>p.rotation.z=(i?1:-1)*(.25+Math.sin(phase*.72+i)*.22));
+        continue;
+      }
       m.uniforms.swimPhase.value=phase; m.uniforms.swimAmplitude.value=amplitude;
       m.tail.position.z=swimOffset(-1.45,phase,amplitude);
       const slope=(swimOffset(-1.449,phase,amplitude)-swimOffset(-1.451,phase,amplitude))/.002;
@@ -218,5 +228,7 @@ export function createButterflyLibrary() {
       });
     }
   }
-  return {attach,update,get size(){return members.size;}};
+  let disposed=false;
+  function dispose(){if(disposed)return;disposed=true;for(const [fish,m] of members){m.body.material.dispose();m.dorsal.material.dispose();fish.remove(m.detailed,m.cartoon.group);for(const child of [...m.basic.children])fish.add(child);fish.remove(m.basic);delete fish.userData.visualSpecies;}members.clear();cartoonAssets.dispose();for(const g of [bodyNear,bodyFar,tailGeometry,dorsalGeometry,analGeometry,pectoralGeometry,irisGeometry,pupilGeometry,mouthGeometry])g.dispose();for(const m of [fin,irisMaterial,pupilMaterial,mouthMaterial])m.dispose();}
+  return {attach,update,dispose,get size(){return members.size;}};
 }

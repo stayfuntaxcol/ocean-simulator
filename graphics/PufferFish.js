@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {createRealisticPufferAssets} from './RealisticPufferFish.js';
 
 export const PUFFER_HOLD=120, PUFFER_DEFLATE=30, PUFFER_THREAT_DISTANCE=8;
 export function createPufferState(){
@@ -19,6 +20,7 @@ export function createPufferState(){
 }
 
 export function createPufferLibrary(){
+  const realisticAssets=createRealisticPufferAssets();
   const near=new THREE.SphereGeometry(1,32,24),far=new THREE.SphereGeometry(1,16,12);
   const sphere=new THREE.SphereGeometry(1,14,10);
   const finGeometry=new THREE.SphereGeometry(1,12,8);
@@ -72,7 +74,8 @@ export function createPufferLibrary(){
     spikes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const rest=new Map([...face,...fins,tail,dorsal].map(o=>[o,o.position.clone()]));
     fish.userData.isPuffer=true;fish.userData.visualSpecies='Kogelvis';fish.userData.pufferInflation=0;
-    const state=createPufferState(),m={basic,detailed,body,face,fins,tail,dorsal,spikes,directions,rest,state};
+    const realistic=realisticAssets.create(fish);
+    const state=createPufferState(),m={basic,detailed,body,face,fins,tail,dorsal,spikes,directions,rest,state,realistic};
     basic.visible=false;members.set(fish,m);return m;
   }
   function trigger(fish){if(!fish.userData.dead)members.get(fish)?.state.trigger();}
@@ -81,41 +84,49 @@ export function createPufferLibrary(){
     const predator=orca?.parent&&!orca.userData.dead;
     if(predator){orca.updateMatrixWorld(true);box.setFromObject(orca);}
     for(const [fish,m] of members){
-      if(!fish.parent){m.spikes.dispose();members.delete(fish);continue;}
+      if(!fish.parent){m.spikes.dispose();m.realistic.spines.dispose();members.delete(fish);continue;}
       if(fish.userData.dead)continue;
       const distance=predator?box.clampPoint(fish.position,closest).distanceTo(fish.position):Infinity;
       fish.userData.pufferInflation=m.state.step(dt,distance);
     }
   }
-  function update(time,camera,quality,enabled=true){
-    for(const [fish,m] of members){
-      if(!fish.parent){m.spikes.dispose();members.delete(fish);continue;}
-      m.basic.visible=!enabled;m.detailed.visible=enabled;
-      if(!enabled||!fish.visible||fish.userData.dead)continue;
-      const a=m.state.amount,scale=new THREE.Vector3(1.15+a*.32,.72+a*.75,.67+a*.80);
-      m.body.scale.copy(scale);
-      const close=fish.position.distanceToSquared(camera.position)<(quality==='low'?14:35)**2;
-      m.body.geometry=close?near:far;
-      const ratio=scale.clone().divide(new THREE.Vector3(1.15,.72,.67));
-      for(const [o,p] of m.rest)o.position.copy(p).multiply(ratio);
-      for(const o of m.face)if(o.name==='Puffer pupil'){
-        const side=Math.sign(m.rest.get(o).z);
-        o.position.set(.73*ratio.x+.10,.27*ratio.y+.01,side*(.48*ratio.z+.115));
+  function updateAppearance(fish,m,a,time,close,realistic=false){
+      const v=realistic?m.realistic:m;
+      const spines=realistic?v.spines:v.spikes;
+      const restScale=realistic?new THREE.Vector3(1.20,.66,.61):new THREE.Vector3(1.15,.72,.67);
+      const scale=realistic?new THREE.Vector3(1.20+a*.28,.66+a*.81,.61+a*.86):new THREE.Vector3(1.15+a*.32,.72+a*.75,.67+a*.80);
+      v.body.scale.copy(scale);v.body.geometry=close?(realistic?realisticAssets.near:near):(realistic?realisticAssets.far:far);
+      const ratio=scale.clone().divide(restScale);
+      for(const [o,p] of v.rest)o.position.copy(p).multiply(ratio);
+      for(const o of v.face)if(o.name.includes('pupil')){
+        const p=v.rest.get(o),side=Math.sign(p.z);
+        if(realistic)o.position.set(.73*ratio.x+.08,.24*ratio.y+.005,side*(.475*ratio.z+.102));
+        else o.position.set(.73*ratio.x+.10,.27*ratio.y+.01,side*(.48*ratio.z+.115));
       }
       const phase=fish.userData.swimPhase??time*4;
-      m.fins.forEach((f,i)=>f.rotation.y=(i?1:-1)*(.4+Math.sin(phase*.8)*.32));
-      m.tail.rotation.y=Math.sin(phase)*.24*(1-a*.8);
-      m.spikes.visible=close;
+      v.fins.forEach((f,i)=>f.rotation.y=(i?1:-1)*(.4+Math.sin(phase*.8)*.32));
+      v.tail.rotation.y=Math.sin(phase)*.24*(1-a*.8);
+      spines.visible=close;
       if(close){
-        m.directions.forEach((n,i)=>{
+        v.directions.forEach((n,i)=>{
           dummy.position.copy(n).multiply(scale);
           dummy.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),n.clone().divide(scale).normalize());
-          dummy.scale.set(1,.25+a*.75,1);dummy.updateMatrix();m.spikes.setMatrixAt(i,dummy.matrix);
-        });m.spikes.instanceMatrix.needsUpdate=true;m.spikes.computeBoundingSphere();
+          dummy.scale.set(1,.20+a*.80,1);dummy.updateMatrix();spines.setMatrixAt(i,dummy.matrix);
+        });spines.instanceMatrix.needsUpdate=true;spines.computeBoundingSphere();
       }
+  }
+  function update(time,camera,quality,enabled=true,style='cartoon'){
+    for(const [fish,m] of members){
+      if(!fish.parent){m.spikes.dispose();m.realistic.spines.dispose();members.delete(fish);continue;}
+      const realistic=enabled&&style==='realistic';
+      m.basic.visible=!enabled;m.detailed.visible=enabled&&!realistic;m.realistic.group.visible=realistic;
+      if(!enabled||!fish.visible||fish.userData.dead)continue;
+      const a=m.state.amount;
+      const close=fish.position.distanceToSquared(camera.position)<(quality==='low'?14:35)**2;
+      updateAppearance(fish,m,a,time,close,realistic);
     }
   }
-  function dispose(){if(disposed)return;disposed=true;for(const [f,m] of members){f.remove(m.detailed);for(const c of [...m.basic.children])f.add(c);f.remove(m.basic);m.spikes.dispose();delete f.userData.isPuffer;delete f.userData.pufferInflation;delete f.userData.visualSpecies;}members.clear();
-    for(const g of [near,far,sphere,finGeometry,spikeGeometry,mouthGeometry])g.dispose();for(const m of [skin,finMat,white,black,lip,spikeMat])m.dispose();}
+  function dispose(){if(disposed)return;disposed=true;for(const [f,m] of members){f.remove(m.detailed);f.remove(m.realistic.group);for(const c of [...m.basic.children])f.add(c);f.remove(m.basic);m.spikes.dispose();m.realistic.spines.dispose();delete f.userData.isPuffer;delete f.userData.pufferInflation;delete f.userData.visualSpecies;}members.clear();
+    realisticAssets.dispose();for(const g of [near,far,sphere,finGeometry,spikeGeometry,mouthGeometry])g.dispose();for(const m of [skin,finMat,white,black,lip,spikeMat])m.dispose();}
   return {attach,trigger,step,update,dispose,get size(){return members.size;}};
 }
