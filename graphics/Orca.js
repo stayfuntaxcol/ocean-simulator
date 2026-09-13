@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import {addSurfaceRelief} from './FishSurfaceDetail.js';
 
 export const ORCA_SCALE=1.65;
 export const ORCA_CLEARANCE=4*ORCA_SCALE;
@@ -116,13 +117,22 @@ export function createOrca() {
       float eyePatch=1.0-smoothstep(.88,1.05,length((p.xy-vec2(1.17,.39))/vec2(.39,.17)));
       eyePatch*=smoothstep(.26,.40,abs(p.z));
       float saddle=(1.0-smoothstep(.8,1.05,length((p.xz-vec2(-.8,0.0))/vec2(.66,.53))))*smoothstep(.40,.65,p.y);
-      vec3 coat=mix(vec3(.012,.023,.032),vec3(.22,.26,.27),saddle*.8);
-      diffuseColor.rgb=mix(coat,vec3(.90,.91,.85),max(belly,eyePatch));
+      float pores=fishNoise(p*31.0);
+      float subtleMottle=fishNoise(vec3(p.x*4.0,p.y*7.0,p.z*6.0));
+      vec3 coat=mix(vec3(.007,.016,.023),vec3(.13,.19,.22),saddle*.72);
+      coat*=.91+subtleMottle*.13;
+      diffuseColor.rgb=mix(coat,vec3(.82,.84,.79)*(.96+pores*.07),max(belly,eyePatch));
     `);
+    addSurfaceRelief(shader,'(fishNoise(vOrcaLocal*31.0)-.5)*.14',
+      '(fishNoise(vOrcaLocal*31.0)-.5)*.10',.0008);
   };
-  skin.customProgramCacheKey=()=>'orca-skin-v1';
+  skin.customProgramCacheKey=()=>'orca-skin-relief-v2';
   const near=createOrcaBody(),far=createOrcaBody(24,16);
   const body=new THREE.Mesh(near,skin);body.name='Body';root.add(body);
+  const finSkin=black.clone();
+  finSkin.onBeforeCompile=shader=>addSurfaceRelief(shader,
+    '(fishNoise(-vViewPosition*24.0)-.5)*.13','(fishNoise(-vViewPosition*24.0)-.5)*.08',.0005);
+  finSkin.customProgramCacheKey=()=>'orca-fin-relief-v2';
   const dorsal=new THREE.Mesh(extrudedFin([[.65,.72],[.20,1.25],[.05,2.2],[-.35,2.45],
     [-.28,1.65],[-.43,1.12],[-.95,.70],[-.48,.73],[.18,.72],[.65,.72]]),black);
   dorsal.name='Dorsal fin';root.add(dorsal);
@@ -131,7 +141,7 @@ export function createOrca() {
   flipperGeometry.rotateX(Math.PI/2);
   const pectorals=[];
   for(const side of [-1,1]) {
-    const fin=new THREE.Mesh(flipperGeometry,black);fin.name='Pectoral fin';
+    const fin=new THREE.Mesh(flipperGeometry,finSkin);fin.name='Pectoral fin';
     fin.position.set(1,-.37,side*.48);fin.scale.z=side;root.add(fin);pectorals.push(fin);
     const eye=new THREE.Mesh(new THREE.SphereGeometry(.065,12,8),eyeMaterial);
     eye.position.set(1.79,.14,side*.44);root.add(eye);
@@ -140,7 +150,7 @@ export function createOrca() {
     [-.90,1.18],[-.79,.38],[-.71,.08],[-.84,.035],[-.84,-.035],[-.71,-.08],
     [-.79,-.38],[-.90,-1.18],[-.65,-1.4],[-.38,-1.26],[-.17,-.7],[0,0]],.075);
   flukesGeometry.rotateX(Math.PI/2);
-  const flukes=new THREE.Mesh(flukesGeometry,black);flukes.name='Horizontal flukes';flukes.position.x=-3;root.add(flukes);
+  const flukes=new THREE.Mesh(flukesGeometry,finSkin);flukes.name='Horizontal flukes';flukes.position.x=-3;root.add(flukes);
   const jaw=new THREE.Group();jaw.name='Lower jaw';jaw.position.set(1.18,-.18,0);root.add(jaw);
   const lower=new THREE.Mesh(createOrcaJaw(),white);lower.name='Rounded mandible';jaw.add(lower);
   const gums=new THREE.Mesh(new THREE.SphereGeometry(1,16,8),mouthMaterial);
@@ -149,7 +159,15 @@ export function createOrca() {
   upper.position.set(1.96,-.18,0);upper.scale.set(.77,.025,.29);root.add(upper);
   const upperTeeth=new THREE.Mesh(teeth(),toothMaterial),lowerTeeth=new THREE.Mesh(teeth(true),toothMaterial);
   upperTeeth.name='Upper teeth';lowerTeeth.name='Lower teeth';root.add(upperTeeth);jaw.add(lowerTeeth);
-  let jawTimer=0,jawAmount=0,disposed=false;
+  // During a short surface visit the body remains in the water and only the
+  // blowhole reaches the ceiling. The plume is a translucent, rising mist.
+  const breath=new THREE.Group();breath.name='Orca breath plume';breath.visible=false;root.add(breath);
+  const breathMaterial=new THREE.MeshStandardMaterial({color:0xd8f4f2,transparent:true,opacity:.52,depthWrite:false,roughness:.25});
+  for(let i=0;i<7;i++){
+    const puff=new THREE.Mesh(new THREE.SphereGeometry(.12+i*.025,10,7),breathMaterial);
+    puff.position.set(1.03+i*.07,.87+i*.18,(i%2?1:-1)*i*.028);puff.scale.set(1,1.5,1);breath.add(puff);
+  }
+  let jawTimer=0,jawAmount=0,disposed=false,surfaceBaseY=null;
   function animate(dt,time,quality='medium',distance=0) {
     uniforms.orcaPhase.value=time*2.35+.6;
     uniforms.orcaAmplitude.value=.13+Math.min(2.5,root.userData.velocity.length())*.035;
@@ -164,6 +182,14 @@ export function createOrca() {
     upperTeeth.visible=lowerTeeth.visible=jawAmount>.08;
     const detailed=distance<(quality==='low'?20:40);
     body.geometry=detailed?near:far;
+    const cycle=(time+(root.userData.phase||0)*11)%74;
+    const rise=THREE.MathUtils.smoothstep(cycle,42,49)-THREE.MathUtils.smoothstep(cycle,57,65);
+    if(rise>.001&&surfaceBaseY===null)surfaceBaseY=root.position.y;
+    if(surfaceBaseY!==null)root.position.y=THREE.MathUtils.lerp(surfaceBaseY,15.45,rise);
+    if(cycle>65&&surfaceBaseY!==null){root.position.y=surfaceBaseY;surfaceBaseY=null;}
+    const blowing=cycle>50&&cycle<53&&rise>.92;
+    breath.visible=blowing;
+    if(blowing){breath.position.set(0,2.05,0);breath.scale.setScalar(.72+(cycle-50)*.30);}
   }
   function dispose() {
     if(disposed)return;disposed=true;

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {addSurfaceRelief} from './FishSurfaceDetail.js';
 
 // Original humpback-inspired character, +X nose; dimensions are world meters.
 export const WHALE_EXTENT=new THREE.Vector3(15,5.5,9);
@@ -44,7 +45,9 @@ export function createWhale(){
     s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
       vec3 p=vWhale;
       float mottling=sin(p.x*2.2+sin(p.z*3.0))*sin(p.y*3.8+p.z)*.045;
-      vec3 blue=vec3(.10,.25,.33)+mottling;
+      float scars=fishNoise(vec3(p.x*7.0,p.y*9.0,p.z*8.0));
+      vec3 blue=vec3(.075,.19,.27)+mottling;
+      blue*=.91+scars*.16;
       float belly=(1.0-smoothstep(-.85,.15,p.y))*smoothstep(-5.0,3.0,p.x);
       vec3 throat=vec3(.43,.53,.56);
       float folds=cos(p.z*11.0/(1.0+max(0.0,p.x-7.0)*.18)+p.x*.20);
@@ -52,12 +55,17 @@ export function createWhale(){
       throat*=1.0-grooves*.28;
       diffuseColor.rgb=mix(blue,throat,belly);
     `);
+    addSurfaceRelief(s,'(fishNoise(vWhale*38.0)-.5)*.18+grooves*.13',
+      '(fishNoise(vWhale*38.0)-.5)*.12+grooves*.09',.0013);
   };
-  skin.customProgramCacheKey=()=>'whale-skin-pleats-v1';
-  const finMaterial=new THREE.MeshStandardMaterial({color:0x557f95,roughness:.56});
+  skin.customProgramCacheKey=()=>'whale-skin-relief-pleats-v2';
+  const finMaterial=new THREE.MeshStandardMaterial({color:0x466e83,roughness:.52});
+  finMaterial.onBeforeCompile=s=>addSurfaceRelief(s,'(fishNoise(-vViewPosition*18.0)-.5)*.12',
+    '(fishNoise(-vViewPosition*18.0)-.5)*.08',.0006);
+  finMaterial.customProgramCacheKey=()=>'whale-fin-relief-v2';
   const lipMaterial=new THREE.MeshStandardMaterial({color:0x223f50,roughness:.62});
-  const white=new THREE.MeshStandardMaterial({color:0xdde8db,roughness:.3});
-  const black=new THREE.MeshStandardMaterial({color:0x102932,roughness:.16});
+  const eyeRim=new THREE.MeshStandardMaterial({color:0x192b30,roughness:.42});
+  const black=new THREE.MeshStandardMaterial({color:0x020608,roughness:.12});
   const near=createWhaleBody(),far=createWhaleBody(32,16);
   const body=new THREE.Mesh(near,skin);body.name='Whale body';root.add(body);
   const flipperGeo=fin([[0,0],[-.8,1.6],[-2.1,5.2],[-3.5,6.2],[-4.1,6.9],[-4.5,6.4],[-4.1,5.7],[-2.6,2.9],[-1.6,.25],[0,0]],.24);
@@ -65,8 +73,8 @@ export function createWhale(){
   const flippers=[];
   for(const side of [-1,1]){
     const p=new THREE.Mesh(flipperGeo,finMaterial);p.name='Long pectoral';p.position.set(4.1,-1.2,side*2);p.scale.z=side;root.add(p);flippers.push(p);
-    const eye=new THREE.Mesh(new THREE.SphereGeometry(.30,16,12),white);eye.name='Whale eye';eye.position.set(7.7,.12,side*2.60);eye.scale.z=.55;root.add(eye);
-    const pupil=new THREE.Mesh(new THREE.SphereGeometry(.15,12,8),black);pupil.position.set(7.79,.10,side*2.76);pupil.scale.z=.55;root.add(pupil);
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(.145,16,12),eyeRim);eye.name='Whale eye';eye.position.set(7.74,.12,side*2.60);eye.scale.z=.44;root.add(eye);
+    const pupil=new THREE.Mesh(new THREE.SphereGeometry(.088,12,8),black);pupil.name='Whale pupil';pupil.position.set(7.80,.10,side*2.67);pupil.scale.z=.38;root.add(pupil);
     const curve=new THREE.CatmullRomCurve3([
       new THREE.Vector3(5.8,-.70,side*2.68),new THREE.Vector3(8.6,-.67,side*2.45),
       new THREE.Vector3(10.7,-.35,side*1.99),new THREE.Vector3(12.38,-.10,side*.87),new THREE.Vector3(12.72,0,0),
@@ -83,7 +91,13 @@ export function createWhale(){
   }
   const bumpGeometry=mergeGeometries(lumps);lumps.forEach(g=>g.dispose());
   const bumps=new THREE.Mesh(bumpGeometry,finMaterial);bumps.name='Snout tubercles';root.add(bumps);
-  let disposed=false,lastTime=null,phase=.8;
+  const breath=new THREE.Group();breath.name='Whale breath plume';breath.visible=false;root.add(breath);
+  const breathMaterial=new THREE.MeshStandardMaterial({color:0xdff7f6,transparent:true,opacity:.50,depthWrite:false,roughness:.22});
+  for(let i=0;i<11;i++){
+    const puff=new THREE.Mesh(new THREE.SphereGeometry(.23+i*.030,10,7),breathMaterial);
+    puff.position.set(5.85+i*.14,.30+i*.16,Math.sin(i*1.7)*.12);puff.scale.set(1,1.8,1);breath.add(puff);
+  }
+  let disposed=false,lastTime=null,phase=.8,surfaceBaseY=null;
   function animate(dt,time,quality='medium',distance=0){
     const elapsed=lastTime===null?0:Math.max(0,Math.min(.08,time-lastTime));lastTime=time;
     const speed=root.userData.velocity.length();phase+=elapsed*(.25+speed*.62);
@@ -95,6 +109,14 @@ export function createWhale(){
     flippers.forEach((p,i)=>p.rotation.x=(i===0?-1:1)*(.11+Math.sin(phase*.75+i*.45)*.08));
     body.geometry=distance<(quality==='low'?30:55)?near:far;
     bumps.visible=quality!=='low'&&distance<40;
+    const cycle=(time+(root.userData.phase||0)*17)%118;
+    const rise=THREE.MathUtils.smoothstep(cycle,72,84)-THREE.MathUtils.smoothstep(cycle,96,110);
+    if(rise>.001&&surfaceBaseY===null)surfaceBaseY=root.position.y;
+    if(surfaceBaseY!==null)root.position.y=THREE.MathUtils.lerp(surfaceBaseY,16.60,rise);
+    if(cycle>110&&surfaceBaseY!==null){root.position.y=surfaceBaseY;surfaceBaseY=null;}
+    const blowing=cycle>87&&cycle<91&&rise>.92;
+    breath.visible=blowing;
+    if(blowing){breath.position.y=2.60;breath.scale.setScalar(.80+(cycle-87)*.22);}
   }
   function dispose(){if(disposed)return;disposed=true;const gs=new Set([near,far]),ms=new Set();root.traverse(o=>{if(o.geometry)gs.add(o.geometry);if(o.material)ms.add(o.material);});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());}
   return {root,animate,dispose};

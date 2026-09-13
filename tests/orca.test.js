@@ -37,9 +37,20 @@ test('orca simplifies body at distance and composes a lit skin shader',()=>{
   const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
   body.material.onBeforeCompile(shader);
   assert.match(shader.fragmentShader,/eyePatch/);
+  assert.match(shader.fragmentShader,/fishMicroNormal/);
+  assert.match(shader.fragmentShader,/roughnessFactor=clamp/);
   assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
   assert.match(shader.vertexShader,/objectNormal.x-=/);
   assert.equal(shader.uniforms.orcaPhase.value,12*2.35+.6);orca.dispose();
+});
+
+test('orca raises only its blowhole region and emits a short surface mist plume',()=>{
+  const orca=createOrca(),plume=orca.root.getObjectByName('Orca breath plume');
+  orca.animate(.04,45,'high',5);
+  assert.ok(orca.root.position.y>15);assert.equal(plume.visible,true);
+  orca.animate(.04,70,'high',5);
+  assert.equal(plume.visible,false);assert.ok(Math.abs(orca.root.position.y)<.001);
+  orca.dispose();
 });
 
 test('orca clearance rejects rocks, narrow passes, terrain and world edges',()=>{

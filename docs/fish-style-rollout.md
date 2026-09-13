@@ -40,11 +40,15 @@ De gele koraalvis is de kwaliteitsmaatstaf. De gedeelde rendering en automatisch
 
 Automatische validatie van deze batch: 82 tests, waaronder gesloten lichaamsgeometrie, symmetrische realistische clownvinnen, slaaphouding, gedeelde materialen, detailwissels en behoud van simulatiestatus. De vergelijkingspagina gebruikt de daadwerkelijke modellen uit de oceaan.
 
-## Ronde 3 — orka en walvis (laatste dierenbatch)
+## Ronde 3 — orka en walvis (laatste dierenbatch, nu)
 
 Grote dieren krijgen passende anatomie, natuurlijke ogen, huidnuance, mond en vinnen. Behoud schaal, orka-kaakinteractie en walvisbeweging. Controleer staartaanhechting en belichting op korte afstand; test watergrens en botsingsruimte opnieuw als de buitenvorm verandert.
 
-Orka en walvis krijgen bovendien een ademcyclus: duiken → opstijgen → uitademen → afdalen. Het blaasgat moet de waterspiegel bereiken. Een deel van de rug en vin mag daarbij boven water komen; het hele dier mag niet boven het water zweven. De uitademing wordt een korte mistpluim, geen waterkanon en geen blazen diep onder water. Timing, pluim en zwemsnelheid verschillen per soort. Eerst de huidige waterbegrenzing gericht uitbreiden voor ademende zoogdieren; gewone vissen blijven volledig onder water. Pause, botsingen en het wisselen van stijl moeten de ademcyclus behouden.
+De orka en walvis krijgen nu dezelfde materiaalbasis als de gele koraalvis: MeshStandard-verlichting, fijn reliëf in de normaal en plaatselijke ruwheidsvariatie. De orka krijgt subtiele huidnuances in het zwart/witte patroon; de walvis krijgt huidmotteling, keelplooien, kleinere natuurlijke ogen en reliëf op de lange vinnen. De bestaande gesloten lichamen, mondinteractie en detailniveaus blijven behouden.
+
+Beide zoogdieren maken af en toe een rustige oppervlaktebeweging. Alleen het gebied rond het blaasgat komt aan de waterspiegel; daarna verschijnt een korte, doorschijnende mistpluim en zakt het dier weer terug. Orka en walvis hebben verschillende cycli. Gewone vissen blijven volledig onder water.
+
+Controleer in de browser vooral of de pluim precies bij de kop begint en of een opstijgend dier niet door rotsen of de bodem beweegt. De automatische tests bewaken geometrie, detailniveaus, mond, routes en de shaderopbouw; een grafische browsercontrole blijft nodig.
 
 ## Afronding — complete stijlen en prestaties
 

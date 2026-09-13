@@ -41,8 +41,16 @@ test('whale animation pauses, moves horizontal flukes, uses LOD and composes its
   tail.geometry.computeBoundingBox();const size=tail.geometry.boundingBox.getSize(new THREE.Vector3());assert.ok(size.z>size.y*10);
   const count=body.geometry.index.count;whale.animate(.04,12.08,'low',50);assert.ok(body.geometry.index.count<count);
   const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};body.material.onBeforeCompile(shader);
-  assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);assert.match(shader.fragmentShader,/grooves/);assert.match(shader.vertexShader,/objectNormal.x-=/);
+  assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);assert.match(shader.fragmentShader,/grooves/);assert.match(shader.fragmentShader,/fishMicroNormal/);assert.match(shader.vertexShader,/objectNormal.x-=/);
   let disposed=0;body.material.addEventListener('dispose',()=>disposed++);whale.dispose();whale.dispose();assert.equal(disposed,1);
+});
+test('whale surfaces slowly and produces a mist plume at the blowhole',()=>{
+  const whale=createWhale(),plume=whale.root.getObjectByName('Whale breath plume');
+  whale.animate(.04,77,'high',10);
+  assert.ok(whale.root.position.y>16);assert.equal(plume.visible,true);
+  whale.animate(.04,115,'high',10);
+  assert.equal(plume.visible,false);assert.ok(Math.abs(whale.root.position.y)<.001);
+  whale.dispose();
 });
 test('whale route protects the large footprint, seabed, surface and world boundary',()=>{
   const a=new THREE.Vector3(0,0,0),b=new THREE.Vector3(8,0,0);
