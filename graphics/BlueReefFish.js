@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {createCharacterMotion,addFinDetail} from './CharacterMotion.js';
 import {createRealisticBlueAssets} from './RealisticBlueFish.js';
+import {createRealisticClownAssets} from './RealisticClownFish.js';
 
 // Original character design. +X nose, animated body and independent fin motion.
 export function createBlueBody(rings=40,sides=24) {
@@ -39,7 +40,7 @@ export function fin(points,depth=.035) {
 }
 
 export function createBlueReefLibrary({clown=false}={}) {
-  const realisticAssets=clown?null:createRealisticBlueAssets(fin);
+  let realisticAssets=null;
   const near=createBlueBody(),far=createBlueBody(20,12);
   if(clown)for(const g of [near,far]){g.scale(1,.86,1.10);g.computeVertexNormals();}
   for(const g of [near,far]){g.computeBoundingSphere();g.boundingSphere.radius=3;}
@@ -152,8 +153,11 @@ export function createBlueReefLibrary({clown=false}={}) {
     const distance=quality==='low'?14:quality==='high'?38:24;
     for(const [fish,m] of members) {
       if(!fish.parent) {m.motion.dispose();m.realistic?.dispose();members.delete(fish);continue;}
-      const realistic=enabled&&style==='realistic'&&!clown;
-      if(realistic&&!m.realistic)m.realistic=realisticAssets.create(fish);
+      const realistic=enabled&&style==='realistic';
+      if(realistic&&!m.realistic){
+        realisticAssets??=clown?createRealisticClownAssets():createRealisticBlueAssets(fin);
+        m.realistic=realisticAssets.create(fish);
+      }
       m.basic.visible=!enabled;m.detailed.visible=enabled&&!realistic;
       if(m.realistic)m.realistic.group.visible=realistic;
       if(!enabled||!fish.visible||fish.userData.dead) continue;

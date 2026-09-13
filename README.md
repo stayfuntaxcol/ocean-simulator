@@ -132,10 +132,12 @@ Gebruik **Bekijk kogelvis**; start de animatie in de referentiescène.
 57 lokale tests slagen. Zie [testinstructies](docs/puffer-fish.md).
 # Twee visstijlen — gefaseerde uitrol
 
-Bij **Visstijl** kun je kiezen tussen cartoon en **Realistisch · in ontwikkeling**. Astra 6 heeft de kogelvis en koraalvlindervis opnieuw uitgewerkt met verfijnde oppervlakken en vinnen. De blauwe vis heeft nog de eerdere realistische vormstudie. Hierna volgen platvis + clownvis en ten slotte orka + walvis. Houd **Nieuwe onderwatersfeer** en de gewenste visdetails aan. Positie, zwemgedrag, gezondheid en interactiestatus blijven behouden tijdens wisselen.
+Bij **Visstijl** kun je kiezen tussen cartoon en **Realistisch · in ontwikkeling**. Astra 6 heeft nu ook de groene platvis en clownvis uitgewerkt met het huid- en vindetail van de gele koraalvis als maatstaf. Kogelvis en koraalvis zijn de vorige batch; de blauwe vis heeft de eerdere realistische vormstudie. Als laatste volgen orka + walvis. Houd **Nieuwe onderwatersfeer** en de gewenste visdetails aan. Positie, zwemgedrag, gezondheid en interactiestatus blijven behouden tijdens wisselen.
 
 Koraalvlindervissen zwemmen als paar dicht bij koraal; kogelvissen zwemmen veel langzamer, meestal alleen laag bij het rif. Hoogte volgt de werkelijke habitat, niet meer een vaste band ver boven het rif. Klik- en orka-gestuurd opblazen werkt in beide stijlen. De vinnen kunnen stilhangen ondersteunen, terwijl de staartslag de verplaatsing volgt.
 
 Open [de vergelijkingspagina](graphics/fish-review.html) om beide soorten in beide stijlen te draaien, pauzeren en te bekijken zonder de rest van de oceaan. Visuele acceptatie in de browser blijft nodig; de codewijziging is geen garantie op filmkwaliteit.
+
+Nieuw: [platvis en clownvis vergelijken met de gele koraalvis](graphics/fish-review-batch-two.html). Bekijk cartoon en realistisch naast de maatstaf onder dezelfde belichting; test ook stilhangen, slapen en lagere detaillering. Bodemroutes, slaaptimers en clownvisgezinnen blijven werken tijdens wisselen.
 
 Zie [het uitrolplan](docs/fish-style-rollout.md) voor alle zeven soorten en de beoordelingsmomenten.

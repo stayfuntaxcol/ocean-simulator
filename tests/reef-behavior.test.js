@@ -33,6 +33,15 @@ test('hover fin clock runs at rest but freezes with pause, sleep, culling and de
   f.visible=false;behavior.advanceFinPhase(f,.5);assert.equal(f.userData.finPhase,phase);
 });
 
+test('clown and flatfish get individual fin clocks without disturbing sleep timers or school identity',()=>{
+  for(const species of ['reef_0','reef_6']){
+    const fish=new THREE.Group();fish.userData={speciesId:species,schoolId:'test',role:'juvenile',phase:.3,restRemaining:150,motionSpeed:.4};
+    behavior.advanceFinPhase(fish,.1);assert.ok(fish.userData.finPhase>.3);
+    const phase=fish.userData.finPhase;fish.userData.sleeping=true;behavior.advanceFinPhase(fish,1);
+    assert.equal(fish.userData.finPhase,phase);assert.equal(fish.userData.restRemaining,150);assert.equal(fish.userData.schoolId,'test');assert.equal(fish.userData.role,'juvenile');
+  }
+});
+
 test('actual reef swimming is slower for puffer, retains depth and clocks follow real travel',()=>{
   const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
   const code=html.slice(html.indexOf('function updateFish(dt,t){'),html.indexOf('// --- Cinematische vis- en schoolvolgmodus ---'));

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="nl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Platvis en clownvis · vergelijking met gele koraalvis</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10252b;color:#e5f7f7;font:15px system-ui}header,footer{padding:18px;max-width:1300px;margin:auto}h1{font-size:22px;margin:0 0 8px}p{line-height:1.5;color:#b3cccc}nav{display:flex;gap:12px;flex-wrap:wrap;align-items:center}button,a{color:#e8fbff;background:#234953;border:1px solid #668991;padding:9px 12px;border-radius:8px;text-decoration:none}button{cursor:pointer}label{display:flex;gap:8px;align-items:center}input[type=range]{width:100px}main{position:relative;height:640px;max-width:1500px;margin:auto}canvas{position:absolute;inset:0;display:block;width:100%;height:100%}.grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);pointer-events:none}.cell{border:1px solid #3c5864;position:relative}.cell span{position:absolute;top:10px;left:10px;right:10px;background:#10252bcc;padding:8px;border-radius:6px;font-size:13px}footer{font-size:13px;color:#b3cccc}@media(max-width:750px){main{height:1680px}.grid{grid-template-columns:1fr;grid-template-rows:repeat(6,1fr)}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js"}}</script>
+</head><body>
+<header><h1>Astra 6 · platvis en clownvis</h1><p>Vergelijk de nieuwe modellen met de gele koraalvis. Elke vis krijgt dezelfde belichting, camera en weergavegrootte. In de oceaan gelden de bestaande onderlinge verhoudingen.</p>
+<nav><button id="pause" aria-pressed="false">Pauzeren</button><label><input id="sleep" type="checkbox">Platvis laten rusten</label><label>Draai <input id="angle" type="range" min="-180" max="180" value="0"></label><label>Kantel <input id="tilt" type="range" min="-90" max="90" value="25"></label><label>Zwemsnelheid <input id="speed" type="range" min="0" max="2" step="0.05" value="0.55"></label><label>Detail <select id="quality"><option value="high">Hoog</option><option value="low">Veraf</option></select></label><a href="../?scene=reference">Oceaan</a><a href="./fish-review.html">Vorige batch</a></nav></header>
+<main id="stage"><div class="grid">
+<div class="cell"><span>Groene platvis · cartoon</span></div><div class="cell"><span>Groene platvis · realistisch</span></div><div class="cell"><span>Maatstaf · gele koraalvis</span></div>
+<div class="cell"><span>Clownvis · cartoon</span></div><div class="cell"><span>Clownvis · realistisch</span></div><div class="cell"><span>Maatstaf · gele koraalvis</span></div>
+</div></main><footer id="status">Modellen laden…</footer>
+<script type="module">
+import * as THREE from 'three';
+import {createGreenReefLibrary} from './GreenReefFish.js';
+import {createBlueReefLibrary} from './BlueReefFish.js';
+import {createButterflyLibrary} from './ButterflyFish.js';
+import {advanceFinPhase} from './SpeciesBehavior.js';
+const stage=document.getElementById('stage'),status=document.getElementById('status');
+try{
+  const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0x183039);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.35;renderer.setScissorTest(true);stage.prepend(renderer.domElement);
+  const cells=[...document.querySelectorAll('.cell')],specimens=[];
+  for(const [index,[species,style]] of [['green','cartoon'],['green','realistic'],['coral','realistic'],['clown','cartoon'],['clown','realistic'],['coral','realistic']].entries()){
+    const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(40,1,.1,80);camera.position.z=6.8;
+    scene.add(new THREE.HemisphereLight(0xd9f4ff,0x766b4c,2.1));const key=new THREE.DirectionalLight(0xffedcd,3.4);key.position.set(3,6,8);scene.add(key);const rim=new THREE.DirectionalLight(0x9ee5ff,1.8);rim.position.set(-4,2,-6);scene.add(rim);
+    const fish=new THREE.Group();fish.userData={speciesId:species==='green'?'reef_6':species==='clown'?'reef_0':'reef_2',phase:.2,swimPhase:.2,finPhase:.2,motionSpeed:0,velocity:new THREE.Vector3(),sleeping:false,eyeClosure:0};scene.add(fish);
+    const library=species==='green'?createGreenReefLibrary():species==='clown'?createBlueReefLibrary({clown:true}):createButterflyLibrary();library.attach(fish);specimens.push({scene,camera,fish,library,species,style,cell:cells[index]});
+  }
+  let paused=false,last=performance.now(),time=0;
+  const angle=document.getElementById('angle'),tilt=document.getElementById('tilt'),speed=document.getElementById('speed'),sleep=document.getElementById('sleep'),quality=document.getElementById('quality');
+  document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Verder zwemmen':'Pauzeren';e.target.setAttribute('aria-pressed',String(paused));};
+  function resize(){renderer.setSize(stage.clientWidth,stage.clientHeight);}addEventListener('resize',resize);resize();
+  function frame(now){requestAnimationFrame(frame);const dt=paused?0:Math.min(.05,(now-last)/1000);last=now;time+=dt;const bounds=stage.getBoundingClientRect();
+    for(const s of specimens){const d=s.fish.userData;
+      if(!paused){d.sleeping=s.species==='green'&&sleep.checked;d.motionSpeed=d.sleeping?0:Number(speed.value);d.velocity.set(d.motionSpeed,0,0);d.eyeClosure+=(Number(d.sleeping)-d.eyeClosure)*(1-Math.exp(-dt*3));d.swimPhase+=dt*d.motionSpeed*(s.species==='clown'?7:4);advanceFinPhase(s.fish,dt);}
+      s.fish.rotation.set(Number(tilt.value)*Math.PI/180,Number(angle.value)*Math.PI/180,0);
+      // Separate LOD camera preserves equal presentation size while testing far geometry.
+      const lodCamera=quality.value==='low'?{position:new THREE.Vector3(0,0,100)}:s.camera;
+      if(s.species==='coral')s.library.update(time,lodCamera,quality.value,true,s.style);else s.library.update(lodCamera,quality.value,true,time,s.style);
+      const r=s.cell.getBoundingClientRect(),x=r.left-bounds.left,y=bounds.bottom-r.bottom;renderer.setViewport(x,y,r.width,r.height);renderer.setScissor(x,y,r.width,r.height);s.camera.aspect=r.width/r.height;s.camera.position.z=s.camera.aspect<1?6.8/s.camera.aspect:6.8;s.camera.updateProjectionMatrix();renderer.render(s.scene,s.camera);
+    }
+    status.textContent=`${paused?'Gepauzeerd':'Animatie actief'} · ${Math.floor(time)} s · presentatie: modellen blijven op hun plek. In de oceaan volgt de beweging de verplaatsing. Slapende oogleden zijn de gekozen spelanimatie.`;
+  }requestAnimationFrame(frame);
+  addEventListener('pagehide',()=>{specimens.forEach(s=>s.library.dispose());renderer.dispose();},{once:true});
+}catch(error){status.textContent='Vergelijking kon niet starten: '+error.message;console.error(error);}
+</script></body></html>

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
-import {populationPlan,SPECIES_POLICY,habitatPreference,swimRhythm,bottomClearance,advanceBottomRest} from '../graphics/SpeciesBehavior.js';
+import {populationPlan,SPECIES_POLICY,habitatPreference,swimRhythm,bottomClearance,advanceBottomRest,advanceFinPhase} from '../graphics/SpeciesBehavior.js';
 import {constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts} from '../graphics/FishInteractions.js';
 import {createOrca,ORCA_CLEARANCE,ORCA_SCALE} from '../graphics/Orca.js';
 
@@ -47,7 +47,7 @@ test('actual fish update follows a sloping seabed without sinking, and pauses di
   fish.userData={velocity:new THREE.Vector3(.4,0,0),personality:1,phase:.2,wanderPhase:.2};
   new THREE.Scene().add(fish);
   const school={...SPECIES_POLICY.reef_6,speciesId:'reef_6',members:[fish],avgVelocity:new THREE.Vector3(),target:new THREE.Vector3(10,-16.3,0),behaviorPhase:.4};
-  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,whale:null,schools:new Map([['bottom',school]]),schoolThinkAccumulator:0,
+  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,advanceFinPhase,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,whale:null,schools:new Map([['bottom',school]]),schoolThinkAccumulator:0,
     camera:new THREE.PerspectiveCamera(),CULL_RADIUS:60,FISH_ANIMATION_RADIUS:45,WORLD_HALF:144,FISH_RADIUS:.38,
     editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:terrain,cellHasRockAt:()=>false,
     segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};
@@ -70,7 +70,7 @@ test('adult and juvenile reunite after separation without changing pair membersh
   const adult=new THREE.Group(),young=new THREE.Group();scene.add(adult,young);adult.scale.setScalar(.58);young.scale.setScalar(.28);adult.position.set(0,-14,0);young.position.set(-6,-14,0);
   for(const [f,role] of [[adult,'mother'],[young,'juvenile']])f.userData={role,speciesId:'reef_0',velocity:new THREE.Vector3(.8,0,0),personality:1,phase:.4,wanderPhase:.3};
   const school={...SPECIES_POLICY.reef_0,speciesId:'reef_0',members:[adult,young],avgVelocity:new THREE.Vector3(),target:new THREE.Vector3(4,-14,0),behaviorPhase:.2};
-  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,whale:null,schools:new Map([['pair',school]]),schoolThinkAccumulator:0,
+  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,advanceFinPhase,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,whale:null,schools:new Map([['pair',school]]),schoolThinkAccumulator:0,
     camera:new THREE.PerspectiveCamera(),CULL_RADIUS:60,FISH_ANIMATION_RADIUS:45,WORLD_HALF:144,FISH_RADIUS:.38,
     editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:()=>-18,cellHasRockAt:()=>false,
     segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};

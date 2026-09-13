@@ -42,8 +42,11 @@ test('realistic assets remain finite, compose lighting with motion and release r
   scene.remove(fish);library.update(camera,'high');library.dispose();assert.equal(disposed,1);
 });
 
-test('clownfish stays cartoon during the blue-only realism rollout',()=>{
+test('clownfish keeps its cartoon default and gains a separately selected realistic appearance',()=>{
   const library=createBlueReefLibrary({clown:true}),fish=new THREE.Group(),scene=new THREE.Scene();scene.add(fish);
-  const m=library.attach(fish);library.update(new THREE.PerspectiveCamera(),'high',true,0,'realistic');
-  assert.equal(m.realistic,null);assert.ok(m.detailed.visible);assert.equal(fish.userData.visualSpecies,'Clownvis');library.dispose();
+  const m=library.attach(fish),camera=new THREE.PerspectiveCamera();library.update(camera,'high',true,0);
+  assert.equal(m.realistic,null);assert.ok(m.detailed.visible);
+  library.update(camera,'high',true,0,'realistic');assert.ok(m.realistic.group.visible);assert.equal(m.detailed.visible,false);
+  library.update(camera,'high',true,0,'cartoon');assert.ok(m.detailed.visible);assert.equal(m.realistic.group.visible,false);
+  assert.equal(fish.userData.visualSpecies,'Clownvis');library.dispose();
 });

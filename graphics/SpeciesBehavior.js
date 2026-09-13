@@ -1,11 +1,11 @@
 // Species policy separated from scene rendering for deterministic checks.
 export const SPECIES_POLICY={
-  reef_0:{kind:'family',cruiseSpeed:1.05,cohesion:.85,alignment:.28,separation:.38,habitatPull:1.1,exploration:.03},
+  reef_0:{kind:'family',cruiseSpeed:1.05,cohesion:.85,alignment:.28,separation:.38,habitatPull:1.1,exploration:.03,finRate:10},
   reef_1:{kind:'shoal',cruiseSpeed:1.15,cohesion:.62,alignment:.72,separation:.78,habitatPull:.85,exploration:.12},
   // Depth bands and speeds are tuned simulation preferences, not biological constants.
   reef_2:{kind:'coral-pair',cruiseSpeed:.62,cohesion:.68,alignment:.52,separation:.68,habitatPull:1.16,exploration:.035,depthMin:2,depthMax:35,reefHeight:.9,verticalSpeed:.35,finRate:7},
   reef_4:{kind:'puffer',cruiseSpeed:.30,cohesion:.16,alignment:.18,separation:1.12,habitatPull:1.05,exploration:.025,depthMin:3,depthMax:40,reefHeight:.55,verticalSpeed:.18,finRate:9},
-  reef_6:{kind:'bottom',cruiseSpeed:.48,cohesion:.25,alignment:.24,separation:.85,habitatPull:1.05,exploration:.04},
+  reef_6:{kind:'bottom',cruiseSpeed:.48,cohesion:.25,alignment:.24,separation:.85,habitatPull:1.05,exploration:.04,finRate:3},
 };
 export function populationPlan(count){
   const counts=Array.from({length:8},(_,i)=>Math.floor(count/8)+(i<count%8?1:0));

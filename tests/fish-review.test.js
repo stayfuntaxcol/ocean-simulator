@@ -23,3 +23,16 @@ test('click selection ignores meshes belonging to an inactive appearance',()=>{
   assert.equal(ctx.fishRootFromObject(a),root);assert.equal(ctx.fishRootFromObject(b),null);
   cartoon.visible=false;realistic.visible=true;assert.equal(ctx.fishRootFromObject(a),null);assert.equal(ctx.fishRootFromObject(b),root);
 });
+
+test('batch two review loads the actual fish and coral benchmark under shared lighting',()=>{
+  const url=new URL('../graphics/fish-review-batch-two.html',import.meta.url),html=fs.readFileSync(url,'utf8');
+  const script=html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+  for(const match of script.matchAll(/from '([^']+)'/g))if(match[1].startsWith('.'))assert.ok(fs.existsSync(new URL(match[1],url)));
+  assert.doesNotThrow(()=>new vm.Script(script.replace(/^import .*$/gm,'')));
+  assert.match(script,/\['green','realistic'\]/);assert.match(script,/\['clown','realistic'\]/);
+  assert.equal((script.match(/\['coral','realistic'\]/g)||[]).length,2);
+  assert.doesNotMatch(html,/firebase|apiKey|gstatic/);
+  const app=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+  assert.match(app,/clownReefLibrary.update\([^\n]*fishRenderStyle.value\)/);
+  assert.match(app,/greenReefLibrary.update\([^\n]*fishRenderStyle.value\)/);
+});

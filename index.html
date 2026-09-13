@@ -116,8 +116,9 @@
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
       <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistisch · in ontwikkeling</option></select></label>
-      <small>Astra 6 · ronde 1: kogelvis en koraalvlindervis opnieuw uitgewerkt. Blauwe vis: eerdere vormstudie. De andere soorten volgen.</small>
+      <small>Astra 6 · ronde 2: ook de groene platvis en clownvis kunnen wisselen. Orka en walvis volgen. Blauwe vis: eerdere vormstudie.</small>
       <p><a href="./graphics/fish-review.html" target="_blank" rel="noopener" style="color:#b6efff">Open vergelijking: beide soorten in beide stijlen</a></p>
+      <p><a href="./graphics/fish-review-batch-two.html" target="_blank" rel="noopener" style="color:#b6efff">Vergelijk platvis en clownvis met de gele koraalvis</a></p>
       <label>Blauwe vis detail <input id="blueFishDetail" type="checkbox" checked></label>
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
       <label>Clownvis <input id="clownFishDetail" type="checkbox" checked></label>
@@ -3326,8 +3327,8 @@ function animate(){
   }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled,fishRenderStyle.value);
   blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
-  clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t);
-  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t);
+  clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
+  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
   pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled,fishRenderStyle.value);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
