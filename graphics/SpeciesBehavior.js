@@ -2,8 +2,9 @@
 export const SPECIES_POLICY={
   reef_0:{kind:'family',cruiseSpeed:1.05,cohesion:.85,alignment:.28,separation:.38,habitatPull:1.1,exploration:.03},
   reef_1:{kind:'shoal',cruiseSpeed:1.15,cohesion:.62,alignment:.72,separation:.78,habitatPull:.85,exploration:.12},
-  reef_2:{kind:'coral-pair',cruiseSpeed:.78,cohesion:.68,alignment:.52,separation:.68,habitatPull:1.16,exploration:.035,depthMin:5,depthMax:14},
-  reef_4:{kind:'puffer',cruiseSpeed:.38,cohesion:.16,alignment:.18,separation:1.12,habitatPull:1.05,exploration:.025,depthMin:8,depthMax:18},
+  // Depth bands and speeds are tuned simulation preferences, not biological constants.
+  reef_2:{kind:'coral-pair',cruiseSpeed:.62,cohesion:.68,alignment:.52,separation:.68,habitatPull:1.16,exploration:.035,depthMin:2,depthMax:35,reefHeight:.9,verticalSpeed:.35,finRate:7},
+  reef_4:{kind:'puffer',cruiseSpeed:.30,cohesion:.16,alignment:.18,separation:1.12,habitatPull:1.05,exploration:.025,depthMin:3,depthMax:40,reefHeight:.55,verticalSpeed:.18,finRate:9},
   reef_6:{kind:'bottom',cruiseSpeed:.48,cohesion:.25,alignment:.24,separation:.85,habitatPull:1.05,exploration:.04},
 };
 export function populationPlan(count){
@@ -40,6 +41,31 @@ export function swimRhythm(species,time,phase=0){
   return .72+burst*.52;
 }
 export function bottomClearance(scale=1){return Math.max(.32,scale*.48+.18);}
+
+export function reefTargetHeight(species,floor,habitatY=floor,variation=0,ceiling=18){
+  const policy=SPECIES_POLICY[species];
+  if(!policy?.reefHeight)return Math.min(ceiling,Math.max(floor+1.1,habitatY+1.2));
+  // Habitat proximity wins over a nominal depth range in an unusually deep/shallow edited world.
+  const anchor=Math.max(floor,Number.isFinite(habitatY)?habitatY:floor);
+  const localMin=Math.max(floor+1.1,anchor+.35),localMax=Math.max(localMin,anchor+2.2);
+  const preferred=anchor+policy.reefHeight+Math.max(-.3,Math.min(.3,variation));
+  const bandMin=Math.max(localMin,20-policy.depthMax),bandMax=Math.min(localMax,20-policy.depthMin,ceiling);
+  return bandMin<=bandMax?Math.max(bandMin,Math.min(bandMax,preferred)):Math.min(ceiling,Math.max(localMin,preferred));
+}
+
+export function reefMotionPace(species,distance,panic=0,inflation=0){
+  if(!SPECIES_POLICY[species]?.reefHeight)return 1;
+  // Ease into inspection/hover; do not keep circling a reached point at full cruise speed.
+  const arrival=Math.max(.08,Math.min(1,distance/2));
+  return Math.max(arrival,Math.min(1,panic))*(species==='reef_4'?1-Math.max(0,Math.min(1,inflation))*.65:1);
+}
+
+export function advanceFinPhase(fish,dt){
+  if(!Number.isFinite(dt)||dt<=0||fish.userData.dead||fish.userData.sleeping||!fish.visible)return;
+  const d=fish.userData,policy=SPECIES_POLICY[d.speciesId];
+  if(!policy?.finRate)return;
+  d.finPhase=(d.finPhase??d.phase??0)+dt*policy.finRate*(.55+Math.min(1.5,Math.max(0,d.motionSpeed||0)));
+}
 
 export function advanceBottomRest(fish,dt,nearBottom){
   const d=fish.userData;

@@ -132,8 +132,10 @@ Gebruik **Bekijk kogelvis**; start de animatie in de referentiescène.
 57 lokale tests slagen. Zie [testinstructies](docs/puffer-fish.md).
 # Twee visstijlen — gefaseerde uitrol
 
-Bij **Visstijl** kun je kiezen tussen cartoon en hyperrealistisch. De blauwe vis, kogelvis en koraalvlindervis ondersteunen de wissel nu. De koraalvis heeft daarbij voor het eerst een eigen cartoonversie gekregen. De overige soorten volgen in paren. Houd **Nieuwe onderwatersfeer** en de gewenste visdetails aan. Positie, zwemgedrag, gezondheid en interactiestatus blijven behouden tijdens wisselen.
+Bij **Visstijl** kun je kiezen tussen cartoon en **Realistisch · in ontwikkeling**. Astra 6 heeft de kogelvis en koraalvlindervis opnieuw uitgewerkt met verfijnde oppervlakken en vinnen. De blauwe vis heeft nog de eerdere realistische vormstudie. Hierna volgen platvis + clownvis en ten slotte orka + walvis. Houd **Nieuwe onderwatersfeer** en de gewenste visdetails aan. Positie, zwemgedrag, gezondheid en interactiestatus blijven behouden tijdens wisselen.
 
-Koraalvlindervissen zwemmen als paar dicht bij koraal op een eigen voorkeursdiepte. Kogelvissen zwemmen veel langzamer, meestal alleen en dieper bij het rif. Hun klik- en orka-gestuurde opblaasgedrag werkt in beide stijlen.
+Koraalvlindervissen zwemmen als paar dicht bij koraal; kogelvissen zwemmen veel langzamer, meestal alleen laag bij het rif. Hoogte volgt de werkelijke habitat, niet meer een vaste band ver boven het rif. Klik- en orka-gestuurd opblazen werkt in beide stijlen. De vinnen kunnen stilhangen ondersteunen, terwijl de staartslag de verplaatsing volgt.
+
+Open [de vergelijkingspagina](graphics/fish-review.html) om beide soorten in beide stijlen te draaien, pauzeren en te bekijken zonder de rest van de oceaan. Visuele acceptatie in de browser blijft nodig; de codewijziging is geen garantie op filmkwaliteit.
 
 Zie [het uitrolplan](docs/fish-style-rollout.md) voor alle zeven soorten en de beoordelingsmomenten.

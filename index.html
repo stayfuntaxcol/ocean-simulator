@@ -115,8 +115,9 @@
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
-      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Hyperrealistisch (gefaseerd)</option></select></label>
-      <small>Fase 1: blauwe vis, kogelvis en koraalvlindervis kunnen al wisselen.</small>
+      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistisch · in ontwikkeling</option></select></label>
+      <small>Astra 6 · ronde 1: kogelvis en koraalvlindervis opnieuw uitgewerkt. Blauwe vis: eerdere vormstudie. De andere soorten volgen.</small>
+      <p><a href="./graphics/fish-review.html" target="_blank" rel="noopener" style="color:#b6efff">Open vergelijking: beide soorten in beide stijlen</a></p>
       <label>Blauwe vis detail <input id="blueFishDetail" type="checkbox" checked></label>
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
       <label>Clownvis <input id="clownFishDetail" type="checkbox" checked></label>
@@ -262,7 +263,7 @@ import { createButterflyLibrary } from './graphics/ButterflyFish.js';
 import { createBlueReefLibrary } from './graphics/BlueReefFish.js';
 import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveFishContacts } from './graphics/FishInteractions.js';
-import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest } from './graphics/SpeciesBehavior.js';
+import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
 import { createPufferLibrary } from './graphics/PufferFish.js';
@@ -2146,6 +2147,9 @@ function registerFish(fish,speciesId,school){
   fish.userData.schoolId=school.id;
   fish.userData.behaviorPhase=school.behaviorPhase;
   fish.userData.phase=fish.userData.phase??oceanRandom()*Math.PI*2;
+  fish.userData.finPhase=fish.userData.finPhase??fish.userData.phase;
+  fish.userData.swimPhase=fish.userData.swimPhase??fish.userData.phase;
+  fish.userData.motionSpeed=fish.userData.motionSpeed??0;
   fish.userData.speed=fish.userData.speed??(.85+oceanRandom()*1.15);
   fish.userData.personality=.82+oceanRandom()*.36;
   fish.userData.wanderPhase=oceanRandom()*Math.PI*2;
@@ -2319,9 +2323,8 @@ function chooseSchoolTarget(school,t){
     const x=THREE.MathUtils.clamp((point?.x??c.x)+Math.cos(angle)*radius,-WORLD_HALF+4,WORLD_HALF-4);
     const z=THREE.MathUtils.clamp((point?.z??c.z)+Math.sin(angle)*radius,-WORLD_HALF+4,WORLD_HALF-4);
     const floor=terrainHeightAt(x,z);
-    const naturalY=policy.depthMin===undefined?null:20-(policy.depthMin+oceanRandom()*(policy.depthMax-policy.depthMin));
-    const y=policy.kind==='bottom'?floor+.5:naturalY===null?Math.max(floor+1.1,(point?.y??floor)+(policy.kind==='family'?1.2:2.5)):Math.max(floor+1.1,naturalY);
-    school.target.set(x,Math.min(12,y),z);
+    const y=policy.kind==='bottom'?floor+.5:policy.reefHeight?reefTargetHeight(school.speciesId,floor,point?.y??floor,(oceanRandom()-.5)*.6):Math.max(floor+1.1,(point?.y??floor)+(policy.kind==='family'?1.2:2.5));
+    school.target.set(x,Math.min(policy.reefHeight?18:12,y),z);
     school.targetCell=cell?.key??null;school.targetLayer=point?.layerId??null;school.targetHabitat=point?.score??0;
     school.mode=policy.kind;school.retargetAt=t+(policy.kind==='family'?3:policy.kind==='bottom'?9:policy.kind==='puffer'?14:policy.kind==='coral-pair'?6:8)+oceanRandom()*5;
     return;
@@ -2745,6 +2748,7 @@ function updateFish(dt,t){
         targetV.copy(adult.position).addScaledVector(heading,-1.0-(slot>>1)*.5);
         targetV.add(new THREE.Vector3(-heading.z,0,heading.x).multiplyScalar((slot%2?1:-1)*(.5+slot*.12)));
       }
+      const destinationDistance=targetV.distanceTo(p);
       targetV.sub(p); if(targetV.lengthSq())targetV.normalize();
       desiredV.addScaledVector(targetV,school.habitatPull*(1-panic*.72));
       // Organische individuele variatie voorkomt een mechanische zwerm.
@@ -2793,7 +2797,9 @@ function updateFish(dt,t){
             if(young&&p.distanceTo(young.position)>3.5)pairPace=.6;
           }
         }
-        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed*(policy?rhythm:1)*pairPace*(fish.userData.isPuffer?1-(fish.userData.pufferInflation||0)*.65:1));
+        const reefPace=policy?.reefHeight?reefMotionPace(school.speciesId,school.navWaypoint?Math.max(2,destinationDistance):destinationDistance,panic,fish.userData.pufferInflation||0):1;
+        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed*(policy?rhythm:1)*pairPace*reefPace);
+        if(policy?.verticalSpeed)desiredV.y=THREE.MathUtils.clamp(desiredV.y,-policy.verticalSpeed,policy.verticalSpeed);
       }
       const turnCross=fish.userData.velocity.x*desiredV.z-fish.userData.velocity.z*desiredV.x;
       fish.userData.turnLean=THREE.MathUtils.lerp(fish.userData.turnLean||0,THREE.MathUtils.clamp(turnCross,-1,1),1-Math.exp(-dt*3));
@@ -2824,7 +2830,7 @@ function updateFish(dt,t){
       }else{
         p.copy(collisionTmp2);
       }
-      if(policy?.kind!=='bottom')p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.06;
+      if(policy?.kind!=='bottom'&&!policy?.reefHeight)p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.06;
       if(editMode || distSq<=FISH_ANIMATION_RADIUS*FISH_ANIMATION_RADIUS){
         if(fish.userData.tail) fish.userData.tail.rotation.y=Math.sin(t*7.5*fish.userData.speed+fish.userData.phase)*.42;
         if(fish.userData.velocity.lengthSq()>.001){
@@ -2845,6 +2851,7 @@ function updateFish(dt,t){
     f.userData.motionSpeed=f.position.distanceTo(previous.get(f))/dt;
     const speed=Math.min(3,f.userData.motionSpeed);
     f.userData.swimPhase=(f.userData.swimPhase??f.userData.phase??0)+dt*speed*(f.userData.speciesId==='reef_0'?7:4);
+    if(SPECIES_POLICY[f.userData.speciesId]?.finRate)advanceFinPhase(f,dt);
   }
   visibleFishText.textContent=visibleCount;
 }
@@ -2958,6 +2965,8 @@ followPanel.addEventListener('click',e=>e.stopPropagation());
 function fishRootFromObject(obj){
   let o=obj;
   while(o && o!==scene){
+    // Raycaster also intersects hidden meshes; ignore inactive appearance trees.
+    if(!o.visible)return null;
     if(o.userData?.isFishRoot) return o;
     o=o.parent;
   }

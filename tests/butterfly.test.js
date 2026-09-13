@@ -98,3 +98,43 @@ test('coral fish has independent cartoon and realistic appearances with one beha
   library.update(4.2,camera,'high',true,'realistic');assert.equal(parts.cartoon.group.visible,false);assert.ok(parts.detailed.visible);
   assert.equal(fish.userData.schoolId,'reef_2');assert.equal(fish.userData.tail,tail);library.dispose();assert.equal(tail.parent,fish);
 });
+
+test('butterfly uses measured translation, keeps facial attachments on bent skin, and separates hover fins',()=>{
+  const library=createButterflyLibrary(),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(),{fish,parts}=specimen(library,scene);
+  Object.assign(fish.userData,{motionSpeed:0,swimPhase:.6,finPhase:1});
+  library.update(4,camera,'high');assert.equal(parts.uniforms.swimAmplitude.value,0);assert.ok(parts.tail.rotation.y===0);
+  const fin=parts.pectorals[0].rotation.y;library.update(40,camera,'high');assert.equal(parts.pectorals[0].rotation.y,fin);
+  fish.userData.finPhase+=.5;library.update(40,camera,'high');assert.notEqual(parts.pectorals[0].rotation.y,fin);assert.ok(parts.tail.rotation.y===0);
+  fish.userData.motionSpeed=1.5;library.update(40,camera,'high');
+  assert.equal(parts.uniforms.swimPhase.value,.6);assert.equal(parts.uniforms.finPhase.value,1.5);
+  for(const [part,rest]of parts.rest){
+    assert.equal(part.position.z,rest.z+swimOffset(rest.x,.6,parts.uniforms.swimAmplitude.value));
+  }
+  const tail=parts.tail.position.z;fish.userData.swimPhase+=.5;library.update(40,camera,'high');assert.notEqual(parts.tail.position.z,tail);
+  library.dispose();
+});
+
+test('coral fin planes are anatomical in both styles and microscale shader affects lighting',()=>{
+  const library=createButterflyLibrary(),scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(),{fish,parts}=specimen(library,scene);
+  fish.userData.motionSpeed=0;fish.userData.swimPhase=0;fish.userData.finPhase=0;
+  library.update(0,camera,'high',true,'cartoon');
+  for(const fin of [parts.cartoon.tail,parts.cartoon.dorsal,parts.tail,parts.dorsal,parts.anal]){
+    fin.geometry.computeBoundingBox();const size=fin.geometry.boundingBox.getSize(new THREE.Vector3());
+    assert.ok(size.x>.2&&size.y>.2);assert.ok(size.z<.04);
+    const normal=new THREE.Vector3(0,0,1).applyQuaternion(fin.quaternion);assert.ok(Math.abs(normal.z)>.99,'vertical fin lies in body XY plane');
+  }
+  const shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  parts.body.material.onBeforeCompile(shader);
+  assert.match(shader.fragmentShader,/float fishScale/);assert.match(shader.fragmentShader,/normal=fishMicroNormal/);
+  assert.match(shader.fragmentShader,/roughnessFactor=clamp/);assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
+  library.dispose();
+});
+
+test('butterfly attachment is idempotent and shared new eye resources dispose only once',()=>{
+  const library=createButterflyLibrary(),scene=new THREE.Scene(),a=specimen(library,scene),b=specimen(library,scene);
+  const childCount=a.fish.children.length;assert.equal(library.attach(a.fish),a.parts);assert.equal(a.fish.children.length,childCount);
+  assert.equal(a.parts.eyes[0].geometry,b.parts.eyes[0].geometry);assert.equal(a.parts.eyes[0].material,b.parts.eyes[0].material);
+  let geometries=0,materials=0;a.parts.eyes[0].geometry.addEventListener('dispose',()=>geometries++);a.parts.eyes[0].material.addEventListener('dispose',()=>materials++);
+  library.dispose();library.dispose();assert.equal(geometries,1);assert.equal(materials,1);assert.equal(library.size,0);
+  assert.throws(()=>library.attach(new THREE.Group()),/disposed/);
+});

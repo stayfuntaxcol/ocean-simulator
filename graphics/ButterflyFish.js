@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {createCartoonCoralAssets} from './CartoonCoralFish.js';
+import {createFinMembrane as membrane,addSurfaceRelief} from './FishSurfaceDetail.js';
 
 // An original reef-fish design inspired by butterflyfish. Local +X is the nose.
 const PROFILE = [
@@ -44,7 +45,7 @@ export function swimOffset(x, phase, amplitude) {
 }
 
 function skinMaterial(uniforms) {
-  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .42, metalness: .06 });
+  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .43, metalness: 0 });
   material.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = `varying vec3 vFishLocal;
@@ -63,11 +64,20 @@ function skinMaterial(uniforms) {
       vFishLocal=position;
       transformed.z+=fishBend(position.x);
     `);
-    shader.fragmentShader = 'varying vec3 vFishLocal;\n' + shader.fragmentShader;
+    shader.fragmentShader = `varying vec3 vFishLocal;
+      float fishScale(vec3 p) {
+        vec2 grid=p.xy*vec2(55.0,72.0);
+        grid.x+=mod(floor(grid.y),2.0)*.5;
+        vec2 cell=fract(grid)-.5;
+        float edge=smoothstep(.31,.49,length(cell*vec2(.86,1.08)));
+        float aa=1.0-smoothstep(.4,1.3,length(fwidth(grid)));
+        return edge*aa;
+      }
+    ` + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `
       #include <color_fragment>
       vec3 p=vFishLocal;
-      vec3 skin=mix(vec3(.85,.66,.10),vec3(.94,.91,.72),smoothstep(-.5,.4,p.x)*.65);
+      vec3 skin=mix(vec3(.87,.64,.065),vec3(.91,.87,.66),smoothstep(-.6,.35,p.x)*.78);
       float lines=pow(.5+.5*cos((p.x*.75+p.y)*32.0),8.0);
       lines*=1.0-smoothstep(.35,1.8,fwidth((p.x*.75+p.y)*32.0));
       skin*=1.0-lines*.14;
@@ -76,24 +86,30 @@ function skinMaterial(uniforms) {
       float spot=length((p.xy-vec2(-.82,.45))*vec2(1.0,1.12));
       skin=mix(skin,vec3(.95,.66,.055),1.0-smoothstep(.19,.24,spot));
       skin=mix(skin,vec3(.012,.027,.035),1.0-smoothstep(.135,.17,spot));
-      float gill=exp(-pow((p.x-.48+p.y*.22)*38.0,2.0));
+      float gill=exp(-pow((p.x-.47+p.y*.24+p.y*p.y*.24)*65.0,2.0));
       skin*=1.0-gill*.32*smoothstep(.1,.22,abs(p.z));
       float belly=smoothstep(-.95,-.25,p.y);
       skin=mix(skin*vec3(.8,.88,.96),skin,belly);
+      float scaleDetail=fishScale(p);
+      float scaleZone=1.0-smoothstep(.65,1.08,p.x);
+      skin*=1.0-scaleDetail*.11*scaleZone;
+      skin*=.97+.06*fishNoise(p*92.0);
       diffuseColor.rgb=skin;
     `);
+    addSurfaceRelief(shader,'-fishScale(vFishLocal)*(1.0-smoothstep(.65,1.08,vFishLocal.x))',
+      'fishScale(vFishLocal)*.11+(fishNoise(vFishLocal*92.0)-.5)*.055',.0013);
   };
-  material.customProgramCacheKey=()=>'butterfly-skin-v1';
+  material.customProgramCacheKey=()=>'butterfly-skin-v3';
   return material;
 }
 
 function finMaterial(swim = null) {
-  const material = new THREE.MeshStandardMaterial({ color: 0xffcc39, roughness: .55,
+  const material = new THREE.MeshStandardMaterial({ color: 0xf3c441, roughness: .46,
     transparent: true, opacity: .85, depthWrite: false, side: THREE.DoubleSide });
   material.onBeforeCompile = shader => {
     if(swim) {
       Object.assign(shader.uniforms,swim);
-      shader.vertexShader=`uniform float swimPhase; uniform float swimAmplitude;
+      shader.vertexShader=`uniform float swimPhase; uniform float swimAmplitude; uniform float finPhase;
         float finBend(float x) {
           float u=clamp((1.48-x)/2.93,0.0,1.0);
           return swimAmplitude*u*u*sin(swimPhase+x*1.6);
@@ -104,7 +120,7 @@ function finMaterial(swim = null) {
         objectNormal.x -= (finBend(position.x+.001)-finBend(position.x-.001))/.002*objectNormal.z;
       `).replace('#include <begin_vertex>',`
         #include <begin_vertex>
-        transformed.z+=finBend(position.x);
+        transformed.z+=finBend(position.x)+sin(finPhase+uv.y*7.0)*uv.x*.010;
       `);
     }
     shader.vertexShader='varying vec2 vFin;\n'+shader.vertexShader;
@@ -116,34 +132,15 @@ function finMaterial(swim = null) {
       float rays=pow(.5+.5*cos(vFin.y*100.53),10.0);
       rays*=1.0-smoothstep(.4,2.0,fwidth(vFin.y*100.53));
       diffuseColor.rgb*=1.0-rays*.30;
-      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.86,.91,.77),smoothstep(.88,1.0,vFin.x)*.65);
+      float edgeBand=smoothstep(.76,.83,vFin.x)*(1.0-smoothstep(.89,.96,vFin.x));
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.16,.13,.047),edgeBand*.65);
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.94,.89,.71),smoothstep(.95,1.0,vFin.x)*.80);
       diffuseColor.a*=mix(1.0,.45,vFin.x);
     `);
+    addSurfaceRelief(shader,'cos(vFin.y*100.53)*(1.0-smoothstep(.4,2.0,fwidth(vFin.y*100.53)))','-.10*vFin.x',.00045);
   };
-  material.customProgramCacheKey=()=>swim?'butterfly-fin-swim-v1':'butterfly-fin-v1';
+  material.customProgramCacheKey=()=>swim?'butterfly-fin-swim-v3':'butterfly-fin-v3';
   return material;
-}
-
-function membrane(inner, outer, segments = 20) {
-  const a = new THREE.CatmullRomCurve3(inner.map(p=>new THREE.Vector3(...p)));
-  const b = new THREE.CatmullRomCurve3(outer.map(p=>new THREE.Vector3(...p)));
-  const positions=[],uvs=[],indices=[];
-  for(let i=0;i<=segments;i++) {
-    const u=i/segments, start=a.getPoint(u), end=b.getPoint(u);
-    for(let j=0;j<=4;j++) {
-      const v=j/4, p=start.clone().lerp(end,v);
-      p.z+=Math.sin(v*Math.PI)*.025;
-      positions.push(...p.toArray()); uvs.push(v,u);
-    }
-  }
-  for(let i=0;i<segments;i++) for(let j=0;j<4;j++) {
-    const k=i*5+j; indices.push(k,k+1,k+5,k+1,k+6,k+5);
-  }
-  const geometry=new THREE.BufferGeometry();
-  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
-  geometry.setIndex(indices); geometry.computeVertexNormals();
-  return geometry;
 }
 
 export function createButterflyLibrary() {
@@ -160,18 +157,35 @@ export function createButterflyLibrary() {
     [[-.36,.30,0],[-.65,.02,0],[-.45,-.32,0]],12);
   const irisGeometry=new THREE.SphereGeometry(.115,12,8);
   const pupilGeometry=new THREE.SphereGeometry(.080,12,8);
-  const irisMaterial=new THREE.MeshStandardMaterial({color:0xb89848,roughness:.32,metalness:.2});
+  const eyeGeometry=new THREE.SphereGeometry(.125,20,14);
+  const eyeMaterial=new THREE.MeshStandardMaterial({color:0x51462b,roughness:.3});
+  const irisMaterial=new THREE.MeshStandardMaterial({color:0xb89848,roughness:.24,metalness:0});
+  irisMaterial.onBeforeCompile=s=>{
+    s.vertexShader='varying vec3 vIris;\n'+s.vertexShader;
+    s.vertexShader=s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvIris=position/.115;');
+    s.fragmentShader='varying vec3 vIris;\n'+s.fragmentShader;
+    s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      float angle=atan(vIris.y,vIris.x);
+      float streak=pow(.5+.5*sin(angle*47.0+length(vIris.xy)*10.0),4.0);
+      streak*=1.0-smoothstep(.4,2.0,fwidth(angle*47.0));
+      diffuseColor.rgb*=.55+streak*.45;
+      diffuseColor.rgb*=mix(1.0,.4,smoothstep(.78,1.0,length(vIris.xy)));
+    `);
+  };
+  irisMaterial.customProgramCacheKey=()=>'butterfly-radial-iris-v2';
   const pupilMaterial=new THREE.MeshStandardMaterial({color:0x050b10,roughness:.12,metalness:.02});
   const mouthGeometry=new THREE.TorusGeometry(.055,.014,6,12);
   const mouthMaterial=new THREE.MeshStandardMaterial({color:0x685033,roughness:.6});
   const members=new Map();
 
   function attach(fish) {
+    if(disposed)throw Error('Butterfly library disposed');
+    if(members.has(fish))return members.get(fish);
     const basic=new THREE.Group(); basic.name='Original fish';
     for(const child of [...fish.children]) basic.add(child);
     fish.add(basic);
     const detailed=new THREE.Group(); detailed.name='Koraalvlindervis'; fish.add(detailed);
-    const uniforms={swimPhase:{value:0},swimAmplitude:{value:.15}};
+    const uniforms={swimPhase:{value:0},swimAmplitude:{value:0},finPhase:{value:0}};
     const body=new THREE.Mesh(bodyNear,skinMaterial(uniforms)); body.name='Body'; detailed.add(body);
     const tail=new THREE.Mesh(tailGeometry,fin); tail.name='Caudal fin'; tail.position.x=-1.45; detailed.add(tail);
     const bodyFin=finMaterial(uniforms);
@@ -181,16 +195,21 @@ export function createButterflyLibrary() {
     for(const side of [-1,1]) {
       const pectoral=new THREE.Mesh(pectoralGeometry,fin);
       pectoral.position.set(.38,-.12,side*.29); detailed.add(pectoral); pectorals.push(pectoral);
-      const iris=new THREE.Mesh(irisGeometry,irisMaterial);
-      iris.position.set(.81,.20,side*.18); iris.scale.z=.48; detailed.add(iris); eyes.push(iris);
+      const orbit=new THREE.Mesh(eyeGeometry,eyeMaterial);orbit.name='Butterfly eye orbit';
+      orbit.position.set(.81,.20,side*.178);orbit.scale.z=.48;detailed.add(orbit);eyes.push(orbit);
+      const iris=new THREE.Mesh(irisGeometry,irisMaterial);iris.name='Butterfly iris';
+      iris.position.set(.81,.20,side*.22); iris.scale.set(.86,.86,.24); detailed.add(iris); eyes.push(iris);
       const pupil=new THREE.Mesh(pupilGeometry,pupilMaterial);
-      pupil.position.set(.82,.20,side*.224); pupil.scale.z=.30; detailed.add(pupil); eyes.push(pupil);
+      pupil.name='Butterfly pupil';pupil.position.set(.82,.20,side*.244); pupil.scale.set(.68,.76,.16); detailed.add(pupil); eyes.push(pupil);
+      const nostril=new THREE.Mesh(pupilGeometry,mouthMaterial);nostril.name='Butterfly nostril';
+      nostril.position.set(1.18,.085,side*.070);nostril.scale.set(.17,.13,.10);detailed.add(nostril);eyes.push(nostril);
     }
     const mouth=new THREE.Mesh(mouthGeometry,mouthMaterial);
     mouth.position.x=1.49; mouth.rotation.y=Math.PI/2; detailed.add(mouth);
     fish.userData.visualSpecies='Koraalvlindervis';
     const cartoon=cartoonAssets.create(fish);
-    const member={basic,detailed,body,tail,dorsal,anal,pectorals,eyes,mouth,uniforms,cartoon};
+    const rest=new Map([...eyes,mouth,...pectorals].map(o=>[o,o.position.clone()]));
+    const member={basic,detailed,body,tail,dorsal,anal,pectorals,eyes,mouth,uniforms,cartoon,rest};
     members.set(fish,member);
     basic.visible=false;
     return member;
@@ -207,28 +226,29 @@ export function createButterflyLibrary() {
       m.body.geometry=near?bodyNear:bodyFar;
       for(const eye of m.eyes) eye.visible=near;
       m.mouth.visible=near;
-      const speed=THREE.MathUtils.clamp(fish.userData.velocity?.length() ?? 1, .2,3);
-      // Fixed frequency keeps motion continuous when the fish changes speed.
-      const phase=time*5.4+(fish.userData.phase||0), amplitude=.12+speed*.035;
+      const speed=THREE.MathUtils.clamp(fish.userData.motionSpeed??fish.userData.velocity?.length()??0,0,3);
+      const phase=fish.userData.swimPhase??time*speed*4+(fish.userData.phase||0);
+      const finPhase=fish.userData.finPhase??time*6+(fish.userData.phase||0);
+      const effort=THREE.MathUtils.smoothstep(speed,0,1.8),amplitude=effort*.14;
       if(cartoon){
-        m.cartoon.tail.rotation.y=Math.sin(phase)*.38;
-        m.cartoon.dorsal.rotation.z=Math.sin(phase*.55)*.045;
-        m.cartoon.pectorals.forEach((p,i)=>p.rotation.z=(i?1:-1)*(.25+Math.sin(phase*.72+i)*.22));
+        m.cartoon.tail.rotation.y=Math.sin(phase)*.38*effort;
+        m.cartoon.dorsal.rotation.x=Math.sin(finPhase*.55)*.045;
+        m.cartoon.pectorals.forEach((p,i)=>p.rotation.y=(i?1:-1)*(.35+Math.sin(finPhase+i*.15)*.25));
         continue;
       }
-      m.uniforms.swimPhase.value=phase; m.uniforms.swimAmplitude.value=amplitude;
+      m.uniforms.swimPhase.value=phase;m.uniforms.finPhase.value=finPhase;m.uniforms.swimAmplitude.value=amplitude;
+      for(const [part,p]of m.rest){part.position.copy(p);part.position.z+=swimOffset(p.x,phase,amplitude);}
       m.tail.position.z=swimOffset(-1.45,phase,amplitude);
       const slope=(swimOffset(-1.449,phase,amplitude)-swimOffset(-1.451,phase,amplitude))/.002;
-      m.tail.rotation.y=-Math.atan(slope)+Math.sin(phase-2.3)*.12;
-      m.dorsal.rotation.x=Math.sin(phase*.8)*.035;
-      m.anal.rotation.x=-Math.sin(phase*.8)*.03;
+      m.tail.rotation.y=-Math.atan(slope)+Math.sin(phase-2.3)*.09*effort;
+      m.dorsal.rotation.x=0;m.anal.rotation.x=0;
       m.pectorals.forEach((p,i)=>{
         p.visible=near;
-        p.rotation.y=(i===0?-1:1)*(.38+Math.sin(phase*.75+i*.3)*.30);
+        p.rotation.y=(i===0?-1:1)*(.38+Math.sin(finPhase+i*.15)*(.19+effort*.10));
       });
     }
   }
   let disposed=false;
-  function dispose(){if(disposed)return;disposed=true;for(const [fish,m] of members){m.body.material.dispose();m.dorsal.material.dispose();fish.remove(m.detailed,m.cartoon.group);for(const child of [...m.basic.children])fish.add(child);fish.remove(m.basic);delete fish.userData.visualSpecies;}members.clear();cartoonAssets.dispose();for(const g of [bodyNear,bodyFar,tailGeometry,dorsalGeometry,analGeometry,pectoralGeometry,irisGeometry,pupilGeometry,mouthGeometry])g.dispose();for(const m of [fin,irisMaterial,pupilMaterial,mouthMaterial])m.dispose();}
+  function dispose(){if(disposed)return;disposed=true;for(const [fish,m] of members){m.body.material.dispose();m.dorsal.material.dispose();fish.remove(m.detailed,m.cartoon.group);for(const child of [...m.basic.children])fish.add(child);fish.remove(m.basic);delete fish.userData.visualSpecies;}members.clear();cartoonAssets.dispose();for(const g of [bodyNear,bodyFar,tailGeometry,dorsalGeometry,analGeometry,pectoralGeometry,irisGeometry,pupilGeometry,eyeGeometry,mouthGeometry])g.dispose();for(const m of [fin,irisMaterial,pupilMaterial,eyeMaterial,mouthMaterial])m.dispose();}
   return {attach,update,dispose,get size(){return members.size;}};
 }

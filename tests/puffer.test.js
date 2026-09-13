@@ -50,3 +50,58 @@ test('puffer switches to a detailed realistic body without resetting inflation',
   assert.match(shader.fragmentShader,/vRealPuffer/);assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
   lib.update(.6,camera,'high',true,'cartoon');assert.equal(m.detailed.visible,true);assert.equal(m.realistic.group.visible,false);assert.equal(m.state.amount,.5);lib.dispose();
 });
+
+test('realistic puffer eye layers remain seated at every inflation amount and in both styles',()=>{
+  const lib=createPufferLibrary(),scene=new THREE.Scene(),fish=new THREE.Group(),camera=new THREE.PerspectiveCamera();scene.add(fish);
+  const m=lib.attach(fish),offsets=m.realistic.eyes.map(orbit=>orbit.children.map(child=>child.position.clone()));
+  const points=()=>m.realistic.eyes.map(orbit=>orbit.children.map(child=>child.getWorldPosition(new THREE.Vector3())));
+  lib.update(0,camera,'high',true,'realistic');fish.updateMatrixWorld(true);const rest=points();
+  lib.trigger(fish);
+  for(const amount of [.25,.5,.75,1]){
+    lib.step(.3);lib.update(amount,camera,'high',true,'realistic');fish.updateMatrixWorld(true);
+    assert.ok(Math.abs(m.state.amount-amount)<1e-10);
+    const now=points();
+    for(let side=0;side<2;side++){
+      const orbit=m.realistic.eyes[side];
+      orbit.children.forEach((child,i)=>assert.deepEqual(child.position.toArray(),offsets[side][i].toArray()));
+      assert.ok(Math.abs(now[side][0].distanceTo(now[side][2])-rest[side][0].distanceTo(rest[side][2]))<1e-10);
+      assert.ok(now[side][0].distanceTo(now[side][1])<.10,'iris remains on the eyeball');
+    }
+    lib.update(amount,camera,'high',true,'cartoon');lib.update(amount,camera,'high',true,'realistic');
+    assert.equal(m.state.amount,amount);
+  }
+  lib.dispose();
+});
+
+test('realistic puffer uses ribbed membrane fins and lit pore relief with finite reduced LOD',()=>{
+  const lib=createPufferLibrary(),scene=new THREE.Scene(),fish=new THREE.Group(),camera=new THREE.PerspectiveCamera();scene.add(fish);
+  const m=lib.attach(fish);lib.update(0,camera,'high',true,'realistic');
+  for(const fin of [...m.realistic.fins,m.realistic.tail,m.realistic.dorsal,m.realistic.anal]){
+    const g=fin.geometry;assert.equal(g.type,'BufferGeometry');assert.ok(g.attributes.uv);g.computeBoundingBox();
+    assert.ok(g.boundingBox.max.z-g.boundingBox.min.z<.04,'membrane is thin, not a flattened sphere');
+    assert.ok([...g.attributes.normal.array].every(Number.isFinite));
+    assert.equal(fin.material.side,THREE.DoubleSide);
+  }
+  for(const material of [m.realistic.body.material,m.realistic.tail.material]){
+    const shader={vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};material.onBeforeCompile(shader);
+    assert.match(shader.fragmentShader,/normal=fishMicroNormal/);assert.match(shader.fragmentShader,/roughnessFactor=clamp/);
+    assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);
+    assert.ok(shader.fragmentShader.indexOf('normal=fishMicroNormal')<shader.fragmentShader.indexOf('#include <lights_fragment_begin>'));
+  }
+  const triangles=m.realistic.body.geometry.index.count;camera.position.z=100;lib.update(0,camera,'low',true,'realistic');
+  assert.ok(m.realistic.body.geometry.index.count<triangles);assert.equal(m.realistic.spines.visible,false);
+  assert.ok(m.realistic.eyes.every(eye=>!eye.visible));lib.dispose();
+});
+
+test('puffer tail follows measured translation while hovering fins use the pausable simulation clock',()=>{
+  const lib=createPufferLibrary(),scene=new THREE.Scene(),fish=new THREE.Group(),camera=new THREE.PerspectiveCamera();scene.add(fish);
+  fish.userData={motionSpeed:0,velocity:new THREE.Vector3(2,0,0),swimPhase:1,finPhase:1};const m=lib.attach(fish);
+  lib.update(10,camera,'high',true,'realistic');assert.equal(m.realistic.tail.rotation.y,0);
+  const pose=m.realistic.fins.map(fin=>fin.rotation.toArray());lib.update(90,camera,'high',true,'realistic');
+  assert.deepEqual(m.realistic.fins.map(fin=>fin.rotation.toArray()),pose,'wall clock cannot animate a paused fish');
+  fish.userData.finPhase+=.4;lib.update(90,camera,'high',true,'realistic');
+  assert.notDeepEqual(m.realistic.fins.map(fin=>fin.rotation.toArray()),pose);assert.equal(m.realistic.tail.rotation.y,0);
+  fish.userData.motionSpeed=.8;lib.update(90,camera,'high',true,'realistic');const tail=m.realistic.tail.rotation.y;
+  fish.userData.swimPhase+=.4;lib.update(90,camera,'high',true,'realistic');assert.notEqual(m.realistic.tail.rotation.y,tail);
+  assert.deepEqual(m.realistic.body.rotation.toArray(),[0,0,0,'XYZ'],'puffer trunk does not wriggle');lib.dispose();
+});

@@ -103,9 +103,21 @@ export function createPufferLibrary(){
         if(realistic)o.position.set(.73*ratio.x+.08,.24*ratio.y+.005,side*(.475*ratio.z+.102));
         else o.position.set(.73*ratio.x+.10,.27*ratio.y+.01,side*(.48*ratio.z+.115));
       }
-      const phase=fish.userData.swimPhase??time*4;
-      v.fins.forEach((f,i)=>f.rotation.y=(i?1:-1)*(.4+Math.sin(phase*.8)*.32));
-      v.tail.rotation.y=Math.sin(phase)*.24*(1-a*.8);
+      const speed=THREE.MathUtils.clamp(fish.userData.motionSpeed??fish.userData.velocity?.length()??0,0,3);
+      const phase=fish.userData.swimPhase??((fish.userData.phase??0)+time*speed*4);
+      const finPhase=fish.userData.finPhase??time*7+(fish.userData.phase??0);
+      const effort=THREE.MathUtils.smoothstep(speed,0,1.3);
+      v.fins.forEach((f,i)=>{
+        const side=i?1:-1;
+        f.rotation.y=side*(.48+Math.sin(finPhase+i*.15)*(.20+effort*.13));
+        f.rotation.x=side*Math.cos(finPhase+.6)*.09;
+      });
+      // Puffers propel mainly with pectoral/dorsal/anal fins; the trunk stays
+      // rigid and the caudal fin contributes only while actually translating.
+      v.tail.rotation.y=Math.sin(phase)*(.045+effort*.09)*effort*(1-a*.88);
+      v.dorsal.rotation.x=Math.sin(finPhase+1.1)*(.10+effort*.05);
+      if(v.anal)v.anal.rotation.x=-Math.sin(finPhase+1.25)*(.10+effort*.05);
+      if(v.eyes)for(const eye of v.eyes)eye.visible=close;
       spines.visible=close;
       if(close){
         v.directions.forEach((n,i)=>{
