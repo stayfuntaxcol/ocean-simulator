@@ -1,18 +1,19 @@
 // Species policy separated from scene rendering for deterministic checks.
 export const SPECIES_POLICY={
-  reef_0:{kind:'pair',cruiseSpeed:1.05,cohesion:.85,alignment:.28,separation:.38,habitatPull:1.1,exploration:.03},
+  reef_0:{kind:'family',cruiseSpeed:1.05,cohesion:.85,alignment:.28,separation:.38,habitatPull:1.1,exploration:.03},
   reef_1:{kind:'shoal',cruiseSpeed:1.15,cohesion:.62,alignment:.72,separation:.78,habitatPull:.85,exploration:.12},
   reef_6:{kind:'bottom',cruiseSpeed:.48,cohesion:.25,alignment:.24,separation:.85,habitatPull:1.05,exploration:.04},
 };
 export function populationPlan(count){
   const counts=Array.from({length:8},(_,i)=>Math.floor(count/8)+(i<count%8?1:0));
-  if(counts[0]%2){counts[0]--;counts[1]++;}
-  const groups=[];
+  if(count>=32){const extra=Math.min(4,counts[3]);counts[0]+=extra;counts[3]-=extra;}
+  const groups=[];let familyIndex=0;
   for(let species=0;species<8;species++){
     let left=counts[species];
     while(left){
-      let n=species===0?2:species===6?Math.min(3,left):species===1?Math.min(12,left):left;
+      let n=species===0?Math.min(4+familyIndex%3,left):species===6?Math.min(3,left):species===1?Math.min(12,left):left;
       if(species===6&&left===4)n=2;
+      if(species===0){if(left-n>0&&left-n<4)n=left>7?left-4:left;familyIndex++;}
       groups.push({species,count:n});left-=n;
     }
   }
@@ -31,3 +32,22 @@ export function swimRhythm(species,time,phase=0){
   return species==='reef_0'?.35+burst*1.85:species==='reef_6'?.38+burst*.52:.72+burst*.52;
 }
 export function bottomClearance(scale=1){return Math.max(.32,scale*.48+.18);}
+
+export function advanceBottomRest(fish,dt,nearBottom){
+  const d=fish.userData;
+  d.restState??='swim';d.restRemaining??=20+(d.phase||0)*4;
+  if(d.restState==='swim'){
+    d.restRemaining-=dt;
+    if(d.restRemaining<=0&&nearBottom)d.restState='settling';
+  }else if(d.restState==='settling'){
+    if(!nearBottom){d.restState='swim';d.restRemaining=5;}
+    else if(d.velocity.length()<.025){d.restState='sleep';d.restRemaining=120+((d.phase||0)*19)%120;d.velocity.set(0,0,0);}
+  }else{
+    d.restRemaining-=dt;
+    if(d.restRemaining<=0){d.restState='swim';d.restRemaining=25+((d.phase||0)*7)%20;d.wokeUp=true;}
+  }
+  d.sleeping=d.restState==='sleep';
+  const target=d.sleeping?1:0;
+  d.eyeClosure=(d.eyeClosure||0)+(target-(d.eyeClosure||0))*(1-Math.exp(-dt*3));
+  return d.restState;
+}

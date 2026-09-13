@@ -107,3 +107,11 @@ Versnellen, glijden, bochten en staartslag hebben meer variatie. Sommige
 koraalobjecten zijn nu anemonen. De orka is 65% groter (ongeveer 11 meter).
 42 lokale tests slagen. Zie [testinstructies en grenzen](docs/species-ecology.md).
 Dit vervangt de eerdere beschrijving van generiek schoolgedrag voor deze soorten.
+
+### Rust, clownvisgezinnen en contact
+
+Platvissen slapen nu 2–4 minuten met gesloten ogen tussen verkenningen.
+Clownvissen leven in gezinnen met twee ouders en wisselende aantallen kinderen.
+De karakteranimatie volgt de echte verplaatsing. Vissen blijven onder het water
+oppervlak en ontwijken ook andere soorten; contact wordt zonder stuiteren opgelost.
+48 lokale tests slagen. Zie [testinstructies en grenzen](docs/families-rest-and-contact.md).

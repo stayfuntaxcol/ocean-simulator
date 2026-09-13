@@ -3,16 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
-import {populationPlan,SPECIES_POLICY,habitatPreference,swimRhythm,bottomClearance} from '../graphics/SpeciesBehavior.js';
+import {populationPlan,SPECIES_POLICY,habitatPreference,swimRhythm,bottomClearance,advanceBottomRest} from '../graphics/SpeciesBehavior.js';
+import {constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts} from '../graphics/FishInteractions.js';
 import {createOrca,ORCA_CLEARANCE,ORCA_SCALE} from '../graphics/Orca.js';
 
-test('desktop, mobile and reference populations preserve counts with pairs and groups of 2–3',()=>{
+test('desktop, mobile and reference populations preserve counts with variable families and groups of 2–3',()=>{
   for(const count of [40,90,220]){
     const groups=populationPlan(count);
     assert.equal(groups.reduce((n,g)=>n+g.count,0),count);
-    assert.ok(groups.filter(g=>g.species===0).every(g=>g.count===2));
+    assert.ok(groups.filter(g=>g.species===0).every(g=>g.count>=4&&g.count<=7));
     assert.ok(groups.filter(g=>g.species===6).every(g=>g.count>=2&&g.count<=3));
-    assert.ok(groups.filter(g=>g.species===1).some(g=>g.count>=6));
+    assert.ok(groups.filter(g=>g.species===1).some(g=>g.count>=5));
     assert.ok(groups.filter(g=>g.species===1).every(g=>g.count<=12));
   }
 });
@@ -40,7 +41,7 @@ test('actual fish update follows a sloping seabed without sinking, and pauses di
   fish.userData={velocity:new THREE.Vector3(.4,0,0),personality:1,phase:.2,wanderPhase:.2};
   new THREE.Scene().add(fish);
   const school={...SPECIES_POLICY.reef_6,speciesId:'reef_6',members:[fish],avgVelocity:new THREE.Vector3(),target:new THREE.Vector3(10,-16.3,0),behaviorPhase:.4};
-  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,orca:null,schools:new Map([['bottom',school]]),schoolThinkAccumulator:0,
+  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,schools:new Map([['bottom',school]]),schoolThinkAccumulator:0,
     camera:new THREE.PerspectiveCamera(),CULL_RADIUS:60,FISH_ANIMATION_RADIUS:45,WORLD_HALF:144,FISH_RADIUS:.38,
     editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:terrain,cellHasRockAt:()=>false,
     segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};
@@ -60,10 +61,10 @@ test('adult and juvenile reunite after separation without changing pair membersh
   const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
   const code=html.slice(html.indexOf('function updateFish(dt,t){'),html.indexOf('// --- Cinematische vis- en schoolvolgmodus ---'));
   const scene=new THREE.Scene();
-  const adult=new THREE.Group(),young=new THREE.Group();scene.add(adult,young);adult.position.set(0,-14,0);young.position.set(-6,-14,0);
-  for(const [f,role] of [[adult,'adult'],[young,'juvenile']])f.userData={role,velocity:new THREE.Vector3(.8,0,0),personality:1,phase:.4,wanderPhase:.3};
+  const adult=new THREE.Group(),young=new THREE.Group();scene.add(adult,young);adult.scale.setScalar(.58);young.scale.setScalar(.28);adult.position.set(0,-14,0);young.position.set(-6,-14,0);
+  for(const [f,role] of [[adult,'mother'],[young,'juvenile']])f.userData={role,speciesId:'reef_0',velocity:new THREE.Vector3(.8,0,0),personality:1,phase:.4,wanderPhase:.3};
   const school={...SPECIES_POLICY.reef_0,speciesId:'reef_0',members:[adult,young],avgVelocity:new THREE.Vector3(),target:new THREE.Vector3(4,-14,0),behaviorPhase:.2};
-  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,orca:null,schools:new Map([['pair',school]]),schoolThinkAccumulator:0,
+  const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,schools:new Map([['pair',school]]),schoolThinkAccumulator:0,
     camera:new THREE.PerspectiveCamera(),CULL_RADIUS:60,FISH_ANIMATION_RADIUS:45,WORLD_HALF:144,FISH_RADIUS:.38,
     editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:()=>-18,cellHasRockAt:()=>false,
     segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};

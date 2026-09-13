@@ -35,10 +35,11 @@ export function createCharacterMotion(group,fish,{flat=false,clown=false}={}) {
   }
   function update(time,near=true) {
     const groupPhase=fish.userData.behaviorPhase??fish.userData.phase??0;
-    const phase=time*(flat?2.3:clown?6.0:4.6)+(clown?1.8:.7)*Math.sin(time*(clown?1.8:.63)+groupPhase)+(fish.userData.phase||0);
+    const phase=fish.userData.swimPhase??(time*(flat?2.3:clown?6.0:4.6)+(fish.userData.phase||0));
     group.rotation.x=(fish.userData.turnLean||0)*(flat?.06:.20);
-    const speed=THREE.MathUtils.clamp(fish.userData.velocity?.length()??1,.2,3);
-    const amplitude=(flat?.10:.14)+speed*.025;
+    const speed=THREE.MathUtils.clamp(fish.userData.motionSpeed??fish.userData.velocity?.length()??1,0,3);
+    const effort=fish.userData.sleeping?0:Math.min(1,speed/(clown?1.5:.8));
+    const amplitude=((flat?.10:.14)+speed*.025)*effort;
     uniforms.characterPhase.value=phase;uniforms.characterAmplitude.value=amplitude;
     const breath=.5+.5*Math.sin(time*2.1+(fish.userData.phase||0));
     for(const [part,r] of rest) {
@@ -49,16 +50,23 @@ export function createCharacterMotion(group,fish,{flat=false,clown=false}={}) {
         const slope=(characterBend(x+.001,phase,amplitude)-characterBend(x-.001,phase,amplitude))/.002;
         if(flat)part.rotation.z+=Math.atan(slope);else part.rotation.y-=Math.atan(slope);
       }
-      if(part.name==='Pectoral fin')part.rotation.y+=Math.sign(r.position.z)*Math.sin(phase*.78)*.38;
+      if(part.name==='Pectoral fin')part.rotation.y+=Math.sign(r.position.z)*Math.sin(phase*.78)*.38*effort;
       if(part.name==='Side fringe') {
         part.position.y+=characterBend(r.position.x,phase,amplitude)*.4;
-        part.rotation.x+=Math.sign(r.position.z)*Math.sin(phase+r.position.z)*.13;
+        part.rotation.x+=Math.sign(r.position.z)*Math.sin(phase+r.position.z)*.13*effort;
+      }
+      if(flat){
+        const closed=fish.userData.eyeClosure||0;
+        if(part.name==='Sleep seam')part.visible=closed>.85;
+        if(part.name==='Sleep lid'){part.visible=closed>.03;part.scale.y=r.scale.y*closed;}
+        if(part.name==='Eye white'){part.scale.y=r.scale.y*(1-closed*.97);part.visible=closed<.97;}
+        if(part.name==='Pupil'||part.name==='Eye glint')part.visible=closed<.85&&(part.name!=='Eye glint'||near);
       }
       if(!near)continue;
       if(part.name==='Lower lip')part.position.y-=breath*(flat?.018:.045);
       if(part.name==='Mouth opening')part.scale.y*=1+breath*.35;
       if(part.name==='Cheek'||part.name==='Eye mound')part.scale.z*=1+breath*.018;
-      if(part.name==='Pupil'||part.name==='Eye glint') {
+      if(!fish.userData.sleeping&&(part.name==='Pupil'||part.name==='Eye glint')) {
         part.position.x+=Math.sin(time*.73+(fish.userData.phase||0))*.022;
         part.position.y+=Math.sin(time*.51+(fish.userData.phase||0))*.012;
       }

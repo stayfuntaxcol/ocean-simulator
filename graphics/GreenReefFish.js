@@ -58,6 +58,8 @@ export function createGreenReefLibrary() {
       const f=mesh(sideFin,finMat,'Side fringe',[-.1,-.02,side*.65]);f.rotation.x=side*Math.PI/2;
       mesh(sphere,olive,'Eye mound',[.65,.31,side*.39],[.27,.16,.25]);
       mesh(sphere,white,'Eye white',[.71,.405,side*.39],[.205,.19,.19]);
+      const lid=mesh(sphere,olive,'Sleep lid',[.71,.42,side*.39],[.215,.08,.20]);lid.visible=false;
+      const seam=mesh(sphere,dark,'Sleep seam',[.76,.472,side*.39],[.155,.008,.09]);seam.visible=false;
       mesh(sphere,dark,'Pupil',[.825,.49,side*.42],[.087,.078,.093]);
       details.push(mesh(sphere,white,'Eye glint',[.859,.535,side*.435],[.023,.024,.024]));
     }
@@ -74,7 +76,7 @@ export function createGreenReefLibrary() {
       m.basic.visible=!enabled;m.detailed.visible=enabled;
       if(!enabled||!fish.visible||fish.userData.dead)continue;
       const close=fish.position.distanceToSquared(camera.position)<limit*limit;
-      m.body.geometry=close?near:far;m.motion.update(time,close);for(const d of m.details)d.visible=close;
+      m.body.geometry=close?near:far;m.motion.update(time,close);for(const d of m.details)d.visible=close&&(fish.userData.eyeClosure||0)<.85;
     }
   }
   function dispose() {
