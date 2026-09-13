@@ -115,7 +115,9 @@
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
-      <label>Blauwe karaktervis <input id="blueFishDetail" type="checkbox" checked></label>
+      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistisch · blauwe vis (proef)</option></select></label>
+      <small>De realistische stijl is in ontwikkeling. Voorlopig wisselt alleen de blauwe vis.</small>
+      <label>Blauwe vis detail <input id="blueFishDetail" type="checkbox" checked></label>
       <button id="viewBlueFish" type="button">Bekijk blauwe voorbeeldvis</button>
       <label>Clownvis <input id="clownFishDetail" type="checkbox" checked></label>
       <button id="viewClownFish" type="button">Bekijk clownvis</button>
@@ -1958,6 +1960,7 @@ const clownFishDetail = document.getElementById('clownFishDetail');
 const greenReefLibrary = createGreenReefLibrary();
 const greenFishDetail = document.getElementById('greenFishDetail');
 const blueFishDetail = document.getElementById('blueFishDetail');
+const fishRenderStyle = document.getElementById('fishRenderStyle');
 const fishDetail = document.getElementById('fishDetail');
 
 
@@ -3312,7 +3315,7 @@ function animate(){
     if(fish.visible)whale.animate(dt,t,atmosphere.quality,distance);
   }
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled);
-  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t);
+  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
   clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t);
   greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t);
   pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled);

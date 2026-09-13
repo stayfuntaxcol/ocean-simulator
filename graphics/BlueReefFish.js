@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {createCharacterMotion,addFinDetail} from './CharacterMotion.js';
+import {createRealisticBlueAssets} from './RealisticBlueFish.js';
 
 // Original character design. +X nose, animated body and independent fin motion.
 export function createBlueBody(rings=40,sides=24) {
@@ -38,6 +39,7 @@ export function fin(points,depth=.035) {
 }
 
 export function createBlueReefLibrary({clown=false}={}) {
+  const realisticAssets=clown?null:createRealisticBlueAssets(fin);
   const near=createBlueBody(),far=createBlueBody(20,12);
   if(clown)for(const g of [near,far]){g.scale(1,.86,1.10);g.computeVertexNormals();}
   for(const g of [near,far]){g.computeBoundingSphere();g.boundingSphere.radius=3;}
@@ -144,15 +146,19 @@ export function createBlueReefLibrary({clown=false}={}) {
     mesh(sphere,lipMat,'Lower lip',[1.22,-.355,0],[.14,.07,.265]);
     fish.userData.visualSpecies=clown?'Clownvis':'Blauwe karaktervis';
     const motion=createCharacterMotion(detailed,fish,{clown});
-    const m={basic,detailed,body,details,motion};members.set(fish,m);basic.visible=false;return m;
+    const m={basic,detailed,body,details,motion,realistic:null};members.set(fish,m);basic.visible=false;return m;
   }
-  function update(camera,quality,enabled=true,time=0) {
+  function update(camera,quality,enabled=true,time=0,style='cartoon') {
     const distance=quality==='low'?14:quality==='high'?38:24;
     for(const [fish,m] of members) {
-      if(!fish.parent) {m.motion.dispose();members.delete(fish);continue;}
-      m.basic.visible=!enabled;m.detailed.visible=enabled;
+      if(!fish.parent) {m.motion.dispose();m.realistic?.dispose();members.delete(fish);continue;}
+      const realistic=enabled&&style==='realistic'&&!clown;
+      if(realistic&&!m.realistic)m.realistic=realisticAssets.create(fish);
+      m.basic.visible=!enabled;m.detailed.visible=enabled&&!realistic;
+      if(m.realistic)m.realistic.group.visible=realistic;
       if(!enabled||!fish.visible||fish.userData.dead) continue;
       const close=fish.position.distanceToSquared(camera.position)<distance*distance;
+      if(realistic){m.realistic.update(time,close);continue;}
       m.body.geometry=close?near:far;
       m.motion.update(time,close);
       // Eyes and lips remain readable at distance; only fine facial details disappear.
@@ -163,11 +169,13 @@ export function createBlueReefLibrary({clown=false}={}) {
     if(disposed)return;disposed=true;
     for(const [fish,m] of members) {
       m.motion.dispose();
+      m.realistic?.dispose();
       fish.remove(m.detailed);
       for(const child of [...m.basic.children])fish.add(child);
       fish.remove(m.basic);delete fish.userData.visualSpecies;
     }
     members.clear();
+    realisticAssets?.dispose();
     for(const g of [near,far,sphere,dorsal,tail,pectoral,anal,smile,browGeometry])g.dispose();
     for(const m of [skin,cheekMat,lipMat,finMat,white,pupilMat,mouthMat,browMat])m.dispose();
   }
