@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export const ORCA_CLEARANCE=4;
+export const ORCA_SCALE=1.65;
+export const ORCA_CLEARANCE=4*ORCA_SCALE;
 const profile=[[-3,.09,.08],[-2.5,.18,.15],[-1.8,.48,.38],[-.8,.82,.67],
   [.3,.94,.76],[1.2,.78,.62],[1.9,.51,.43],[2.5,.28,.27],[2.85,.08,.08]];
 
@@ -61,7 +62,7 @@ function teeth(lower=false) {
 }
 
 export function createOrca() {
-  const root=new THREE.Group();root.name='Orka';
+  const root=new THREE.Group();root.name='Orka';root.scale.setScalar(ORCA_SCALE);
   root.userData={isFishRoot:true,isOrca:true,visualSpecies:'Orka',phase:.6,speed:1.7,
     velocity:new THREE.Vector3(1.7,0,0),health:100};
   const black=new THREE.MeshStandardMaterial({color:0x071219,roughness:.32,metalness:.02});

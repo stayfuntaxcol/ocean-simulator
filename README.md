@@ -98,3 +98,12 @@ De oranje school heeft een expressieve clownvis met drie witte banden en één
 kleinere borstvin. Klik **Animatie starten** in de referentiescène.
 De eerdere beschrijving van vaste poses is hiermee achterhaald.
 37 lokale tests slagen; [testinstructies en grenzen](docs/animated-character-fish.md).
+
+### Soortgedrag en verhoudingen
+
+Groene vissen volgen de bodem in groepjes van 2–3; clownvissen vormen een
+volwassen-klein paar bij het rif; blauwe scholen zoeken begroeide rotsen.
+Versnellen, glijden, bochten en staartslag hebben meer variatie. Sommige
+koraalobjecten zijn nu anemonen. De orka is 65% groter (ongeveer 11 meter).
+42 lokale tests slagen. Zie [testinstructies en grenzen](docs/species-ecology.md).
+Dit vervangt de eerdere beschrijving van generiek schoolgedrag voor deze soorten.

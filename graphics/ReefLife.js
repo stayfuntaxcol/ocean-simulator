@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { installCaustics, seededRandom } from './UnderwaterAtmosphere.js';
 
-export const REEF_TYPES = ['branch','plate','fan','sponge','grass'];
+export const REEF_TYPES = ['branch','plate','fan','sponge','grass','anemone'];
 const point = (x,y,z=0) => new THREE.Vector3(x,y,z);
 
 function tube(points,radius,steps,sides) {
@@ -26,7 +26,16 @@ export function makeReefGeometry(type,variant=0,low=false) {
   if(!REEF_TYPES.includes(type)) throw new Error('Unknown reef type');
   const random=seededRandom(914+variant*61), parts=[];
   const sides=low?4:6, steps=low?3:6;
-  if(type==='branch') {
+  if(type==='anemone') {
+    const base=new THREE.SphereGeometry(.65,low?12:20,low?6:10);base.scale(1,.22,1);base.translate(0,.12,0);parts.push(base);
+    for(let i=0;i<(low?16:28);i++){
+      const a=i*2.39996,r=.18+.48*Math.sqrt((i+.5)/(low?16:28));
+      const x=Math.cos(a)*r,z=Math.sin(a)*r,h=.5+random()*.45;
+      const tip=point(x*1.25,h,z*1.25);
+      parts.push(tube([point(x,.12,z),point(x*.9,h*.60,z*.9),tip],.06,steps,sides));
+      const bulb=new THREE.IcosahedronGeometry(.055,0);bulb.translate(...tip.toArray());parts.push(bulb);
+    }
+  } else if(type==='branch') {
     parts.push(tube([point(0,0),point(.08,1),point(-.05,2.2)],.17,steps,sides));
     const crown=new THREE.IcosahedronGeometry(.07,1); crown.translate(-.05,2.2,0); parts.push(crown);
     for(let i=0;i<6;i++) {
@@ -135,7 +144,7 @@ function reefMaterial(type,color,uniforms) {
       #include <begin_vertex>
       vReefLocal=position;
     `);
-    if(type==='grass') {
+    if(type==='grass'||type==='anemone') {
       shader.vertexShader=`uniform float reefTime; uniform float reefMotion;
         float reefSway(float y) {
           float phase=reefTime*.8+modelMatrix[3].x*.23+modelMatrix[3].z*.17;
@@ -187,6 +196,9 @@ export function createReefLife(caustics) {
     for(const child of [...root.children]) basic.add(child);
     const detailed=new THREE.Mesh(shapes.near,materials.get(materialKey));
     detailed.name=`Detailed ${type}`; detailed.scale.copy(size); detailed.position.copy(box.min);
+    if(type==='anemone'){
+      detailed.scale.y=Math.min(size.y*.42,Math.max(size.x,size.z)*.42);
+    }
     if(type==='fan') {
       // A broad, low colony within the existing footprint, instead of a tall flat screen.
       detailed.name='Compact bush coral';

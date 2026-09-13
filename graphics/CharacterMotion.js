@@ -34,7 +34,9 @@ export function createCharacterMotion(group,fish,{flat=false,clown=false}={}) {
     part.geometry.computeBoundingSphere();part.geometry.boundingSphere.radius=Math.max(part.geometry.boundingSphere.radius,3);
   }
   function update(time,near=true) {
-    const phase=time*(flat?3.1:clown?6.0:4.6)+(fish.userData.phase||0);
+    const groupPhase=fish.userData.behaviorPhase??fish.userData.phase??0;
+    const phase=time*(flat?2.3:clown?6.0:4.6)+(clown?1.8:.7)*Math.sin(time*(clown?1.8:.63)+groupPhase)+(fish.userData.phase||0);
+    group.rotation.x=(fish.userData.turnLean||0)*(flat?.06:.20);
     const speed=THREE.MathUtils.clamp(fish.userData.velocity?.length()??1,.2,3);
     const amplitude=(flat?.10:.14)+speed*.025;
     uniforms.characterPhase.value=phase;uniforms.characterAmplitude.value=amplitude;
