@@ -143,3 +143,9 @@ Nieuw: [platvis en clownvis vergelijken met de gele koraalvis](graphics/fish-rev
 Orka en walvis maken af en toe een oppervlaktebezoek met een korte mistpluim bij het blaasgat. De orka blijft aanklikbaar voor zijn mondbeweging; de walvis behoudt zijn grote, rustige route door open water.
 
 Zie [het uitrolplan](docs/fish-style-rollout.md) voor alle zeven soorten en de beoordelingsmomenten.
+
+## Nieuwe rifvissen
+
+De drie eenvoudige roze, paarse en oranje standaardvissen zijn vervangen door een **doktersvis, kardinaalvis en kleine rifbaars**. Ze hebben eigen lichaamsvormen, huidpatronen, fijne vinnen, cartoon-/realistische weergave en verschillende zwemritmes. Het totale aantal dieren blijft gelijk.
+
+Gebruik hun nieuwe **Bekijk**-knoppen of open [de vergelijking met de gele koraalvis](graphics/reef-species-review.html). Zie [ontwerp, gedrag en testinstructies](docs/new-reef-species.md). Deze batch brengt het totaal op 92 automatische tests; visuele controle in je browser blijft nodig.

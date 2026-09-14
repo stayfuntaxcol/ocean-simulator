@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Drie nieuwe rifvissen · Ocean Simulator</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10252b;color:#e5f7f7;font:15px system-ui}header,footer{max-width:1300px;margin:auto;padding:18px}h1{font-size:23px;margin:0 0 8px}p{line-height:1.5;color:#b3cccc}nav{display:flex;gap:14px;align-items:center;flex-wrap:wrap}label{display:flex;align-items:center;gap:7px}button,select,a{padding:9px;border:1px solid #668991;border-radius:8px;color:#e8fbff;background:#234953;text-decoration:none}input[type=range]{width:100px}main{position:relative;height:700px;max-width:1400px;margin:auto}canvas{position:absolute;inset:0;display:block;width:100%;height:100%}.grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;pointer-events:none}.cell{position:relative;border:1px solid #3c5864;min-height:0}.label{position:absolute;top:10px;left:10px;right:10px;padding:9px;background:#10252bcc;border-radius:6px}.label small{display:block;color:#adc7c9;margin-top:3px}footer{font-size:13px}@media(max-width:680px){main{height:1280px}.grid{grid-template-columns:1fr;grid-template-rows:repeat(4,1fr)}}
+</style><script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js"}}</script></head>
+<body><header><h1>Doktersvis, kardinaalvis en rifbaars</h1>
+<p>Drie eigen silhouetten naast de gele koraalvis, met dezelfde belichting. Kies een stijl, draai de dieren en vergelijk ook van dichtbij.</p>
+<nav><label>Visstijl <select id="style"><option value="realistic">Realistisch</option><option value="cartoon">Cartoon</option></select></label>
+<button id="pause" aria-pressed="false">Pauzeren</button>
+<label>Draai <input id="angle" type="range" min="-180" max="180" value="0"></label>
+<label>Kantel <input id="tilt" type="range" min="-75" max="75" value="8"></label>
+<label>Snelheid <input id="speed" type="range" min="0" max="2" step=".05" value="1"></label>
+<label>Detail <select id="quality"><option value="high">Hoog</option><option value="low">Veraf</option></select></label>
+<a href="../?scene=reference">Open de oceaan</a></nav></header>
+<main id="stage"><div class="grid">
+<div class="cell"><div class="label">Doktersvis<small>Blauw lichaam · doorlopende vinnen · gele staartstekel</small></div></div>
+<div class="cell"><div class="label">Kardinaalvis<small>Zilveren flanken · zwarte banden · lange gevorkte vinnen</small></div></div>
+<div class="cell"><div class="label">Kleine rifbaars<small>Blauwgroene schubben · slank lijf · snelle staartslag</small></div></div>
+<div class="cell"><div class="label">Gele koraalvis · maatstaf<small>Blijft realistisch om het detailniveau te vergelijken</small></div></div>
+</div></main><footer id="status" aria-live="polite">Modellen laden…</footer>
+<script type="module">
+import * as THREE from 'three';
+import {createReefSpeciesLibrary} from './ReefSpecies.js';
+import {createButterflyLibrary} from './ButterflyFish.js';
+import {SPECIES_POLICY,swimRhythm,advanceFinPhase} from './SpeciesBehavior.js';
+const stage=document.getElementById('stage'),status=document.getElementById('status');
+try{
+  const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setClearColor(0x183039);renderer.setScissorTest(true);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.35;stage.prepend(renderer.domElement);
+  const models=[],cells=[...document.querySelectorAll('.cell')];
+  for(const [index,id] of ['reef_3','reef_5','reef_7','reef_2'].entries()){
+    const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(40,1,.1,80);camera.position.z=6.8;
+    scene.add(new THREE.HemisphereLight(0xd9f4ff,0x766b4c,2.1));const key=new THREE.DirectionalLight(0xffedcd,3.4);key.position.set(3,6,8);scene.add(key);const rim=new THREE.DirectionalLight(0x9ee5ff,1.8);rim.position.set(-4,2,-6);scene.add(rim);
+    const fish=new THREE.Group();fish.userData={speciesId:id,phase:.3,swimPhase:.3,finPhase:.3,motionSpeed:0,velocity:new THREE.Vector3()};scene.add(fish);
+    const library=id==='reef_2'?createButterflyLibrary():createReefSpeciesLibrary();library.attach(fish,id);
+    models.push({scene,camera,fish,library,id,cell:cells[index]});
+  }
+  let paused=false,last=performance.now(),time=0,frameId=0,stopped=false;
+  const style=document.getElementById('style'),quality=document.getElementById('quality'),angle=document.getElementById('angle'),tilt=document.getElementById('tilt'),speed=document.getElementById('speed');
+  document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Verder zwemmen':'Pauzeren';e.target.setAttribute('aria-pressed',String(paused));};
+  function resize(){renderer.setSize(stage.clientWidth,stage.clientHeight);}addEventListener('resize',resize);resize();
+  function frame(now){
+    if(stopped)return;const dt=paused?0:Math.min(.05,(now-last)/1000);last=now;time+=dt;
+    const bounds=stage.getBoundingClientRect();
+    for(const s of models){
+      const d=s.fish.userData,policy=SPECIES_POLICY[s.id];
+      if(!paused){d.motionSpeed=Number(speed.value)*policy.cruiseSpeed*swimRhythm(s.id,time,.3);d.velocity.set(d.motionSpeed,0,0);d.swimPhase+=dt*d.motionSpeed*(policy.swimRate??4);advanceFinPhase(s.fish,dt);}
+      s.fish.rotation.set(Number(tilt.value)*Math.PI/180,Number(angle.value)*Math.PI/180,0);
+      const lodCamera=quality.value==='low'?{position:new THREE.Vector3(0,0,100)}:s.camera;
+      if(s.id==='reef_2')s.library.update(time,lodCamera,quality.value,true,'realistic');else s.library.update(time,lodCamera,quality.value,style.value);
+      const r=s.cell.getBoundingClientRect();s.camera.aspect=r.width/r.height;s.camera.position.z=s.camera.aspect<1?6.8/s.camera.aspect:6.8;s.camera.updateProjectionMatrix();
+      renderer.setViewport(r.left-bounds.left,bounds.bottom-r.bottom,r.width,r.height);renderer.setScissor(r.left-bounds.left,bounds.bottom-r.bottom,r.width,r.height);renderer.render(s.scene,s.camera);
+    }
+    frameId=requestAnimationFrame(frame);
+  }
+  frameId=requestAnimationFrame(frame);
+  status.textContent='Dit zijn de modellen uit de simulator. Ze staan hier stil op hun presentatieplek; in de oceaan bewegen ze door het rif. De werkelijke rifbaars is kleiner dan de doktersvis.';
+  addEventListener('pagehide',()=>{stopped=true;cancelAnimationFrame(frameId);removeEventListener('resize',resize);models.forEach(s=>s.library.dispose());renderer.dispose();},{once:true});
+}catch(error){status.textContent='Vergelijking kon niet starten: '+error.message;console.error(error);}
+</script></body></html>
