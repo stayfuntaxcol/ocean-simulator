@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Astra 6 · vissenvergelijking</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10252b;color:#e5f7f7;font:15px system-ui}header{padding:18px;max-width:1100px;margin:auto}h1{font-size:21px;margin:0 0 8px}p{margin:8px 0;line-height:1.5;color:#b3cccc}nav{display:flex;gap:16px;flex-wrap:wrap;align-items:center}button,a{color:#e8fbff;background:#234953;border:1px solid #668991;padding:9px 14px;border-radius:8px;text-decoration:none}button{cursor:pointer}label{display:flex;gap:8px;align-items:center}main{position:relative;width:100%;height:70vh;min-height:450px}canvas{display:block;width:100%;height:100%}.label{position:absolute;left:8%;top:3%;pointer-events:none;background:#10252bbd;padding:6px 10px;border-radius:6px}.right{left:58%}.bottom{top:53%}footer{padding:12px 18px;color:#b3cccc;font-size:13px}input{max-width:130px}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js"}}</script>
+</head>
+<body>
+<header><h1>Astra 6 · kogelvis en koraalvlindervis</h1><p>De echte modellen uit de simulator, naast elkaar onder dezelfde neutrale belichting. Beoordeel vorm, vinnen en huid ook vanaf de voor- en achterkant.</p>
+<nav><button id="inflate">Beide kogelvissen opblazen</button><button id="pause" aria-pressed="false">Pauzeren</button><label>Draai <input id="angle" type="range" min="-180" max="180" value="0"></label><label>Snelheid <input id="speed" type="range" min="0" max="1.2" step="0.05" value="0.4"></label><a href="../?scene=reference">Naar de oceaan</a></nav></header>
+<main id="stage"><span class="label">Kogelvis · cartoon</span><span class="label right">Kogelvis · realistisch</span><span class="label bottom">Koraalvis · cartoon</span><span class="label right bottom">Koraalvis · realistisch</span></main>
+<footer><a href="./fish-review-batch-two.html">Volgende batch: platvis en clownvis naast de gele koraalvis</a></footer>
+<footer id="status">Laden…</footer>
+<script type="module">
+import * as THREE from 'three';
+import {createPufferLibrary} from './PufferFish.js';
+import {createButterflyLibrary} from './ButterflyFish.js';
+const stage=document.getElementById('stage'),status=document.getElementById('status');
+try{
+  const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setClearColor(0x183039);renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.35;stage.appendChild(renderer.domElement);
+  const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-6,6,4,-4,.1,60);camera.position.set(0,0,20);
+  scene.add(new THREE.HemisphereLight(0xd9f4ff,0x766b4c,2.1));
+  const key=new THREE.DirectionalLight(0xffedcd,3.4);key.position.set(3,6,8);scene.add(key);
+  const rim=new THREE.DirectionalLight(0x9ee5ff,1.8);rim.position.set(-4,2,-6);scene.add(rim);
+  const specimens=[];
+  for(const [type,style,x,y] of [['puffer','cartoon',-3,1.8],['puffer','realistic',3,1.8],['coral','cartoon',-3,-1.8],['coral','realistic',3,-1.8]]){
+    const library=type==='puffer'?createPufferLibrary():createButterflyLibrary(),fish=new THREE.Group();
+    fish.position.set(x,y,0);fish.scale.setScalar(.95);fish.userData={speciesId:type==='puffer'?'reef_4':'reef_2',phase:0,swimPhase:0,finPhase:0,motionSpeed:.4,velocity:new THREE.Vector3(.4,0,0)};scene.add(fish);library.attach(fish);specimens.push({library,fish,type,style});
+  }
+  let paused=false,time=0,last=performance.now();
+  document.getElementById('pause').onclick=e=>{paused=!paused;e.target.textContent=paused?'Verder zwemmen':'Pauzeren';e.target.setAttribute('aria-pressed',String(paused));};
+  document.getElementById('inflate').onclick=()=>{for(const s of specimens)if(s.type==='puffer')s.library.trigger(s.fish);};
+  const speed=document.getElementById('speed'),angle=document.getElementById('angle');
+  function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);const aspect=w/h;camera.left=-6;camera.right=6;camera.top=6/aspect;camera.bottom=-6/aspect;if(camera.top<3.5){camera.top=3.5;camera.bottom=-3.5;camera.left=-3.5*aspect;camera.right=3.5*aspect;}camera.updateProjectionMatrix();}addEventListener('resize',resize);resize();
+  function frame(now){requestAnimationFrame(frame);const dt=paused?0:Math.min(.05,(now-last)/1000);last=now;time+=dt;
+    for(const s of specimens){const d=s.fish.userData,v=Number(speed.value);d.motionSpeed=v;d.velocity.set(v,0,0);d.swimPhase+=dt*v*4;d.finPhase+=dt*(s.type==='puffer'?9:7)*(.55+v);s.fish.rotation.y=Number(angle.value)*Math.PI/180;
+      if(s.type==='puffer')s.library.step(dt);s.library.update(time,camera,'high',true,s.style);
+    }
+    renderer.render(scene,camera);status.textContent=`Vergelijkingsklok: ${Math.floor(time)} s · opblazen: 120 s vasthouden, daarna 30 s leeglopen · snelheid is een animatieproef: modellen blijven hier op hun presentatieplek.`;
+  }requestAnimationFrame(frame);
+  addEventListener('pagehide',()=>{specimens.forEach(s=>s.library.dispose());renderer.dispose();},{once:true});
+}catch(error){status.textContent='Vergelijking kon niet starten: '+error.message;console.error(error);}
+</script>
+</body></html>
