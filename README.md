@@ -149,3 +149,14 @@ Zie [het uitrolplan](docs/fish-style-rollout.md) voor alle zeven soorten en de b
 De drie eenvoudige roze, paarse en oranje standaardvissen zijn vervangen door een **doktersvis, kardinaalvis en kleine rifbaars**. Ze hebben eigen lichaamsvormen, huidpatronen, fijne vinnen, cartoon-/realistische weergave en verschillende zwemritmes. Het totale aantal dieren blijft gelijk.
 
 Gebruik hun nieuwe **Bekijk**-knoppen of open [de vergelijking met de gele koraalvis](graphics/reef-species-review.html). Zie [ontwerp, gedrag en testinstructies](docs/new-reef-species.md). Deze batch brengt het totaal op 92 automatische tests; visuele controle in je browser blijft nodig.
+
+
+### Microleven en plankton
+
+Rond de rifvakken verschijnen nu gedeelde, herkenbare modellen voor garnalen, zeesterren,
+zee-egels, schelpen en krabben. Kleine minnow-schooltjes blijven op afstand boven het
+rif en zwevende planktondeeltjes worden in lokale waterlagen gestreamd. Garnalen en
+krabben maken korte bodembewegingen; zeesterren, zee-egels en schelpen blijven op hun
+plek. In Water & licht kun je het microleven, de verre scholen en de planktonlagen
+afzonderlijk aan- en uitzetten. Open [microleven van dichtbij](https://chatgpt.com/c/graphics/micro-life-review.html)
+voor de losse modellen. Deze batch brengt het totaal op 100 automatische tests.
