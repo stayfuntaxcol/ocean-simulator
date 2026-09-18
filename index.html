@@ -114,6 +114,11 @@
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
+      <label>Microleven <input id="microLifeEnabled" type="checkbox" checked></label>
+      <label>Kleine scholen in de verte <input id="microSchoolsEnabled" type="checkbox" checked></label>
+      <label>Planktonlagen <input id="microPlanktonEnabled" type="checkbox" checked></label>
+      <small id="microLifeStatus">Garnalen, zeesterren, zee-egels, schelpen en krabben rond het rif.</small>
+      <p><a href="./graphics/micro-life-review.html" target="_blank" rel="noopener" style="color:#b6efff">Bekijk het microleven van dichtbij</a></p>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
       <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistisch · in ontwikkeling</option></select></label>
       <small>Wissel de rifvissen tussen cartoon en realistisch. Nieuw: doktersvis, kardinaalvis en rifbaars.</small>
@@ -269,6 +274,7 @@ import { createButterflyLibrary } from './graphics/ButterflyFish.js';
 import { createBlueReefLibrary } from './graphics/BlueReefFish.js';
 import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { createReefSpeciesLibrary, REEF_SPECIES } from './graphics/ReefSpecies.js';
+import { createMicroLife } from './graphics/MicroLife.js';
 import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveFishContacts } from './graphics/FishInteractions.js';
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { createReefLife } from './graphics/ReefLife.js';
@@ -3309,6 +3315,12 @@ function simulationTime() { return referenceMode ? visualTime : performance.now(
 let metricStart = performance.now(), metricFrames = 0;
 let lastRockDetailUpdate = -Infinity, previousSeabedDetail = null;
 let lastReefDetailUpdate = -Infinity, previousReefDetail = null;
+const microLifeEnabled=document.getElementById('microLifeEnabled'),microSchoolsEnabled=document.getElementById('microSchoolsEnabled'),microPlanktonEnabled=document.getElementById('microPlanktonEnabled');
+const microLife=createMicroLife({scene,terrain:terrainHeightAt,boundary:WORLD_HALF,caustics:atmosphere.uniforms,
+  getHabitats:()=>{rebuildHabitatMap();return habitatCells;},
+  getObstacles:()=>[...reef.children.filter(r=>r.userData.orcaRock),...lavaVents.map(v=>v.root)].map(r=>new THREE.Box3().setFromObject(r))
+});
+addEventListener('pagehide',()=>microLife.dispose(),{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
@@ -3352,6 +3364,8 @@ function animate(){
   greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
   pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled,fishRenderStyle.value);
   newReefSpecies.update(t,camera,atmosphere.quality,fishRenderStyle.value);
+  microLife.update(dt,camera,{enabled:microLifeEnabled.checked,editor:editMode||landscapeEditorActive,inspect:terrainInspectActive,paused:referencePaused,
+    quality:atmosphere.quality,revision:habitatRevision,showSchools:microSchoolsEnabled.checked,showPlankton:microPlanktonEnabled.checked});
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
@@ -3371,6 +3385,8 @@ function animate(){
   metricFrames++;
   const metricNow = performance.now();
   if (metricNow - metricStart >= 1000) {
+    const micro=microLife.stats;
+    document.getElementById('microLifeStatus').textContent=microLifeEnabled.checked?`${micro.bottom} kleine bodemdieren · ${micro.fish} verre schoolvissen · ${micro.plankton} planktondeeltjes`:'Microleven uitgeschakeld';
     graphicsMetrics.textContent = Math.round(metricFrames * 1000 / (metricNow - metricStart)) + ' FPS · '
       + renderer.info.render.calls + ' draw calls · '
       + Math.round(renderer.info.render.triangles / 1000) + 'k driehoeken';
