@@ -1297,10 +1297,12 @@ function isPointInsideHex(x,z,radius=hexWorldState.outerRadius){
 function isPointInsideBuildHex(x,z){
   return isPointInsideHex(x,z,hexWorldState.outerRadius*hexWorldState.innerScale);
 }
-function isCellInsideBuildHex(ix,iz){
-  const x=(ix+0.5)*CELL-WORLD_HALF;
-  const z=(iz+0.5)*CELL-WORLD_HALF;
-  return isPointInsideBuildHex(x,z);
+function isCellInsideBuildHex(ix, iz) {
+  // ix en iz zijn al wereldcoördinaten rond het midden van de wereld.
+  const x = ix * CELL + CELL / 2;
+  const z = iz * CELL + CELL / 2;
+
+  return isPointInsideBuildHex(x, z);
 }
 
 const selectionMat = new THREE.MeshBasicMaterial({
