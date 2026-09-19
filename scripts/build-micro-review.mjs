@@ -1,0 +1,11 @@
+import { build } from 'esbuild';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+const root=fileURLToPath(new URL('../',import.meta.url));
+const result=await build({entryPoints:[root+'graphics/micro-life-review.js'],bundle:true,minify:true,format:'iife',target:'es2022',write:false,legalComments:'inline'});
+let html=await readFile(root+'graphics/micro-life-review.html','utf8');
+html=html.replace(/<script type="importmap">[\s\S]*?<\/script>/,'');
+html=html.replace(/<a id="oceanLink"[^>]*>[^<]*<\/a>/,'<span style="color:#b8cdc6">Zelfstandige proef · werkt offline</span>');
+html=html.replace('<script type="module" src="./micro-life-review.js"></script>',()=>'<script>'+result.outputFiles[0].text.replace(/<\/script/gi,'<\\/script')+'</script>');
+await mkdir(root+'dist',{recursive:true});await writeFile(root+'dist/Ocean-Microleven-Proef.html',html);
+console.log('Built dist/Ocean-Microleven-Proef.html — offline, no installation required.');

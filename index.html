@@ -355,7 +355,7 @@ import { createBlueReefLibrary } from './graphics/BlueReefFish.js';
 import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { createReefSpeciesLibrary, REEF_SPECIES } from './graphics/ReefSpecies.js';
 import { createMicroLife } from './graphics/MicroLife.js';
-import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveFishContacts } from './graphics/FishInteractions.js';
+import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveFishContacts, fishExtent } from './graphics/FishInteractions.js';
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
@@ -721,12 +721,14 @@ for(let i=0;i<18;i++){
 // Spectaculair rif: rotsen, koraal, sponzen, anemonen en zeewier
 const reef = new THREE.Group();
 scene.add(reef);
-const reefLife = createReefLife(atmosphere.uniforms);
+// Opt-in visual review only. No save format, placement RNG or world state changes.
+const organicReef = visualParams.get('reef') === 'organic';
+const reefLife = createReefLife(atmosphere.uniforms, {style:organicReef?'organic':'existing'});
 const reefDetail = document.getElementById('reefDetail');
 function styleReef(root,type,color){
   const seed=Math.abs(Math.round(root.position.x*37+root.position.z*71));
   const design=type==='branch' && seed%5===1?'anemone':type==='branch' && seed%3===0 ? 'fan' : type;
-  reefLife.attach(root,design,design==='anemone'?0xbfa877:color,seed);
+  reefLife.attach(root,design,design==='anemone' && !organicReef?0xbfa877:color,seed);
 }
 
 // Massieve natuurwet: rotslagen zijn ondoordringbaar voor camera en vissen.
@@ -824,6 +826,7 @@ function addAnemone(x,z,scale=1,color=0xd96aa7){
     t.rotation.z=(oceanRandom()-.5)*.55; t.rotation.x=(oceanRandom()-.5)*.4; g.add(t);
   }
   g.position.set(x,-17.55,z); reef.add(g);
+  if(organicReef) styleReef(g,'anemone',color);
 }
 function addStarfish(x,z,scale=1,color=0xf28f5b){
   const shape=new THREE.Shape();
@@ -3751,6 +3754,9 @@ let lastReefDetailUpdate = -Infinity, previousReefDetail = null;
 const microLifeEnabled=document.getElementById('microLifeEnabled'),microSchoolsEnabled=document.getElementById('microSchoolsEnabled'),microPlanktonEnabled=document.getElementById('microPlanktonEnabled');
 const microLife=createMicroLife({scene,terrain:terrainHeightAt,boundary:WORLD_HALF,caustics:atmosphere.uniforms,
   getHabitats:()=>{rebuildHabitatMap();return habitatCells;},
+  getShelters:()=>reef.children.filter(r=>r.userData.orcaRock).map(r=>new THREE.Box3().setFromObject(r)),
+  getThreats:()=>fishes.filter(f=>f.parent&&f.visible&&!f.userData.dead)
+    .map(f=>({position:f.position,radius:Math.max(...fishExtent(f).toArray())})).filter(f=>f.radius>.8),
   getObstacles:()=>[...reef.children.filter(r=>r.userData.orcaRock),...lavaVents.map(v=>v.root)].map(r=>new THREE.Box3().setFromObject(r))
 });
 addEventListener('pagehide',()=>microLife.dispose(),{once:true});
@@ -3819,7 +3825,7 @@ function animate(){
   const metricNow = performance.now();
   if (metricNow - metricStart >= 1000) {
     const micro=microLife.stats;
-    document.getElementById('microLifeStatus').textContent=microLifeEnabled.checked?`${micro.bottom} kleine bodemdieren · ${micro.fish} verre schoolvissen · ${micro.plankton} planktondeeltjes`:'Microleven uitgeschakeld';
+    document.getElementById('microLifeStatus').textContent=microLifeEnabled.checked?`${micro.bottom} kleine bodemdieren · ${micro.shrimp} garnalen · ${micro.fish} verre schoolvissen · ${micro.plankton} planktondeeltjes`:'Microleven uitgeschakeld';
     graphicsMetrics.textContent = Math.round(metricFrames * 1000 / (metricNow - metricStart)) + ' FPS · '
       + renderer.info.render.calls + ' draw calls · '
       + Math.round(renderer.info.render.triangles / 1000) + 'k driehoeken';

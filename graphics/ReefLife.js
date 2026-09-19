@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { installCaustics, seededRandom } from './UnderwaterAtmosphere.js';
+import { ORGANIC_REEF_TYPES, makeOrganicReefGeometry, createOrganicReefMaterial } from './OrganicReef.js';
 
 export const REEF_TYPES = ['branch','plate','fan','sponge','grass','anemone'];
 const point = (x,y,z=0) => new THREE.Vector3(x,y,z);
@@ -175,16 +176,19 @@ function reefMaterial(type,color,uniforms) {
   return material;
 }
 
-export function createReefLife(caustics) {
+export function createReefLife(caustics, { style = 'existing' } = {}) {
   const uniforms={...caustics,reefTime:{value:0},reefMotion:{value:1}};
   const geometryCache=new Map(),materials=new Map(),members=new Map();
   const worldPosition=new THREE.Vector3();
   let enabled=true;
   function attach(root,type,color=0x68a578,variant=0) {
+    if(members.has(root)) return;
+    const organic=style==='organic' && ORGANIC_REEF_TYPES.includes(type);
+    const geometryFactory=organic?makeOrganicReefGeometry:makeReefGeometry;
     const key=`${type}-${variant%3}`;
-    if(!geometryCache.has(key)) geometryCache.set(key,{near:makeReefGeometry(type,variant%3),far:makeReefGeometry(type,variant%3,true)});
+    if(!geometryCache.has(key)) geometryCache.set(key,{near:geometryFactory(type,variant%3),far:geometryFactory(type,variant%3,true)});
     const shapes=geometryCache.get(key),materialKey=`${type}-${color}`;
-    if(!materials.has(materialKey)) materials.set(materialKey,reefMaterial(type,color,uniforms));
+    if(!materials.has(materialKey)) materials.set(materialKey,(organic?createOrganicReefMaterial:reefMaterial)(type,color,uniforms));
     root.updateMatrixWorld(true);
     const inverse=root.matrixWorld.clone().invert(),box=new THREE.Box3();
     root.traverse(object=>{
@@ -195,7 +199,7 @@ export function createReefLife(caustics) {
     const size=box.getSize(new THREE.Vector3()),basic=new THREE.Group();
     for(const child of [...root.children]) basic.add(child);
     const detailed=new THREE.Mesh(shapes.near,materials.get(materialKey));
-    detailed.name=`Detailed ${type}`; detailed.scale.copy(size); detailed.position.copy(box.min);
+    detailed.name=`${organic?'Organic':'Detailed'} ${type}`; detailed.scale.copy(size); detailed.position.copy(box.min);
     if(type==='anemone'){
       detailed.scale.y=Math.min(size.y*.42,Math.max(size.x,size.z)*.42);
     }
@@ -238,5 +242,11 @@ export function createReefLife(caustics) {
     m.basic.traverse(mesh=>{if(mesh.geometry)mesh.geometry.dispose();});
     members.delete(root);
   }
-  return {attach,setTime,update,release,get size(){return members.size;}};
+  function dispose() {
+    for(const root of [...members.keys()]) release(root);
+    for(const shapes of geometryCache.values()){shapes.near.dispose();shapes.far.dispose();}
+    for(const material of materials.values()) material.dispose();
+    geometryCache.clear();materials.clear();
+  }
+  return {attach,setTime,update,release,dispose,get size(){return members.size;}};
 }

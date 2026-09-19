@@ -2,6 +2,23 @@
 
 Interactieve oceaansimulator gebouwd met Three.js.
 
+## Nieuw: natuurlijk microleven
+
+Krabben leven solitair bij rotsen, maken korte zijwaartse voedseltochten en keren
+terug naar hun eigen schuilplek. Er zijn maximaal twintig actieve krabben.
+Garnalen zwemmen in losse zwermen en vluchten bij een naderende grote vis
+achteruit, met een snel gevouwen achterlijf. De beweging is gekoppeld aan de
+poten en staart; pauze en de bestaande kwaliteitsinstellingen blijven werken.
+
+Bekijk [de microlevenproef](graphics/micro-life-review.html) en klik op
+**Laat een grote vis naderen**. De module is ook aangesloten in de hoofdoceaan.
+De nieuwste wereldkaart en hexagoncorrectie blijven behouden. De goedgekeurde
+organische rifmodellen zijn beschikbaar via `?reef=organic`.
+
+De volledige suite bevat 120 tests. Browsercontrole omvat de proef en de echte
+referentiescène, inclusief de vluchtreactie op een oceaanvis. Zie
+[gedrag en beperkingen](docs/micro-life.md).
+
 ## Grafische upgrade: water, rif en eerste gedetailleerde vis
 
 Deze branch bevat water en licht (stap 1), plus geribbeld zand en verweerde
@@ -151,12 +168,12 @@ De drie eenvoudige roze, paarse en oranje standaardvissen zijn vervangen door ee
 Gebruik hun nieuwe **Bekijk**-knoppen of open [de vergelijking met de gele koraalvis](graphics/reef-species-review.html). Zie [ontwerp, gedrag en testinstructies](docs/new-reef-species.md). Deze batch brengt het totaal op 92 automatische tests; visuele controle in je browser blijft nodig.
 
 
-### Microleven en plankton
+### Microleven en plankton — eerste versie (inmiddels uitgebreid)
 
 Rond de rifvakken verschijnen nu gedeelde, herkenbare modellen voor garnalen, zeesterren,
 zee-egels, schelpen en krabben. Kleine minnow-schooltjes blijven op afstand boven het
 rif en zwevende planktondeeltjes worden in lokale waterlagen gestreamd. Garnalen en
 krabben maken korte bodembewegingen; zeesterren, zee-egels en schelpen blijven op hun
 plek. In Water & licht kun je het microleven, de verre scholen en de planktonlagen
-afzonderlijk aan- en uitzetten. Open [microleven van dichtbij](https://chatgpt.com/c/graphics/micro-life-review.html)
+afzonderlijk aan- en uitzetten. Open [microleven van dichtbij](graphics/micro-life-review.html)
 voor de losse modellen. Deze batch brengt het totaal op 100 automatische tests.

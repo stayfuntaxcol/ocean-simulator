@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proefrif · koraal, sponzen en anemonen</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#071f2a;color:#ebf4ef;font:15px system-ui}
+header,footer{padding:20px 28px;max-width:1500px;margin:auto}h1{font-size:25px;margin:5px 0 9px;font-weight:550}
+p{color:#b1cdc9;line-height:1.5;margin:8px 0}small{color:#77bcb6;letter-spacing:.12em;text-transform:uppercase}
+nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}button,select,a{font:inherit;background:#153f49;color:#e8f6ed;border:1px solid #41666a;padding:9px 12px;border-radius:7px;text-decoration:none}
+button[aria-pressed=true]{background:#e4bb87;color:#152d32;border-color:#e4bb87}label{display:flex;align-items:center;gap:8px}
+#stage{height:min(68vh,820px);min-height:380px;position:relative}canvas{display:block;width:100%;height:100%}
+#caption{position:absolute;left:28px;bottom:20px;pointer-events:none;background:#09252ac9;padding:11px 15px;border-radius:6px;font-size:13px}
+footer{font-size:13px}#status{font-variant-numeric:tabular-nums}@media(max-width:600px){header,footer{padding:14px}h1{font-size:22px}#caption{left:14px;right:14px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"}}</script>
+</head>
+<body>
+<header><small>Ocean Simulator / Visuele proef 01</small><h1>Eerst moet het rif levensecht aanvoelen.</h1>
+<p>Dezelfde rifmodule als in de oceaan. Vergelijk vorm, oppervlak en beweging onder vaste belichting.</p>
+<nav>
+<button id="existing" aria-pressed="false">Bestaande rifmodule</button><button id="organic" aria-pressed="true">Organische proefversie</button>
+<label>Camera <select id="view"><option value="reef">Proefrif</option><option value="branch">Takkoraal · dichtbij</option><option value="plate">Plaatkoraal · dichtbij</option><option value="sponge">Sponzen · dichtbij</option><option value="anemone">Anemoon · dichtbij</option><option value="far">Op afstand</option></select></label>
+<label>Detail <select id="quality"><option value="high">Hoog</option><option value="low">Vereenvoudigd</option></select></label>
+<button id="pause" aria-pressed="false">Pauzeren</button><button id="reset">Herstel tijd</button>
+<a href="../?scene=reference&reef=organic" target="_blank" rel="noopener">In bestaande oceaan ↗</a>
+</nav></header>
+<main id="stage"><div id="caption">Afgeronde groei · matte oppervlakken · rustige stroming</div></main>
+<footer><div id="status" role="status">Rif laden…</div><p>De vergelijking gebruikt identieke plaatsing, kleuren en camera’s. De knop ‘bestaand’ toont de eerdere rifmodule; losse anemonen in de oude oceaan hadden nog de eenvoudige cilindervorm. Geen wijzigingen aan microleven, wereldopslag of de hoofdinterface.</p></footer>
+<script type="module" src="./reef-quality-review.js"></script>
+</body></html>
