@@ -89,6 +89,53 @@
       #stats{display:none}
       #hint{max-width:92%;white-space:normal;text-align:center}
     }
+
+    /* Hexagonale wereldkaart: de atlas blijft een aparte laag boven de oceaan. */
+    #worldAtlasOverlay{
+      display:none;position:fixed;inset:0;z-index:80;padding:clamp(10px,3vw,32px);
+      background:rgba(1,10,18,.72);backdrop-filter:blur(10px)
+    }
+    #worldAtlasOverlay.open{display:flex;align-items:stretch;justify-content:center}
+    #worldAtlasModal{
+      width:min(1180px,100%);height:min(820px,100%);display:flex;flex-direction:column;
+      overflow:hidden;border:1px solid rgba(255,255,255,.18);border-radius:22px;
+      background:linear-gradient(145deg,rgba(8,38,57,.98),rgba(4,18,32,.98));
+      box-shadow:0 24px 90px rgba(0,0,0,.5)
+    }
+    #worldAtlasHeader{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.13)}
+    #worldAtlasHeader h2{margin:0;font-size:20px}
+    #worldAtlasHeader p{margin:4px 0 0;color:#a8c7d8;font-size:12px}
+    #worldAtlasClose{border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 12px;background:rgba(255,255,255,.08);color:#eef8ff;cursor:pointer;font-weight:700}
+    #worldAtlasBody{display:grid;grid-template-columns:minmax(0,1fr) 290px;min-height:0;flex:1}
+    #worldAtlasMap{position:relative;min-height:360px;overflow:hidden;background:radial-gradient(circle at 50% 45%,rgba(23,116,142,.28),rgba(3,21,35,.86) 70%)}
+    #worldAtlasSvg{display:block;width:100%;height:100%;min-height:360px;cursor:grab;user-select:none}
+    #worldAtlasSvg:active{cursor:grabbing}
+    .atlas-world-outer{fill:rgba(89,177,202,.22);stroke:rgba(181,241,255,.82);stroke-width:2}
+    .atlas-world-inner{fill:rgba(205,238,240,.9);stroke:rgba(255,255,255,.88);stroke-width:1.5}
+    .atlas-world-current .atlas-world-outer{fill:rgba(55,199,231,.42);stroke:#baf6ff;stroke-width:3}
+    .atlas-world-current .atlas-world-inner{fill:rgba(224,251,249,.96)}
+    .atlas-world-empty{fill:rgba(255,255,255,.035);stroke:rgba(181,241,255,.36);stroke-width:2;stroke-dasharray:8 7}
+    .atlas-world-empty:hover{fill:rgba(127,226,255,.12);stroke:#7fe2ff}
+    .atlas-world-label{font:700 13px Arial,sans-serif;fill:#06303b;pointer-events:none;text-anchor:middle}
+    .atlas-world-sub{font:11px Arial,sans-serif;fill:#0b4e5d;pointer-events:none;text-anchor:middle}
+    .atlas-empty-label{font:700 12px Arial,sans-serif;fill:#bfe5f3;pointer-events:none;text-anchor:middle}
+    #worldAtlasDetails{padding:18px;border-left:1px solid rgba(255,255,255,.13);overflow:auto;background:rgba(2,14,25,.35)}
+    #worldAtlasDetails h3{margin:0 0 8px;font-size:18px}
+    #worldAtlasDetails p{color:#bfe5f3;font-size:13px;line-height:1.45}
+    #worldAtlasDetails .atlas-stat{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:12px}
+    #worldAtlasDetails .atlas-stat span:last-child{text-align:right;color:#eef8ff}
+    #worldAtlasDetails button{width:100%;margin-top:12px;border:0;border-radius:10px;padding:10px 12px;background:#7fe2ff;color:#062231;font-weight:800;cursor:pointer}
+    #worldAtlasDetails button.secondary{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#eef8ff}
+    #worldAtlasStatus{min-height:18px;margin-top:12px;color:#9ed9e8;font-size:12px;line-height:1.4}
+    #worldAtlasLegend{position:absolute;left:14px;bottom:12px;display:flex;gap:12px;flex-wrap:wrap;color:#bfe5f3;font-size:11px;pointer-events:none}
+    #worldAtlasLegend span{display:inline-flex;align-items:center;gap:5px}
+    #worldAtlasLegend i{display:inline-block;width:10px;height:10px;border-radius:50%;background:#37c7e7}
+    #worldAtlasLegend .owned{background:#7fe2ff}.atlas-legend-empty{background:transparent!important;border:1px dashed #b5f1ff}
+    @media (max-width:760px){
+      #worldAtlasBody{grid-template-columns:1fr;grid-template-rows:minmax(330px,1fr) auto}
+      #worldAtlasDetails{border-left:0;border-top:1px solid rgba(255,255,255,.13);max-height:240px}
+      #worldAtlasMap,#worldAtlasSvg{min-height:330px}
+    }
   </style>
 
   <script type="importmap">
@@ -213,6 +260,9 @@
         <input id="worldFile" type="file" accept=".json,application/json" hidden>
       </div>
       <div class="toolrow">
+        <button id="worldAtlasBtn" type="button">🗺 Wereldatlas</button>
+      </div>
+      <div class="toolrow">
         <input id="cloudWorldName" type="text" maxlength="60" value="Mijn oceaanwereld" aria-label="Naam van de wereld" style="flex:1;min-width:160px;border:1px solid rgba(255,255,255,.22);border-radius:9px;padding:8px 10px;background:rgba(255,255,255,.08);color:#eef8ff">
         <button id="cloudSaveBtn" type="button">☁ Bewaar online</button>
         <button id="shareWorldBtn" type="button" disabled>🔗 Deel wereld</button>
@@ -242,6 +292,36 @@
     <div id="minimapHeader"><span>🧭 Kaart · klik om te reizen</span><div id="minimapControls"><button id="mapZoomOut" type="button" title="Uitzoomen">−</button><button id="mapZoomIn" type="button" title="Inzoomen">+</button><button id="mapToggle" type="button" title="Kaart inklappen">▾</button></div></div>
     <canvas id="minimap" width="404" height="404" aria-label="Minimap van de onderwaterwereld"></canvas>
     <div id="minimapLegend"><span>laag landschap</span><span>rijk rif</span><span>▲ jij</span></div>
+  </div>
+
+  <div id="worldAtlasOverlay" aria-hidden="true">
+    <section id="worldAtlasModal" role="dialog" aria-modal="true" aria-labelledby="worldAtlasTitle">
+      <header id="worldAtlasHeader">
+        <div>
+          <h2 id="worldAtlasTitle">Wereldatlas</h2>
+          <p>Bekijk je oceaanwerelden en kies een aangrenzende positie.</p>
+        </div>
+        <button id="worldAtlasClose" type="button">Sluiten</button>
+      </header>
+      <div id="worldAtlasBody">
+        <div id="worldAtlasMap">
+          <svg id="worldAtlasSvg" viewBox="-420 -300 840 600" role="img" aria-label="Hexagonale wereldatlas"></svg>
+          <div id="worldAtlasLegend">
+            <span><i class="owned"></i> eigen wereld</span>
+            <span><i></i> huidige wereld</span>
+            <span><i class="atlas-legend-empty"></i> beschikbare positie</span>
+          </div>
+        </div>
+        <aside id="worldAtlasDetails">
+          <h3 id="worldAtlasSelectedName">Wereld selecteren</h3>
+          <p id="worldAtlasSelectedText">Selecteer een wereld of een lege aangrenzende positie.</p>
+          <div id="worldAtlasStats"></div>
+          <button id="worldAtlasEnterBtn" type="button" hidden>Deze wereld openen</button>
+          <button id="worldAtlasPrepareBtn" type="button" class="secondary" hidden>Positie voorbereiden</button>
+          <div id="worldAtlasStatus" aria-live="polite"></div>
+        </aside>
+      </div>
+    </section>
   </div>
 
   <div id="editBadge">BOUWMODUS · sleep over de zeebodem om een groot gebied te vullen</div>
@@ -773,6 +853,305 @@ function addSeaweed(x,z,scale=1){
 // -------- WORLD EDITOR: persistente, gelaagde biodiversiteit --------
 const CELL = 12;
 const WORLD_HALF = 144;
+
+// ---------- HEX-WERELDSTRUCTUUR ----------
+// De technische square chunks blijven bestaan voor streaming en opslag.
+// Deze laag bepaalt de vaste vorm en positie van een communitywereld.
+const HEX_WORLD_CONFIG = Object.freeze({
+  version: 1,
+  orientation: 'flat-top',
+  outerRadius: WORLD_HALF,
+  buildAreaRatio: 0.90,
+  transitionAreaRatio: 0.10,
+  innerScale: Math.sqrt(0.90)
+});
+const HEX_DIRECTIONS = Object.freeze([
+  { name:'noord', q:0, r:-1 },
+  { name:'noordoost', q:1, r:-1 },
+  { name:'zuidoost', q:1, r:0 },
+  { name:'zuid', q:0, r:1 },
+  { name:'zuidwest', q:-1, r:1 },
+  { name:'noordwest', q:-1, r:0 }
+]);
+const hexWorldState = {
+  hexQ: 0,
+  hexR: 0,
+  outerRadius: HEX_WORLD_CONFIG.outerRadius,
+  innerScale: HEX_WORLD_CONFIG.innerScale,
+  pendingPosition: null
+};
+const worldAtlasState = {
+  worlds: new Map(),
+  selectedId: null,
+  selectedEmptyKey: null,
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  dragging: false,
+  dragX: 0,
+  dragY: 0
+};
+const WORLD_ATLAS_STORAGE_KEY = 'fiveLoavesWorldAtlasV1';
+
+function axialKey(q,r){ return `${q},${r}`; }
+function axialToAtlas(q,r,size=100){
+  return { x:size*1.5*q, y:size*Math.sqrt(3)*(r+q/2) };
+}
+function hexNeighbours(q,r){
+  return HEX_DIRECTIONS.map(direction=>({
+    ...direction,
+    q:q+direction.q,
+    r:r+direction.r,
+    key:axialKey(q+direction.q,r+direction.r)
+  }));
+}
+function flatTopHexPoints(cx,cy,r){
+  return Array.from({length:6},(_,i)=>{
+    const angle=(Math.PI/180)*(60*i);
+    return {x:cx+Math.cos(angle)*r,y:cy+Math.sin(angle)*r};
+  });
+}
+function svgPoints(points){ return points.map(point=>`${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' '); }
+function worldHexMeta(){
+  return {
+    version: HEX_WORLD_CONFIG.version,
+    hexQ: hexWorldState.hexQ,
+    hexR: hexWorldState.hexR,
+    orientation: HEX_WORLD_CONFIG.orientation,
+    outerRadius: hexWorldState.outerRadius,
+    innerScale: hexWorldState.innerScale,
+    buildAreaRatio: HEX_WORLD_CONFIG.buildAreaRatio,
+    transitionAreaRatio: HEX_WORLD_CONFIG.transitionAreaRatio
+  };
+}
+function applyWorldHexMeta(meta){
+  if(!meta || typeof meta!=='object') return;
+  if(Number.isFinite(meta.hexQ)) hexWorldState.hexQ=Math.trunc(meta.hexQ);
+  if(Number.isFinite(meta.hexR)) hexWorldState.hexR=Math.trunc(meta.hexR);
+  if(Number.isFinite(meta.outerRadius) && meta.outerRadius>0) hexWorldState.outerRadius=meta.outerRadius;
+  hexWorldState.innerScale=Number.isFinite(meta.innerScale) && meta.innerScale>0 && meta.innerScale<1
+    ? meta.innerScale : HEX_WORLD_CONFIG.innerScale;
+}
+function currentAtlasWorldId(){ return currentCloudWorldId || 'local-world'; }
+function currentAtlasWorldName(){ return cloudWorldName?.value?.trim() || 'Mijn oceaanwereld'; }
+function registerAtlasWorld(world){
+  if(!world?.id) return;
+  const existing=worldAtlasState.worlds.get(world.id)||{};
+  worldAtlasState.worlds.set(world.id,{
+    ...existing,
+    ...world,
+    hexQ:Number.isFinite(world.hexQ)?Math.trunc(world.hexQ):(existing.hexQ??0),
+    hexR:Number.isFinite(world.hexR)?Math.trunc(world.hexR):(existing.hexR??0)
+  });
+}
+function syncCurrentAtlasWorld(){
+  const id=currentAtlasWorldId();
+  registerAtlasWorld({
+    id,
+    name:currentAtlasWorldName(),
+    ownerId:currentCloudOwnerId||firebaseUser?.uid||null,
+    visibility:currentCloudWorldId?'link':'local',
+    hexQ:hexWorldState.hexQ,
+    hexR:hexWorldState.hexR,
+    current:true,
+    owned:!currentCloudOwnerId || currentCloudOwnerId===firebaseUser?.uid
+  });
+}
+function saveLocalWorldAtlas(){
+  try{
+    const records=[...worldAtlasState.worlds.values()].map(({current,...world})=>world);
+    localStorage.setItem(WORLD_ATLAS_STORAGE_KEY,JSON.stringify(records));
+  }catch(err){ console.warn('Wereldatlas lokaal opslaan mislukt',err); }
+}
+function loadLocalWorldAtlas(){
+  try{
+    const records=JSON.parse(localStorage.getItem(WORLD_ATLAS_STORAGE_KEY)||'[]');
+    if(Array.isArray(records)) records.forEach(registerAtlasWorld);
+  }catch(err){ console.warn('Wereldatlas lokaal laden mislukt',err); }
+  syncCurrentAtlasWorld();
+}
+function createSvgElement(name,attrs={}){
+  const element=document.createElementNS('http://www.w3.org/2000/svg',name);
+  Object.entries(attrs).forEach(([key,value])=>element.setAttribute(key,String(value)));
+  return element;
+}
+function atlasWorldIsCurrent(world){ return world?.id===currentAtlasWorldId(); }
+function updateAtlasViewBox(){
+  const svg=document.getElementById('worldAtlasSvg');
+  if(!svg) return;
+  const width=840/worldAtlasState.zoom;
+  const height=600/worldAtlasState.zoom;
+  svg.setAttribute('viewBox',`${-width/2-worldAtlasState.panX} ${-height/2-worldAtlasState.panY} ${width} ${height}`);
+}
+function setAtlasStatus(message){
+  const element=document.getElementById('worldAtlasStatus');
+  if(element) element.textContent=message||'';
+}
+function atlasStats(world){
+  const stats=document.getElementById('worldAtlasStats');
+  if(!stats) return;
+  if(!world){ stats.innerHTML=''; return; }
+  const neighbours=hexNeighbours(world.hexQ,world.hexR).filter(candidate=>[...worldAtlasState.worlds.values()].some(other=>other.hexQ===candidate.q&&other.hexR===candidate.r)).length;
+  stats.innerHTML=`
+    <div class="atlas-stat"><span>Eigenaar</span><span>${world.ownerId?'Aangemaakt online':'Lokale wereld'}</span></div>
+    <div class="atlas-stat"><span>Positie</span><span>${world.hexQ}, ${world.hexR}</span></div>
+    <div class="atlas-stat"><span>Buurlanden</span><span>${neighbours} / 6</span></div>
+    <div class="atlas-stat"><span>Bouwgebied</span><span>90%</span></div>
+    <div class="atlas-stat"><span>Overgangsgebied</span><span>10%</span></div>`;
+}
+function selectAtlasWorld(world){
+  worldAtlasState.selectedId=world.id;
+  worldAtlasState.selectedEmptyKey=null;
+  const title=document.getElementById('worldAtlasSelectedName');
+  const textElement=document.getElementById('worldAtlasSelectedText');
+  const enter=document.getElementById('worldAtlasEnterBtn');
+  const prepare=document.getElementById('worldAtlasPrepareBtn');
+  if(title) title.textContent=world.name||'Oceaanwereld';
+  if(textElement) textElement.textContent=atlasWorldIsCurrent(world)
+    ? 'Dit is de wereld waarin je nu werkt.'
+    : 'Deze wereld staat in je atlas en kan later worden geopend.';
+  atlasStats(world);
+  if(enter){ enter.hidden=atlasWorldIsCurrent(world); enter.dataset.worldId=world.id; }
+  if(prepare) prepare.hidden=true;
+  setAtlasStatus('');
+}
+function selectAtlasEmpty(position){
+  worldAtlasState.selectedId=null;
+  worldAtlasState.selectedEmptyKey=position.key;
+  const title=document.getElementById('worldAtlasSelectedName');
+  const textElement=document.getElementById('worldAtlasSelectedText');
+  const enter=document.getElementById('worldAtlasEnterBtn');
+  const prepare=document.getElementById('worldAtlasPrepareBtn');
+  if(title) title.textContent='Beschikbare positie';
+  if(textElement) textElement.textContent=`Deze positie grenst aan een bestaande wereld: ${position.name}.`;
+  atlasStats(null);
+  if(enter) enter.hidden=true;
+  if(prepare){ prepare.hidden=false; prepare.dataset.q=position.q; prepare.dataset.r=position.r; }
+  setAtlasStatus('De overgangszone wordt pas gemaakt wanneer hier een nieuwe wereld naast wordt geplaatst.');
+}
+function renderWorldAtlas(){
+  const svg=document.getElementById('worldAtlasSvg');
+  if(!svg) return;
+  svg.replaceChildren();
+  syncCurrentAtlasWorld();
+  const occupied=new Set([...worldAtlasState.worlds.values()].map(world=>axialKey(world.hexQ,world.hexR)));
+  const visibleWorlds=[...worldAtlasState.worlds.values()];
+  const emptyPositions=new Map();
+  visibleWorlds.forEach(world=>{
+    hexNeighbours(world.hexQ,world.hexR).forEach(position=>{
+      if(!occupied.has(position.key)) emptyPositions.set(position.key,{...position,name:world.name||'de huidige wereld'});
+    });
+  });
+  visibleWorlds.forEach(world=>{
+    const point=axialToAtlas(world.hexQ,world.hexR);
+    const group=createSvgElement('g',{class:`atlas-world${atlasWorldIsCurrent(world)?' atlas-world-current':''}`,tabindex:'0'});
+    const outer=createSvgElement('polygon',{class:'atlas-world-outer',points:svgPoints(flatTopHexPoints(point.x,point.y,100))});
+    const inner=createSvgElement('polygon',{class:'atlas-world-inner',points:svgPoints(flatTopHexPoints(point.x,point.y,100*HEX_WORLD_CONFIG.innerScale))});
+    const label=createSvgElement('text',{class:'atlas-world-label',x:point.x,y:point.y-4}); label.textContent=(world.name||'Wereld').slice(0,22);
+    const sub=createSvgElement('text',{class:'atlas-world-sub',x:point.x,y:point.y+16}); sub.textContent=atlasWorldIsCurrent(world)?'HIER BEN JE':'Wereld';
+    group.append(outer,inner,label,sub);
+    group.addEventListener('click',()=>{selectAtlasWorld(world);renderWorldAtlas();});
+    group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectAtlasWorld(world);renderWorldAtlas();}});
+    svg.append(group);
+  });
+  emptyPositions.forEach(position=>{
+    const point=axialToAtlas(position.q,position.r);
+    const group=createSvgElement('g',{class:'atlas-empty-position',tabindex:'0'});
+    const outer=createSvgElement('polygon',{class:'atlas-world-empty',points:svgPoints(flatTopHexPoints(point.x,point.y,100))});
+    const label=createSvgElement('text',{class:'atlas-empty-label',x:point.x,y:point.y+5}); label.textContent='+';
+    group.append(outer,label);
+    group.addEventListener('click',()=>{selectAtlasEmpty(position);renderWorldAtlas();});
+    group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectAtlasEmpty(position);renderWorldAtlas();}});
+    svg.append(group);
+  });
+  updateAtlasViewBox();
+  const selected=worldAtlasState.selectedId ? worldAtlasState.worlds.get(worldAtlasState.selectedId) : null;
+  if(selected) selectAtlasWorld(selected);
+}
+function openWorldAtlas(){
+  const overlay=document.getElementById('worldAtlasOverlay');
+  if(!overlay) return;
+  syncCurrentAtlasWorld();
+  overlay.classList.add('open');
+  overlay.setAttribute('aria-hidden','false');
+  renderWorldAtlas();
+  if(!worldAtlasState.selectedId) selectAtlasWorld(worldAtlasState.worlds.get(currentAtlasWorldId()));
+}
+function closeWorldAtlas(){
+  const overlay=document.getElementById('worldAtlasOverlay');
+  if(!overlay) return;
+  overlay.classList.remove('open');
+  overlay.setAttribute('aria-hidden','true');
+}
+function installWorldAtlasInteractions(){
+  document.getElementById('worldAtlasBtn')?.addEventListener('click',openWorldAtlas);
+  document.getElementById('worldAtlasClose')?.addEventListener('click',closeWorldAtlas);
+  document.getElementById('worldAtlasOverlay')?.addEventListener('click',event=>{
+    if(event.target.id==='worldAtlasOverlay') closeWorldAtlas();
+  });
+  document.getElementById('worldAtlasEnterBtn')?.addEventListener('click',event=>{
+    const worldId=event.currentTarget.dataset.worldId;
+    if(worldId && worldId!==currentAtlasWorldId()) location.href=cloudWorldUrl(worldId);
+  });
+  document.getElementById('worldAtlasPrepareBtn')?.addEventListener('click',event=>{
+    const q=Number(event.currentTarget.dataset.q), r=Number(event.currentTarget.dataset.r);
+    if(!Number.isFinite(q)||!Number.isFinite(r)) return;
+    hexWorldState.pendingPosition={hexQ:q,hexR:r};
+    saveLocalWorldAtlas();
+    setAtlasStatus(`Positie ${q}, ${r} is voorbereid. De nieuwe wereld kan in een volgende stap worden aangemaakt.`);
+  });
+  document.getElementById('worldAtlasSvg')?.addEventListener('wheel',event=>{
+    event.preventDefault();
+    worldAtlasState.zoom=Math.max(.65,Math.min(2.2,worldAtlasState.zoom*(event.deltaY<0?1.12:.89)));
+    updateAtlasViewBox();
+  },{passive:false});
+  const svg=document.getElementById('worldAtlasSvg');
+  svg?.addEventListener('pointerdown',event=>{
+    if(event.target!==svg) return;
+    worldAtlasState.dragging=true;worldAtlasState.dragX=event.clientX;worldAtlasState.dragY=event.clientY;svg.setPointerCapture(event.pointerId);
+  });
+  svg?.addEventListener('pointermove',event=>{
+    if(!worldAtlasState.dragging) return;
+    const rect=svg.getBoundingClientRect();
+    worldAtlasState.panX-=(event.clientX-worldAtlasState.dragX)/rect.width*840/worldAtlasState.zoom;
+    worldAtlasState.panY-=(event.clientY-worldAtlasState.dragY)/rect.height*600/worldAtlasState.zoom;
+    worldAtlasState.dragX=event.clientX;worldAtlasState.dragY=event.clientY;updateAtlasViewBox();
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(type=>svg?.addEventListener(type,()=>{worldAtlasState.dragging=false;}));
+  addEventListener('keydown',event=>{if(event.key==='Escape') closeWorldAtlas();});
+}
+async function loadRemoteWorldAtlasIndex(){
+  if(!firebaseUser) return;
+  try{
+    const snapshot=await get(ref(firebaseDatabase,'worldIndex'));
+    if(snapshot.exists()){
+      const index=snapshot.val();
+      Object.entries(index||{}).forEach(([id,world])=>registerAtlasWorld({id,...world}));
+      saveLocalWorldAtlas();
+      if(document.getElementById('worldAtlasOverlay')?.classList.contains('open')) renderWorldAtlas();
+    }
+  }catch(err){
+    // Oudere Firebase Rules hebben mogelijk nog geen worldIndex-pad. De lokale atlas blijft werken.
+    console.info('Online Wereldatlas-index nog niet beschikbaar',err?.message||err);
+  }
+}
+async function saveRemoteWorldAtlasIndex(worldId,record){
+  if(!firebaseUser||!worldId) return;
+  try{
+    await set(ref(firebaseDatabase,`worldIndex/${worldId}`),{
+      name:record.name,
+      ownerId:record.ownerId,
+      visibility:record.visibility,
+      hexQ:record.world?.hexWorld?.hexQ??hexWorldState.hexQ,
+      hexR:record.world?.hexWorld?.hexR??hexWorldState.hexR,
+      updatedAt:serverTimestamp()
+    });
+  }catch(err){
+    console.info('Online Wereldatlas-index opslaan overgeslagen',err?.message||err);
+  }
+}
+loadLocalWorldAtlas();
+installWorldAtlasInteractions();
 const FLOOR_Y = -17.35;
 // Map: cellKey -> [{id,type}, ...] in plaatsingsvolgorde.
 // Daardoor kan één vak tegelijk rotsen, gras, koraal, sponzen enz. bevatten.
@@ -885,6 +1264,44 @@ grid.material.transparent = true;
 grid.material.opacity = .28;
 grid.visible = false;
 scene.add(grid);
+
+const hexBoundaryGroup = new THREE.Group();
+hexBoundaryGroup.position.y = -17.18;
+hexBoundaryGroup.visible = false;
+scene.add(hexBoundaryGroup);
+function createHexBoundaryLine(radius,color,opacity){
+  const points=flatTopHexPoints(0,0,radius).map(point=>new THREE.Vector3(point.x,0,point.y));
+  points.push(points[0].clone());
+  const geometry=new THREE.BufferGeometry().setFromPoints(points);
+  const material=new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false});
+  return new THREE.LineLoop(geometry,material);
+}
+hexBoundaryGroup.add(
+  createHexBoundaryLine(HEX_WORLD_CONFIG.outerRadius,0x7fe2ff,.82),
+  createHexBoundaryLine(HEX_WORLD_CONFIG.outerRadius*HEX_WORLD_CONFIG.innerScale,0xe4fbf9,.95)
+);
+
+function pointInPolygon2D(x,y,points){
+  let inside=false;
+  for(let i=0,j=points.length-1;i<points.length;j=i++){
+    const xi=points[i].x, yi=points[i].y;
+    const xj=points[j].x, yj=points[j].y;
+    const intersects=((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi||Number.EPSILON)+xi);
+    if(intersects) inside=!inside;
+  }
+  return inside;
+}
+function isPointInsideHex(x,z,radius=hexWorldState.outerRadius){
+  return pointInPolygon2D(x,z,flatTopHexPoints(0,0,radius));
+}
+function isPointInsideBuildHex(x,z){
+  return isPointInsideHex(x,z,hexWorldState.outerRadius*hexWorldState.innerScale);
+}
+function isCellInsideBuildHex(ix,iz){
+  const x=(ix+0.5)*CELL-WORLD_HALF;
+  const z=(iz+0.5)*CELL-WORLD_HALF;
+  return isPointInsideBuildHex(x,z);
+}
 
 const selectionMat = new THREE.MeshBasicMaterial({
   color:0x7fe2ff,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide
@@ -1332,6 +1749,7 @@ function generateLandscapeSelection(a,b,densityName){
   let populated=0, addedLayers=0;
   for(let ix=minX;ix<=maxX;ix++){
     for(let iz=minZ;iz<=maxZ;iz++){
+      if(!isCellInsideBuildHex(ix,iz)) continue;
       const n=landscapeNoise(ix,iz,seed);
       const threshold=1-profile.coverage;
       if(n<threshold) continue;
@@ -1362,6 +1780,7 @@ function terrainSelectionCells(a,b){
   const out=[];
   for(let ix=Math.min(ca.ix,cb.ix);ix<=Math.max(ca.ix,cb.ix);ix++){
     for(let iz=Math.min(ca.iz,cb.iz);iz<=Math.max(ca.iz,cb.iz);iz++){
+      if(!isCellInsideBuildHex(ix,iz)) continue;
       out.push({ix,iz,key:cellKey(ix,iz)});
     }
   }
@@ -1470,6 +1889,7 @@ function generateRandomTerrain(){
 
   for(let ix=minI;ix<=maxI;ix++){
     for(let iz=minI;iz<=maxI;iz++){
+      if(!isCellInsideBuildHex(ix,iz)) continue;
       const x=ix*CELL, z=iz*CELL;
 
       // Lage frequenties voor glooiend terrein.
@@ -1498,6 +1918,7 @@ function generateRandomTerrain(){
     const next=new Map();
     for(let ix=minI;ix<=maxI;ix++){
       for(let iz=minI;iz<=maxI;iz++){
+        if(!isCellInsideBuildHex(ix,iz)) continue;
         let sum=(current.get(cellKey(ix,iz))||0)*4;
         let weight=4;
         const neighbors=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
@@ -1533,7 +1954,8 @@ function fillSelection(a,b){
   let minX=Math.min(ca.ix,cb.ix), maxX=Math.max(ca.ix,cb.ix);
   let minZ=Math.min(ca.iz,cb.iz), maxZ=Math.max(ca.iz,cb.iz);
   const type=worldBrush.value;
-  const count=(maxX-minX+1)*(maxZ-minZ+1);
+  const selectedCells=terrainSelectionCells(a,b);
+  const count=selectedCells.length;
   if(type==='auto'){
     generateLandscapeSelection(a,b,landscapeDensity.value);
     return;
@@ -1554,7 +1976,7 @@ function fillSelection(a,b){
     editorInfo.textContent=`Selectie te groot (${count} vakken). Maximaal ${maxCells} vakken per bewerking.`;
     return;
   }
-  for(let ix=minX;ix<=maxX;ix++) for(let iz=minZ;iz<=maxZ;iz++) addLayerToCell(ix,iz,type);
+  for(const cell of selectedCells) addLayerToCell(cell.ix,cell.iz,type);
   if(type==='removeTop') editorInfo.textContent=`Bovenste laag verwijderd in ${count} vakken. Over: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
   else if(type==='clear') editorInfo.textContent=`${count} vakken volledig leeggemaakt. Over: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
   else editorInfo.textContent=`${count} vakken kregen een extra laag ${worldBrush.options[worldBrush.selectedIndex].text}. Wereld: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
@@ -1567,7 +1989,7 @@ function setEditMode(on){
     camera.position.set(0,210,.01); camera.up.set(0,0,-1); camera.lookAt(0,-17.5,0);
     // Tijdens bouwen tonen we bewust alle ontworpen vakken. Bij terugkeer naar zwemmen wordt weer gestreamd.
     renderAllWorldCellsForEditor();
-    grid.visible=true; editBadge.classList.add('on'); editModeBtn.classList.add('active');
+    grid.visible=false; hexBoundaryGroup.visible=true; editBadge.classList.add('on'); editModeBtn.classList.add('active');
     editModeBtn.textContent='🌊 Terug naar zwemmen';
     document.getElementById('crosshair').style.display='none';
     hint.textContent='LANDSCHAPSEDITOR · geen water · vissen gepauzeerd · WASD verplaatsen · Q/E hoogte · klik op kaart om direct te reizen';
@@ -1576,7 +1998,7 @@ function setEditMode(on){
   }else{
     setLandscapeEditorMode(false);
     setTerrainInspectMode(false);
-    grid.visible=false; selection.visible=false; editBadge.classList.remove('on'); editModeBtn.classList.remove('active');
+    grid.visible=false; hexBoundaryGroup.visible=false; selection.visible=false; editBadge.classList.remove('on'); editModeBtn.classList.remove('active');
     editModeBtn.textContent='🧱 Wereld bouwen';
     document.getElementById('crosshair').style.display='';
     camera.up.set(0,1,0);
@@ -1646,6 +2068,7 @@ renderer.domElement.addEventListener('wheel',e=>{
 function worldData(){
   return {
     version:4,
+    hexWorld:worldHexMeta(),
     cellSize:CELL,
     worldHalf:WORLD_HALF,
     nextLayerId,
@@ -1670,6 +2093,8 @@ function restoreWorld(data){
   const savedWhale=validateWhaleRecord(data?.whale);
   if(data?.whale && !savedWhale)throw new Error('Ongeldige walvispositie in dit wereldbestand.');
   clearOrca();clearWhale();
+  applyWorldHexMeta(data?.hexWorld);
+  syncCurrentAtlasWorld();
   habitatRevision++;
   // Alleen door de editor geplaatste objecten verwijderen; het basisrif blijft intact.
   for(let i=reef.children.length-1;i>=0;i--){
@@ -1736,10 +2161,12 @@ async function loadCloudWorld(worldId){
     if(!snapshot.exists())throw new Error('Wereld niet gevonden');
     const record=snapshot.val();
     if(!record.world)throw new Error('Wereldbestand ontbreekt');
-    restoreWorld(record.world);
     currentCloudWorldId=worldId;
     currentCloudOwnerId=record.ownerId||null;
     cloudWorldName.value=record.name||'Gedeelde oceaanwereld';
+    restoreWorld(record.world);
+    syncCurrentAtlasWorld();
+    saveLocalWorldAtlas();
     history.replaceState(null,'',cloudWorldUrl(worldId));
     cloudStatus.textContent=currentCloudOwnerId===firebaseUser.uid
       ? 'Jouw online wereld is geladen.'
@@ -1770,6 +2197,9 @@ async function saveCloudWorld(){
     await set(ref(firebaseDatabase,`worlds/${worldId}`),record);
     currentCloudWorldId=worldId;
     currentCloudOwnerId=firebaseUser.uid;
+    syncCurrentAtlasWorld();
+    saveLocalWorldAtlas();
+    await saveRemoteWorldAtlasIndex(worldId,record);
     history.replaceState(null,'',cloudWorldUrl(worldId));
     cloudStatus.textContent='Wereld staat online. Gebruik “Deel wereld” om de link te kopiëren.';
   }catch(err){
@@ -1796,6 +2226,7 @@ onAuthStateChanged(firebaseAuth,user=>{
   setCloudBusy(false);
   if(user){
     cloudStatus.textContent='Firebase verbonden. Je kunt deze wereld online bewaren.';
+    loadRemoteWorldAtlasIndex();
     if(currentCloudWorldId)loadCloudWorld(currentCloudWorldId);
   }
 });
