@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Microleven · Ocean Simulator</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#08222c;color:#eef5ed;font:15px system-ui}header,footer{padding:20px 28px;max-width:1500px;margin:auto}small{color:#87c4bd;letter-spacing:.12em;text-transform:uppercase}h1{font-size:26px;font-weight:550;margin:5px 0 9px}p{color:#b8cdc6;line-height:1.5;margin:8px 0}nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}button,select,a{font:inherit;padding:9px 12px;border:1px solid #46696d;border-radius:7px;background:#17424b;color:#eaf4ed;text-decoration:none}button[aria-pressed=true]{background:#e4bc89;border-color:#e4bc89;color:#15333a}label{display:flex;align-items:center;gap:7px}input[type=range]{width:90px;accent-color:#e4bc89}input:disabled{opacity:.4}#stage{height:66vh;min-height:390px;position:relative}canvas{display:block;width:100%;height:100%}#caption{position:absolute;bottom:18px;left:28px;right:28px;width:fit-content;max-width:90%;background:#09272bd9;padding:12px 15px;border-radius:7px;font-size:13px;pointer-events:none}footer{font-size:13px}#status{font-variant-numeric:tabular-nums}@media(max-width:600px){header,footer{padding:14px}h1{font-size:22px}#caption{left:14px;right:14px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"}}</script>
+</head><body>
+<header><small>Ocean Simulator / Microleven</small><h1>Een rif leeft ook tussen de koralen.</h1>
+<p>Bekijk de kleine dieren van dichtbij en ontdek hun bewegingen op de rifbodem.</p>
+<nav><button id="detailed" aria-pressed="true">Verbeterd</button><button id="classic" aria-pressed="false">Eerdere versie</button>
+<label>Bekijk <select id="species"><option value="habitat">Rifbodem</option><option value="shrimp">Garnaal</option><option value="starfish">Zeester</option><option value="urchin">Zee-egel</option><option value="shell">Schelp</option><option value="crab">Krab</option><option value="minnow">Schoolvis dichtbij</option><option value="schools">Bewegende scholen</option><option value="plankton">Planktonlagen</option></select></label>
+<button id="encounter">Laat een grote vis naderen</button><button id="pause" aria-pressed="false">Pauzeren</button><label>Draai <input id="angle" type="range" min="-180" max="180" value="20"></label>
+<label>Detail <select id="quality"><option value="high">Hoog</option><option value="medium">Gebalanceerd</option><option value="low">Licht</option></select></label>
+<label><input id="particles" type="checkbox" checked>Plankton</label>
+<a id="oceanLink" href="../?scene=reference&amp;reef=organic" target="_blank" rel="noopener">In de oceaan ↗</a></nav></header>
+<main id="stage"><div id="caption"></div></main>
+<footer><div id="status" role="status">Microleven laden…</div><p>Dit zijn de modellen en gedragingen uit de simulator. Close-ups vergroten het beeld; de dieren zelf blijven klein. De proefopstelling heeft vaste belichting.</p></footer>
+<script type="module" src="./micro-life-review.js"></script>
+</body></html>
