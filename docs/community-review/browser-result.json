@@ -5,11 +5,13 @@
     "freeSwim": true,
     "fishFollow": true,
     "schoolFollow": true,
-    "editor": true
+    "editor": true,
+    "hexBoundary": true
   },
   "errors": [],
   "cloudWrites": 0,
   "ownDraftPreserved": true,
   "oppositeEntrance": true,
-  "deepSwimming": true
+  "deepSwimming": true,
+  "atlasRouteRecovered": true
 }

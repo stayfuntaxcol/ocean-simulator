@@ -27,7 +27,7 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
   let html=await fs.readFile(root+'/index.html','utf8');
   const qa=`
    const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
-   window.__communityQA={state:()=>({id:communityOcean.activeId,busy:communityOcean.busy,cells:worldData().cells,position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),editable:canEditCurrentWorld(),status:communityOcean.lastStatus,floor:terrainHeightAt(camera.position.x,camera.position.z)}),
+   window.__communityQA={state:()=>({id:communityOcean.activeId,busy:communityOcean.busy,cells:worldData().cells,position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),editable:canEditCurrentWorld(),status:communityOcean.lastStatus,floor:terrainHeightAt(camera.position.x,camera.position.z),neighbors:SIDES.map((_,side)=>communityOcean.engine.neighbor(side))}),
     navigation:()=>{
       const check=(condition,message)=>{if(!condition)throw Error(message);};
       const pose=camera.position.clone(),rotation=camera.quaternion.clone(),zoom=minimapZoom;
@@ -64,6 +64,8 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
         }
         startFollowing(probe,'fish');setEditMode(true);
         check(editMode&&followMode===null,'entering editor stops follow camera');camera.updateMatrixWorld(true);
+        check(hexBoundaryGroup.visible,'hex boundary is visible in editor');
+        check(hexBoundaryGroup.children.length===2&&hexBoundaryGroup.children.every(line=>line.material.depthTest===false),'hex boundary stays above raised terrain');
         for(const [x,z] of [[-24,-24],[24,-24],[-24,24],[24,24]]){
           const projected=new THREE.Vector3(x,-18,z).project(camera);
           check(projected.x*x>0&&projected.y*z<0,'editor landmark matches map quadrant');
@@ -74,7 +76,7 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
         teleportEditorTo(target.x,target.z);check(camera.position.x===-72&&camera.position.z===-72,'editor map teleport');
         camera.updateMatrixWorld(true);check(new THREE.Vector3(-72,-18,-90).project(camera).y>0,'editor stays north-up after teleport');
         drawMinimap();check(angle===0,'editor map arrow points north');
-        setEditMode(false);return {maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true};
+        setEditMode(false);return {maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true,hexBoundary:true};
       }finally{
         if(editMode)setEditMode(false);stopFollowing(false);scene.remove(probe);schools.delete('navigation-probe');
         minimapCtx.translate=originalTranslate;minimapCtx.rotate=originalRotate;
@@ -95,7 +97,7 @@ await page.goto('http://127.0.0.1:8765/?world=A&reef=organic');
 await page.waitForFunction(()=>window.__communityQA?.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual(errors,[]);
 const navigation=await page.evaluate(()=>window.__communityQA.navigation());
-assert.deepEqual(navigation,{maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true});
+assert.deepEqual(navigation,{maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true,hexBoundary:true});
 await page.evaluate(()=>window.__communityQA.edit());
 const own=await page.evaluate(()=>window.__communityQA.state());assert.equal(own.cells[0].layers.length,2);
 await page.locator('#journeyAtlas').click();
@@ -123,9 +125,24 @@ assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
 state=await page.evaluate(()=>window.__communityQA.state());assert.deepEqual(state.cells,own.cells);assert.equal(state.editable,true);
 await page.locator('#journeyMenu').click();assert.ok(await page.evaluate(()=>{const e=document.getElementById('hud');return e.scrollHeight>e.clientHeight&&getComputedStyle(e).overflowY==='auto';}));
 assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
+
+// De atlas is de duurzame fallback wanneer browser-/poortwijzigingen de losse
+// bezoekroute wissen. Na herladen moeten het hexkader en de doorgang terugkomen.
+await page.evaluate(()=>localStorage.removeItem('fiveLoavesOceanVisitRoutesV1'));
+await page.reload({waitUntil:'load'});
+await page.waitForFunction(()=>window.__communityQA?.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
+state=await page.evaluate(()=>window.__communityQA.state());assert.equal(state.neighbors[0],'B','north route restored from atlas');
+await page.locator('#journeyAtlas').click();assert.equal(await page.locator('#worldAtlasSvg .atlas-world').count(),2,'saved atlas hexes remain visible');
+await page.locator('#worldAtlasClose').click();
+await page.evaluate(()=>window.__communityQA.cross());
+await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
+assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true,'restored route remains swimmable');
+await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
+assert.deepEqual(errors,[]);
+
 await page.setViewportSize({width:390,height:844});await page.locator('#journeyAtlas').click();
 assert.ok(await page.evaluate(()=>{const e=document.getElementById('worldAtlasDetails');e.scrollTop=e.scrollHeight;return e.clientHeight>0&&e.scrollTop>0;}),'mobile atlas form scrolls');
 await page.screenshot({path:artifacts+'/mobile-atlas.png'});
-console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
-await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true},null,2));
+console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
+await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true},null,2));
 }finally{await browser.close();}

@@ -51,6 +51,22 @@ export function installCommunityOcean(api) {
     }catch(error){camera.position.copy(oldPosition);camera.quaternion.copy(oldQuaternion);throw error;}
     finally{requestAnimationFrame(()=>veil.classList.remove('visible'));}
   }});
+  function restoreAtlasPositions({refresh=true}={}) {
+    let restored=0;
+    for(const world of api.getAtlasWorlds?.()??[]){
+      if(!world?.id||engine.positions.has(world.id)||!Number.isSafeInteger(world.hexQ)||!Number.isSafeInteger(world.hexR))continue;
+      try{
+        const position={hexQ:world.hexQ,hexR:world.hexR};
+        engine.setPosition(world.id,position);localRoutes.set(world.id,position);restored++;
+      }catch{
+        // Een oude dubbele positie blijft wel zichtbaar in de atlas, maar wordt
+        // niet stilzwijgend als doorgang geactiveerd.
+      }
+    }
+    if(restored){persist();rebuild();}
+    if(refresh)refreshHUD();
+    return restored;
+  }
   function firstFree(origin={hexQ:0,hexR:0}) {
     const occupied=new Set([...engine.positions.values()].map(p=>`${p.hexQ},${p.hexR}`));
     const queue=[origin],seen=new Set();
@@ -71,7 +87,9 @@ export function installCommunityOcean(api) {
     for(const [other,p] of localRoutes){try{engine.setPosition(other,p);}catch{localRoutes.delete(other);}}
     let p=engine.positions.get(id)??fixedHexMeta(record.world.hexWorld);
     if([...engine.positions].some(([other,v])=>other!==id&&v.hexQ===p.hexQ&&v.hexR===p.hexR))p=firstFree(p);
-    engine.setCurrent(id,record,p);localRoutes.set(id,{hexQ:p.hexQ,hexR:p.hexR});persist();rebuild();refreshHUD();
+    engine.setCurrent(id,record,p);localRoutes.set(id,{hexQ:p.hexQ,hexR:p.hexR});
+    restoreAtlasPositions({refresh:false});
+    persist();rebuild();refreshHUD();
   }
   function refreshHUD() {
     const record=capture(),worldName=document.getElementById('journeyWorldName'),permission=document.getElementById('journeyPermission');
@@ -145,7 +163,7 @@ export function installCommunityOcean(api) {
   document.getElementById('journeyMenu').onclick=()=>api.openMenu();
   addEventListener('pagehide',()=>{disposed=true;engine.dispose();clearTerrain();scene.remove(terrainGroup);},{once:true});
   syncCurrent();
-  return {update,syncCurrent,refreshHUD,rebuild,connectWorld,visit,approach,
+  return {update,syncCurrent,refreshHUD,rebuild,connectWorld,visit,approach,restoreAtlasPositions,
     positionFor:id=>engine.positions.get(id),
     sample:(x,z)=>sample?sample(activeId,x,z):null,
     get busy(){return engine.busy;},get activeId(){return activeId;},get lastStatus(){return lastStatus;},

@@ -135,6 +135,8 @@
     .atlas-world-inner{fill:rgba(205,238,240,.9);stroke:rgba(255,255,255,.88);stroke-width:1.5}
     .atlas-world-current .atlas-world-outer{fill:rgba(55,199,231,.42);stroke:#baf6ff;stroke-width:3}
     .atlas-world-current .atlas-world-inner{fill:rgba(224,251,249,.96)}
+    .atlas-world-unconnected .atlas-world-outer{stroke-dasharray:8 6;opacity:.68}
+    .atlas-world-unconnected .atlas-world-inner{fill:rgba(132,177,188,.38);opacity:.72}
     .atlas-world-empty{fill:rgba(255,255,255,.035);stroke:rgba(181,241,255,.36);stroke-width:2;stroke-dasharray:8 7}
     .atlas-world-empty:hover{fill:rgba(127,226,255,.12);stroke:#7fe2ff}
     .atlas-world-label{font:700 13px Arial,sans-serif;fill:#06303b;pointer-events:none;text-anchor:middle}
@@ -413,7 +415,7 @@ import { installFishLibrary } from './library/FishLibrary.js';
 import { parseFish, createThumbnails, importFishFile, disposeFish } from './library/FishAssets.js';
 import { getFish } from './library/FishStore.js';
 import { clone as cloneFishModel } from 'three/addons/utils/SkeletonUtils.js';
-import { fixedHexMeta, neighborSide, closestInHex, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
+import { fixedHexMeta, neighborSide, closestInHex, apothem, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
 import { mapBounds, mapPoint, worldPoint, mapHeading } from './worlds/MapNavigation.js';
 import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -1063,6 +1065,9 @@ function createSvgElement(name,attrs={}){
   return element;
 }
 function atlasWorldIsCurrent(world){ return world?.id===currentAtlasWorldId(); }
+function atlasWorldIsConnected(world){
+  return atlasWorldIsCurrent(world)||!communityOcean||Boolean(communityOcean.positionFor(world?.id));
+}
 function updateAtlasViewBox(){
   const svg=document.getElementById('worldAtlasSvg');
   if(!svg) return;
@@ -1094,12 +1099,21 @@ function selectAtlasWorld(world){
   const enter=document.getElementById('worldAtlasEnterBtn');
   const prepare=document.getElementById('worldAtlasPrepareBtn');
   if(title) title.textContent=world.name||'Oceaanwereld';
-  if(textElement) textElement.textContent=atlasWorldIsCurrent(world)
+  const current=atlasWorldIsCurrent(world),connected=atlasWorldIsConnected(world);
+  if(textElement) textElement.textContent=current
     ? 'Dit is de wereld waarin je nu werkt.'
-    : 'Een verbonden buurwereld kun je bezoeken. Andere werelden verbind je hieronder met een vrije zijde.';
+    : connected
+      ? 'Deze buurwereld is verbonden en kan direct worden bezocht.'
+      : 'Deze bekende wereld staat nog in je atlas. Herstel de verbinding hieronder om er weer naartoe te zwemmen.';
   atlasStats(world);
-  if(enter){ enter.hidden=atlasWorldIsCurrent(world); enter.dataset.worldId=world.id; }
-  if(prepare) prepare.hidden=true;
+  if(enter){ enter.hidden=current||!connected; enter.dataset.worldId=world.id; }
+  if(prepare){
+    prepare.hidden=current||connected;
+    prepare.textContent='Verbinding met deze wereld herstellen';
+    prepare.dataset.q=world.hexQ;
+    prepare.dataset.r=world.hexR;
+    prepare.dataset.worldId=world.id;
+  }
   setAtlasStatus('');
 }
 function selectAtlasEmpty(position){
@@ -1113,7 +1127,13 @@ function selectAtlasEmpty(position){
   if(textElement) textElement.textContent=`Deze positie grenst aan een bestaande wereld: ${position.name}.`;
   atlasStats(null);
   if(enter) enter.hidden=true;
-  if(prepare){ prepare.hidden=false; prepare.dataset.q=position.q; prepare.dataset.r=position.r; }
+  if(prepare){
+    prepare.hidden=false;
+    prepare.textContent='Hier een wereld verbinden';
+    prepare.dataset.q=position.q;
+    prepare.dataset.r=position.r;
+    delete prepare.dataset.worldId;
+  }
   setAtlasStatus('De overgangszone wordt pas gemaakt wanneer hier een nieuwe wereld naast wordt geplaatst.');
 }
 function renderWorldAtlas(){
@@ -1124,7 +1144,6 @@ function renderWorldAtlas(){
   const occupied=new Set();
   const visibleWorlds=[...worldAtlasState.worlds.values()].sort((a,b)=>Number(atlasWorldIsCurrent(b))-Number(atlasWorldIsCurrent(a))).filter(world=>{
     const position=communityOcean?.positionFor(world.id);
-    if(communityOcean&&!position)return false;
     if(position)Object.assign(world,position);
     const key=axialKey(world.hexQ,world.hexR);if(occupied.has(key))return false;occupied.add(key);return true;
   });
@@ -1136,11 +1155,12 @@ function renderWorldAtlas(){
   });
   visibleWorlds.forEach(world=>{
     const point=axialToAtlas(world.hexQ,world.hexR);
-    const group=createSvgElement('g',{class:`atlas-world${atlasWorldIsCurrent(world)?' atlas-world-current':''}`,tabindex:'0'});
+    const current=atlasWorldIsCurrent(world),connected=atlasWorldIsConnected(world);
+    const group=createSvgElement('g',{class:`atlas-world${current?' atlas-world-current':''}${connected?'':' atlas-world-unconnected'}`,tabindex:'0'});
     const outer=createSvgElement('polygon',{class:'atlas-world-outer',points:svgPoints(flatTopHexPoints(point.x,point.y,100))});
     const inner=createSvgElement('polygon',{class:'atlas-world-inner',points:svgPoints(flatTopHexPoints(point.x,point.y,100*HEX_WORLD_CONFIG.innerScale))});
     const label=createSvgElement('text',{class:'atlas-world-label',x:point.x,y:point.y-4}); label.textContent=(world.name||'Wereld').slice(0,22);
-    const sub=createSvgElement('text',{class:'atlas-world-sub',x:point.x,y:point.y+16}); sub.textContent=atlasWorldIsCurrent(world)?'HIER BEN JE':'Wereld';
+    const sub=createSvgElement('text',{class:'atlas-world-sub',x:point.x,y:point.y+16}); sub.textContent=current?'HIER BEN JE':connected?'VERBONDEN':'HERSTELLEN';
     group.append(outer,inner,label,sub);
     group.addEventListener('click',()=>{selectAtlasWorld(world);renderWorldAtlas();});
     group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectAtlasWorld(world);renderWorldAtlas();}});
@@ -1198,6 +1218,7 @@ function installWorldAtlasInteractions(){
     const side=origin?neighborSide(origin,{hexQ:q,hexR:r}):-1;
     if(side<0){setAtlasStatus('Kies een positie naast je huidige wereld.');return;}
     document.getElementById('journeyDirection').value=String(side);
+    if(event.currentTarget.dataset.worldId) document.getElementById('journeyWorldLink').value=event.currentTarget.dataset.worldId;
     document.getElementById('journeyWorldLink').focus();
     setAtlasStatus('Plak een bestaande wereldlink en kies “Verbind bezoekwereld”.');
   });
@@ -1228,6 +1249,7 @@ async function loadRemoteWorldAtlasIndex(){
     if(snapshot.exists()){
       const index=snapshot.val();
       Object.entries(index||{}).filter(([,world])=>world.visibility==='public'||world.ownerId===firebaseUser.uid).forEach(([id,world])=>registerAtlasWorld({id,...world}));
+      communityOcean?.restoreAtlasPositions?.();
       communityOcean?.refreshHUD();
       saveLocalWorldAtlas();
       if(document.getElementById('worldAtlasOverlay')?.classList.contains('open')) renderWorldAtlas();
@@ -1305,6 +1327,26 @@ function drawMinimap(){
     ctx.fillRect(px0,Math.min(py0,py1),Math.max(1,px1-px0),Math.max(1,Math.abs(py1-py0)));
   }
 
+  // De vaste binnen- en buitenrand blijven op de navigatiekaart zichtbaar.
+  function drawHexMapBoundary(radius,stroke,dash=[]){
+    const points=flatTopHexPoints(0,0,radius).map(point=>mapPoint({x:point.x,z:point.y},bounds,w,h));
+    ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.setLineDash(dash);ctx.beginPath();
+    points.forEach((point,index)=>index?ctx.lineTo(point.x,point.y):ctx.moveTo(point.x,point.y));
+    ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+  }
+  drawHexMapBoundary(HEX_WORLD_CONFIG.outerRadius,'rgba(127,226,255,.72)');
+  drawHexMapBoundary(HEX_WORLD_CONFIG.outerRadius*HEX_WORLD_CONFIG.innerScale,'rgba(228,251,249,.50)',[6,5]);
+
+  // Verbonden zijden zijn helderder, zodat de doorgang tijdens het zwemmen terug te vinden is.
+  for(const [side,direction] of HEX_DIRECTIONS.entries()){
+    if(!communityOcean?.engine?.neighbor(side))continue;
+    const center={x:direction.nx*apothem(HEX_WORLD_CONFIG.outerRadius),z:direction.nz*apothem(HEX_WORLD_CONFIG.outerRadius)};
+    const tangent={x:-direction.nz,z:direction.nx},half=HEX_WORLD_CONFIG.outerRadius*.28;
+    const a=mapPoint({x:center.x+tangent.x*half,z:center.z+tangent.z*half},bounds,w,h);
+    const b=mapPoint({x:center.x-tangent.x*half,z:center.z-tangent.z*half},bounds,w,h);
+    ctx.strokeStyle='rgba(74,229,255,.98)';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  }
+
   // Actieve streaming-radius rond speler.
   const px=sx(camera.position.x), py=sy(camera.position.z);
   const radiusPx=CULL_RADIUS/(maxX-minX)*w;
@@ -1370,8 +1412,11 @@ function createHexBoundaryLine(radius,color,opacity){
   const points=flatTopHexPoints(0,0,radius).map(point=>new THREE.Vector3(point.x,0,point.y));
   points.push(points[0].clone());
   const geometry=new THREE.BufferGeometry().setFromPoints(points);
-  const material=new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false});
-  return new THREE.LineLoop(geometry,material);
+  const material=new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false,depthTest:false,toneMapped:false});
+  const line=new THREE.LineLoop(geometry,material);
+  line.renderOrder=950;
+  line.frustumCulled=false;
+  return line;
 }
 hexBoundaryGroup.add(
   createHexBoundaryLine(HEX_WORLD_CONFIG.outerRadius,0x7fe2ff,.82),
