@@ -2,6 +2,28 @@
 
 Interactieve oceaansimulator gebouwd met Three.js.
 
+## Nieuw: Mijn visbibliotheek
+
+Bewaar handgemaakte vissen met een naam, maker en voorbeeld. Open **Mijn
+visbibliotheek** in de studio of oceaan om te zoeken, favorieten te bewaren,
+verder te ontwerpen of 1, 8, 20 of 50 vissen te plaatsen. Voeg oude GLB-bestanden
+eenmalig toe, ook meerdere tegelijk. Deel een gedownload GLB-bestand met andere
+gebruikers; nieuwe ontwerpen bewaren daarin ook de verflagen.
+
+De bibliotheek blijft lokaal in deze browser bewaard en gebruikt geen Firebase.
+Zie [gebruik en beperkingen](docs/fish-library.md).
+
+## Leefbaarheid en natuurlijke groei
+
+Een normale wereld begint nu zonder vissen. Koraal, zeegras, sponzen, anemonen,
+rotsen, gemengde habitat en lavabronnen bepalen de draagkracht van lokale
+voedselzones. Natuurlijke soorten verschijnen gefaseerd en alle scholen migreren
+regelmatig naar nieuwe zones. Alleen geïmporteerde vissen hebben individuele
+health en een voedselreserve van 3–6 minuten. Op 20% zwemmen ze trager; op 5%
+stoppen ze, zakken naar de bodem en verdwijnen uiteindelijk in het zand. Deze
+runtimeberekening voegt geen Firebase-data toe. Zie
+[leefbaarheid en draagkracht](docs/ecosystem.md).
+
 ## Nieuw: natuurlijk microleven
 
 Krabben leven solitair bij rotsen, maken korte zijwaartse voedseltochten en keren

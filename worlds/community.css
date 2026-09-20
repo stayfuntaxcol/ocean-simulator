@@ -1,0 +1,21 @@
+#hud{max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+#hud.swimming{display:none}
+#journeyHud{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:14;max-width:min(480px,calc(100vw - 32px));padding:10px 14px;border:1px solid #90cbd638;border-radius:12px;background:#06232bdc;backdrop-filter:blur(8px);font-size:12px}
+#journeyHud strong{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#journeyPermission{display:block;color:#b9ddd9;margin-top:3px}
+#journeyStatus{color:#cae5e6;margin:6px 0 0;line-height:1.35}
+#journeyHud button,#journeyConnect,#journeyKnownWorlds,#journeyDirection{padding:7px 9px;border:1px solid #89b7c05c;border-radius:7px;color:#ecf8f8;background:#18424b;cursor:pointer;font:inherit}
+#journeyHud button{margin-top:7px}
+#journeyRouteForm{margin-top:18px;border-top:1px solid #89b7c044;padding-top:12px;display:grid;gap:8px}
+#journeyRouteForm label{font-size:12px;display:grid;gap:5px}
+#journeyWorldLink{width:100%;min-width:0;box-sizing:border-box;padding:9px;border:1px solid #89b7c05c;border-radius:7px;background:#102b36;color:#effaff}
+#journeyRouteForm small{color:#a3c5cc;font-size:11px;line-height:1.4}
+#journeyNeighbors{display:grid;gap:5px;margin-top:10px}
+#journeyNeighbors button{text-align:left;font-size:12px}
+#journeyNeighbors button:disabled{opacity:.5;cursor:default}
+#journeyWaterVeil{position:fixed;inset:0;z-index:70;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 45% 20%,#23687d,#062d43 62%,#031e30);transition:opacity .16s ease}
+#journeyWaterVeil.visible{opacity:1}
+#worldAtlasDetails{overflow-y:auto;min-height:0}
+#atlasCompass{position:absolute;top:12px;right:16px;z-index:1;color:#d8f7ff;font-weight:bold;pointer-events:none}
+@media(max-width:900px){#journeyHud{top:auto;bottom:10px;left:10px;transform:none;max-width:calc(100vw - 210px)}#journeyStatus{max-height:56px;overflow:auto}}
+@media(prefers-reduced-motion:reduce){#journeyWaterVeil{transition:none}}

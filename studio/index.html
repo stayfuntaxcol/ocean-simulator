@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Fish Skin Studio v6 — Mirrored Side Mapping</title>
+<title>Fish Studio — Mijn vissen</title>
+<link rel="stylesheet" href="../library/library.css">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.179.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/"}}</script>
 <style>
 :root{--bg:#eef5f6;--panel:#fff;--ink:#17343d;--muted:#69838b;--line:#c9dadd;--active:#dff5f8}
 *{box-sizing:border-box}
@@ -22,11 +24,22 @@ button,select,input{font:inherit}
 .help{font-size:13px;line-height:1.45;color:var(--muted);margin-top:8px}
 .sw{width:34px;height:34px;border-radius:8px;border:1px solid #9eb4ba}
 .badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.48);color:white;padding:6px 9px;border-radius:8px;font-size:12px}
+.studio-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin:14px 0 22px}.studio-header h1{font-size:27px;margin:0}.studio-header p{margin:5px 0;font-size:13px;color:#597476}.studio-save{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:16px;background:#f7fbf6;border:1px solid #cddedc;border-radius:14px;margin-bottom:16px}.studio-save label{display:grid;gap:5px;font-size:12px}.studio-save input{min-height:42px;max-width:240px;padding:9px;border:1px solid #cddedc;border-radius:8px}.studio-primary{background:#16695e;color:white;border-color:#16695e}.studio-status{font-size:13px;min-height:22px;margin:0 0 10px;color:#225e50}.studio-status.error{color:#a04124}.studio-save a{font-size:13px;color:#225e50}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
 @media(max-width:840px){.grid{grid-template-columns:1fr}#preview{height:420px}.app{padding:8px}}
 </style>
 </head>
 <body>
 <div class="app">
+  <header class="studio-header"><div><h1>Fish Studio</h1><p>Ontwerp een vis. Bewaar hem. Breng je oceaan tot leven.</p></div><button id="openFishLibrary" class="btn">Mijn visbibliotheek</button></header>
+  <div class="studio-save">
+    <label>Naam van je vis<input id="designName" maxlength="80" placeholder="Bijvoorbeeld: Regenboogje" value="Mijn clownvis"></label>
+    <label>Maker (optioneel)<input id="designAuthor" maxlength="60" placeholder="Jouw naam"></label>
+    <button id="saveDesign" class="btn studio-primary" disabled>Bewaar in bibliotheek</button>
+    <button id="saveDesignCopy" class="btn" disabled>Bewaar als nieuwe vis</button>
+    <button id="designToOcean" class="btn" disabled>Bewaar & naar oceaan</button>
+    <a id="returnOcean" href="../">Terug naar oceaan</a>
+  </div>
+  <p id="designStatus" class="studio-status" role="status">Je bibliotheek blijft bewaard in deze browser. Gebruik ‘Download deelbestand’ voor een reservekopie of om een vis uit te wisselen.</p>
   <div class="row">
     <select id="species" class="sel">
       <option value="clown">Clownvis</option>
@@ -88,12 +101,30 @@ button,select,input{font:inherit}
 </div>
 
 <script type="module">
+import {installFishLibrary} from '../library/FishLibrary.js';
+import {saveFish,getFish} from '../library/FishStore.js';
+import {createThumbnails,downloadFish} from '../library/FishAssets.js';
+import {validateProject} from '../library/FishFormat.js';
 const $=s=>document.querySelector(s);
 const editor=$('#editor'),ctx=editor.getContext('2d');
 const speciesEl=$('#species'),patternEl=$('#pattern'),colorEl=$('#color'),sizeEl=$('#size');
 const W=960,H=600;
 let active='body',tool='brush',drawing=false,last=null;
 let storybookMode=false;
+let currentDesignId=null;
+let studioBusy=false;
+const studioParams=new URLSearchParams(location.search);
+const oceanURL=new URL('../',location.href);
+if(studioParams.get('world'))oceanURL.searchParams.set('world',studioParams.get('world'));
+$('#returnOcean').href=oceanURL.href;
+function studioMessage(text,error=false){$('#designStatus').textContent=text;$('#designStatus').classList.toggle('error',error);}
+function goToOcean(record,count=8){const url=new URL(oceanURL);url.searchParams.set('fish',record.id);url.searchParams.set('count',count);location.href=url.href;}
+const fishLibrary=installFishLibrary({
+  onPlace:goToOcean,placeLabel:'Open oceaan met deze vis',
+  onEdit:record=>openDesign(record),
+  onNew:()=>{if(!confirm('Een nieuw ontwerp beginnen? Bewaar eerst je huidige ontwerp.'))return;currentDesignId=null;$('#designName').value='Mijn nieuwe vis';applyCurrentSelection({resetPaint:true});studioMessage('Nieuw ontwerp. Geef je vis een naam en bewaar hem in je bibliotheek.');}
+});
+$('#openFishLibrary').onclick=()=>fishLibrary.open(currentDesignId);
 const history={body:[],tail:[]};
 const redoHistory={body:[],tail:[]};
 
@@ -744,7 +775,7 @@ const preview=$('#preview');
 let THREE,scene,camera,renderer,fish,tailMesh,drag=false,lx=0,ly=0,yaw=.2,pitch=.03,swimming=false;
 
 try{
- THREE=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/+esm');
+ THREE=await import('three');
  scene=new THREE.Scene();scene.background=new THREE.Color(0x143f4c);scene.fog=new THREE.Fog(0x143f4c,12,32);
  camera=new THREE.PerspectiveCamera(45,1,.1,100);camera.position.set(0,0,10);
  renderer=new THREE.WebGLRenderer({canvas:preview,antialias:true});
@@ -966,7 +997,13 @@ try{
  }
 
  window.buildFish=function(){
-   if(fish)scene.remove(fish);
+   contourMap=buildContourMap();
+   if(fish){
+     scene.remove(fish);
+     const geometries=new Set(),materials=new Set();
+     fish.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)materials.add(o.material);});
+     geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
+   }
    fish=new THREE.Group();
    fish.name='DorcasFish';
    fish.userData.species=speciesEl.value;
@@ -1222,52 +1259,48 @@ try{
  $('#swim').onclick=()=>swimming=true;
  $('#stop').onclick=()=>{swimming=false;fish.position.set(0,0,0)};
 
- $('#exportGLB').onclick=async()=>{
-   if(!fish)return;
-   const btn=$('#exportGLB');
-   const oldText=btn.textContent;
-   btn.disabled=true;
-   btn.textContent='Exporteren…';
-   try{
-     // GLTFExporter embeds the current canvas textures into one portable GLB.
-     const {GLTFExporter}=await import('https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/exporters/GLTFExporter.js/+esm');
-
-     const oldPos=fish.position.clone();
-     const oldRot=fish.rotation.clone();
-     const oldTailRot=tailMesh?tailMesh.rotation.clone():null;
-
-     // Export a neutral model; swimming motion is added by the simulator.
-     fish.position.set(0,0,0);
-     fish.rotation.set(0,0,0);
-     if(tailMesh)tailMesh.rotation.set(0,0,0);
-     fish.updateMatrixWorld(true);
-
-     const exporter=new GLTFExporter();
-     const result=await exporter.parseAsync(fish,{binary:true,onlyVisible:true});
-     const blob=new Blob([result],{type:'model/gltf-binary'});
-     const url=URL.createObjectURL(blob);
-     const a=document.createElement('a');
-     const safePattern=(patternEl.value||'custom').replace(/[^a-z0-9_-]+/gi,'-');
-     a.href=url;
-     a.download=`fish_${speciesEl.value}_${safePattern}.glb`;
-     document.body.appendChild(a);
-     a.click();
-     a.remove();
-     setTimeout(()=>URL.revokeObjectURL(url),1500);
-
-     fish.position.copy(oldPos);
-     fish.rotation.copy(oldRot);
-     if(tailMesh&&oldTailRot)tailMesh.rotation.copy(oldTailRot);
-     btn.textContent='✓ GLB geëxporteerd';
-     setTimeout(()=>btn.textContent=oldText,1400);
-   }catch(err){
-     console.error(err);
-     alert('Exporteren is niet gelukt. Open de studio in Chrome/Edge met internetverbinding en probeer opnieuw.');
-     btn.textContent=oldText;
-   }finally{
-     btn.disabled=false;
+ async function storeDesign(copy=false,allowDownloadFallback=false){
+   const name=$('#designName').value.trim();if(!name)throw Error('Geef je vis eerst een naam.');
+   const project={version:1,species:speciesEl.value,pattern:patternEl.value,storybook:storybookMode,
+     palette,storyBluePalette,flatGreenPalette,orangeStoryPalette,
+     layers:Object.fromEntries(['body','tail'].map(part=>[part,{base:layers[part].base.toDataURL('image/png'),paint:layers[part].paint.toDataURL('image/png')}]))};
+   const neutral=fish.clone(true);neutral.position.set(0,0,0);neutral.rotation.set(0,0,0);
+   neutral.getObjectByName('Tail')?.rotation.set(0,0,0);
+   neutral.name=name;neutral.userData={species:speciesEl.value,fishStudio:project,fishLibrary:{name,author:$('#designAuthor').value.trim()}};
+   neutral.updateMatrixWorld(true);
+   const {GLTFExporter}=await import('three/addons/exporters/GLTFExporter.js');
+   const buffer=await new GLTFExporter().parseAsync(neutral,{binary:true,onlyVisible:true});
+   const thumbnails=createThumbnails();let thumbnail;
+   try{thumbnail=thumbnails.render(neutral);}finally{thumbnails.dispose();}
+   const record={id:copy?undefined:currentDesignId,name,author:$('#designAuthor').value,species:speciesEl.value,
+     project,thumbnail,blob:new Blob([buffer],{type:'model/gltf-binary'}),source:'studio'};
+   let result;
+   try{result=await saveFish(record);}catch(error){
+     if(allowDownloadFallback)return {...record,saveError:error.message||'Browseropslag is niet beschikbaar.'};
+     throw error;
    }
- };
+   currentDesignId=result.id;
+   studioMessage(result.duplicate?'Dit ontwerp staat al in je bibliotheek.':`‘${name}’ bewaard. Je kunt hem terugvinden via Mijn visbibliotheek.`);
+   return getFish(result.id);
+ }
+ async function studioAction(action){
+   if(studioBusy)return;studioBusy=true;$('.app').inert=true;studioMessage('Je ontwerp wordt bewaard…');
+   try{await action();}catch(error){console.error(error);studioMessage(error.message||'Bewaren is niet gelukt. Download je ontwerp en probeer opnieuw.',true);}
+   finally{studioBusy=false;$('.app').inert=false;}
+ }
+ $('#saveDesign').onclick=()=>studioAction(()=>storeDesign());
+ $('#saveDesignCopy').onclick=()=>studioAction(()=>storeDesign(true));
+ $('#designToOcean').onclick=()=>studioAction(async()=>goToOcean(await storeDesign()));
+ $('#exportGLB').textContent='Download deelbestand';
+ $('#exportGLB').onclick=()=>studioAction(async()=>{
+   const record=await storeDesign(false,true);await downloadFish(record);
+   studioMessage(record.saveError?`Deelbestand gedownload. Bewaren in deze browser mislukte: ${record.saveError}`:'Bewaard én gedownload. Dit GLB-bestand bevat je verflagen. De ontvanger kiest ‘Bestanden toevoegen’ in de visbibliotheek.',!!record.saveError);
+ });
+ for(const id of ['saveDesign','saveDesignCopy','designToOcean'])$('#'+id).disabled=false;
+ if(studioParams.get('edit')){
+   try{const record=await getFish(studioParams.get('edit'));if(!record)throw Error('Deze vis staat niet in deze browserbibliotheek. Voeg eerst het GLB-deelbestand toe.');await openDesign(record);}
+   catch(error){studioMessage(error.message,true);}
+ }
 
  const clock=new THREE.Clock();
  function animate(){
@@ -1295,7 +1328,29 @@ try{
    requestAnimationFrame(animate)
  }
  animate();
-}catch(err){console.error(err)}
+}catch(err){console.error(err);studioMessage('De 3D-studio kon niet laden. Controleer je verbinding en vernieuw de pagina.',true);}
+
+async function openDesign(record){
+  const project=validateProject(record.project);
+  if(!project)throw Error('Dit bestand heeft geen bewerkbare studiogegevens.');
+  if(!window.buildFish)throw Error('Wacht tot de 3D-studio is geladen.');
+  // Decode everything before touching the current drawing.
+  const decoded=await Promise.all(['body','tail'].flatMap(part=>['base','paint'].map(async layer=>{
+    const image=new Image();image.src=project.layers[part][layer];await image.decode();
+    if(image.width!==W||image.height!==H)throw Error('De opgeslagen verflagen hebben een onjuist formaat.');
+    return {part,layer,image};
+  })));
+  speciesEl.value=project.species;populatePatterns();
+  if([...patternEl.options].some(o=>o.value===project.pattern))patternEl.value=project.pattern;
+  palette=project.palette;storyBluePalette=project.storyBluePalette;flatGreenPalette=project.flatGreenPalette;orangeStoryPalette=project.orangeStoryPalette;
+  if(storybookMode!==project.storybook)$('#storybookStyle').click();
+  for(const {part,layer,image} of decoded){const c=layers[part][layer].getContext('2d');c.clearRect(0,0,W,H);c.drawImage(image,0,0);}
+  history.body=[];history.tail=[];redoHistory.body=[];redoHistory.tail=[];
+  compose('body');compose('tail');swimming=false;yaw=.2;pitch=.03;window.buildFish();refresh();
+  currentDesignId=record.id;$('#designName').value=record.name;$('#designAuthor').value=record.author;
+  $('#selectionStatus').textContent=speciesEl.options[speciesEl.selectedIndex].textContent+' · '+patternEl.options[patternEl.selectedIndex].textContent;
+  studioMessage(`‘${record.name}’ geopend met originele verf. Bewaar wijzigingen of kies ‘Bewaar als nieuwe vis’.`);
+}
 </script>
 </body>
 </html>

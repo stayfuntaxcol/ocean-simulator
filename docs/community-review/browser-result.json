@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "navigation": {
+    "maps": true,
+    "freeSwim": true,
+    "fishFollow": true,
+    "schoolFollow": true,
+    "editor": true,
+    "hexBoundary": true
+  },
+  "errors": [],
+  "cloudWrites": 0,
+  "ownDraftPreserved": true,
+  "oppositeEntrance": true,
+  "deepSwimming": true,
+  "atlasRouteRecovered": true
+}
