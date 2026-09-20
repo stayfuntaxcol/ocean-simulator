@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
+    "test:ecosystem-browser": "node scripts/test-ecosystem-browser.mjs",
     "build:reef-review": "node scripts/build-reef-review.mjs",
     "build:micro-review": "node scripts/build-micro-review.mjs"
   },

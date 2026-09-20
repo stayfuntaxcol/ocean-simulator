@@ -13,6 +13,15 @@ gebruikers; nieuwe ontwerpen bewaren daarin ook de verflagen.
 De bibliotheek blijft lokaal in deze browser bewaard en gebruikt geen Firebase.
 Zie [gebruik en beperkingen](docs/fish-library.md).
 
+## Leefbaarheid en natuurlijke groei
+
+Een normale wereld begint nu zonder vissen. Koraal, zeegras, sponzen, anemonen,
+rotsen, gemengde habitat en lavabronnen bepalen lokaal de draagkracht. Natuurlijke
+soorten verschijnen gefaseerd wanneer het voedselweb gezond genoeg is en vertrekken
+weer wanneer habitat verdwijnt. Alleen geïmporteerde vissen gebruiken health en een
+kritieke toestand. Deze berekening voegt geen Firebase-data toe. Zie
+[leefbaarheid en draagkracht](docs/ecosystem.md).
+
 ## Nieuw: natuurlijk microleven
 
 Krabben leven solitair bij rotsen, maken korte zijwaartse voedseltochten en keren
