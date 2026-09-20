@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "checks": [
+    "paint round trip",
+    "persistent library",
+    "portable editable GLB",
+    "batch import and deduplication",
+    "search and favorites",
+    "8 fish placement with tails",
+    "no replicated paint data",
+    "visitor permissions",
+    "corrupt file rejection",
+    "safe names",
+    "local deletion",
+    "mobile layout",
+    "zero Firebase writes",
+    "backup deduplication",
+    "download when storage is unavailable",
+    "studio to original world"
+  ],
+  "errors": []
+}

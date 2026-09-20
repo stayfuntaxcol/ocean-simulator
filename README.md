@@ -2,6 +2,17 @@
 
 Interactieve oceaansimulator gebouwd met Three.js.
 
+## Nieuw: Mijn visbibliotheek
+
+Bewaar handgemaakte vissen met een naam, maker en voorbeeld. Open **Mijn
+visbibliotheek** in de studio of oceaan om te zoeken, favorieten te bewaren,
+verder te ontwerpen of 1, 8, 20 of 50 vissen te plaatsen. Voeg oude GLB-bestanden
+eenmalig toe, ook meerdere tegelijk. Deel een gedownload GLB-bestand met andere
+gebruikers; nieuwe ontwerpen bewaren daarin ook de verflagen.
+
+De bibliotheek blijft lokaal in deze browser bewaard en gebruikt geen Firebase.
+Zie [gebruik en beperkingen](docs/fish-library.md).
+
 ## Nieuw: natuurlijk microleven
 
 Krabben leven solitair bij rotsen, maken korte zijwaartse voedseltochten en keren

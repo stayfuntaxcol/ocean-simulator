@@ -6,6 +6,7 @@
   <title>Ocean Simulator — Water & Licht</title>
   <link rel="stylesheet" href="./graphics/graphics.css">
   <link rel="stylesheet" href="./worlds/community.css">
+  <link rel="stylesheet" href="./library/library.css">
   <style>
     :root{
       --bg:#061827;
@@ -202,6 +203,7 @@
       </div>
     </details>
     <div class="toolrow" style="margin-top:8px;display:flex;gap:7px;flex-wrap:wrap">
+      <button id="openFishLibrary" type="button" style="border:0;border-radius:10px;padding:10px 14px;background:#bde9d0;color:#103f35;font-weight:700;cursor:pointer">Mijn visbibliotheek</button>
       <button id="importBtn" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">Importeer GLB-soort</button>
       <button id="openFishStudioBtn" type="button" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:10px 14px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700;cursor:pointer">🎨 Open Fish Studio</button>
       <select id="schoolSize" style="border:1px solid rgba(255,255,255,.22);border-radius:10px;padding:9px 10px;background:rgba(255,255,255,.08);color:#eef8ff;font-weight:700">
@@ -212,7 +214,7 @@
       </select>
     </div>
     <input id="fishFiles" type="file" accept=".glb,model/gltf-binary" hidden>
-    <p id="importStatus">Importeer één GLB-model en kies hoeveel vissen van deze soort als samenhangende school worden toegevoegd.</p>
+    <p id="importStatus">Vind je ontwerpen in Mijn visbibliotheek. Voeg eerder gedownloade GLB-bestanden daar eenmalig toe. Geplaatste vissen zwemmen deze sessie; je bibliotheek blijft lokaal bewaard.</p>
 
     <div id="worldTools">
       <div class="toolrow">
@@ -366,11 +368,14 @@
 <script type="module">
 import * as THREE from 'three';
 import { installCommunityOcean } from './worlds/CommunityOcean.js';
+import { installFishLibrary } from './library/FishLibrary.js';
+import { parseFish, createThumbnails, importFishFile, disposeFish } from './library/FishAssets.js';
+import { getFish } from './library/FishStore.js';
+import { clone as cloneFishModel } from 'three/addons/utils/SkeletonUtils.js';
 import { fixedHexMeta, neighborSide, closestInHex, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
 import { mapBounds, mapPoint, worldPoint, mapHeading } from './worlds/MapNavigation.js';
 import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -2182,6 +2187,7 @@ document.addEventListener('click',event=>{
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
+  if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
   for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale']){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld();
   }
@@ -2601,7 +2607,6 @@ placeWhaleBtn.addEventListener('click',()=>{
 });
 removeWhaleBtn.addEventListener('click',clearWhale);
 
-const gltfLoader = new GLTFLoader();
 let nextSchoolId=1;
 let habitatRevision=0;
 let cachedHabitatRevision=-1;
@@ -3053,7 +3058,9 @@ function normalizeImportedFish(root){
   const box=new THREE.Box3().setFromObject(root);
   const size=box.getSize(new THREE.Vector3()), center=box.getCenter(new THREE.Vector3());
   const maxDim=Math.max(size.x,size.y,size.z)||1;
-  root.position.sub(center); root.scale.multiplyScalar(3.4/maxDim); root.updateMatrixWorld(true); return root;
+  // Keep centering inside a wrapper: school placement replaces the outer position.
+  root.position.sub(center);
+  const wrapper=new THREE.Group();wrapper.add(root);wrapper.scale.setScalar(3.4/maxDim);wrapper.updateMatrixWorld(true);return wrapper;
 }
 function spawnImportedSchool(source,fileName,count){
   const speciesId=speciesFromName(fileName);
@@ -3062,7 +3069,7 @@ function spawnImportedSchool(source,fileName,count){
   const rightVec=new THREE.Vector3().crossVectors(forward,camera.up).normalize();
   const spawnCenter=camera.position.clone().addScaledVector(forward,13);
   for(let i=0;i<count;i++){
-    const fish=source.clone(true);
+    const fish=cloneFishModel(source);
     fish.scale.multiplyScalar(.76+oceanRandom()*.28);
     const a=oceanRandom()*Math.PI*2, r=Math.sqrt(oceanRandom())*(2.2+Math.sqrt(count)*.55);
     fish.position.copy(spawnCenter).addScaledVector(rightVec,Math.cos(a)*r);
@@ -3081,20 +3088,47 @@ function spawnImportedSchool(source,fileName,count){
 }
 
 let importedCount=0;
-openFishStudioBtn.addEventListener('click',()=>window.open('./studio/','_blank','noopener'));
+function studioLink(editId){
+  const url=new URL('./studio/',location.href);
+  if(currentCloudWorldId)url.searchParams.set('world',currentCloudWorldId);
+  if(editId)url.searchParams.set('edit',editId);
+  return url.href;
+}
+const canPlaceLibraryFish=()=>canEditCurrentWorld()&&!cloudBusy&&!communityOcean?.busy&&!referenceMode;
+async function placeLibraryFish(record,count){
+  if(!canPlaceLibraryFish())throw Error('Open eerst een eigen wereld om vissen toe te voegen.');
+  const worldId=currentAtlasWorldId();
+  const {root}=await parseFish(await record.blob.arrayBuffer());
+  if(!canPlaceLibraryFish()||currentAtlasWorldId()!==worldId){disposeFish(root);throw Error('De wereld is veranderd. Probeer opnieuw in je eigen wereld.');}
+  if(editMode)setEditMode(false);
+  // Paint layers stay in the library; do not copy them into every swimming fish.
+  root.traverse(o=>{delete o.userData.fishStudio;delete o.userData.fishLibrary;});
+  const model=normalizeImportedFish(root);model.name=record.name;
+  const school=spawnImportedSchool(model,record.name,count);school.libraryId=record.id;
+  importedCount+=count;
+  importStatus.textContent=`${count} vissen van ‘${record.name}’ zwemmen nu in je oceaan. Dit ontwerp blijft in Mijn visbibliotheek bewaard; plaatsing geldt voor deze sessie.`;
+}
+const fishLibrary=installFishLibrary({
+  onOpen:()=>{controls.unlock();if(followMode)stopFollowing(false);closeWorldAtlas();Object.keys(keys).forEach(k=>keys[k]=false);},
+  onPlace:placeLibraryFish,canPlace:canPlaceLibraryFish,
+  onEdit:record=>window.open(studioLink(record.id),'_blank','noopener'),
+  onNew:()=>window.open(studioLink(),'_blank','noopener'),
+  getCount:()=>new URLSearchParams(location.search).get('count')||schoolSize.value
+});
+document.getElementById('openFishLibrary').onclick=()=>fishLibrary.open();
+openFishStudioBtn.addEventListener('click',()=>window.open(studioLink(),'_blank','noopener'));
 importBtn.addEventListener('click',()=>fishFiles.click());
 fishFiles.addEventListener('change',async()=>{
-  const file=fishFiles.files?.[0]; if(!file)return;
-  const count=Math.max(1,Number(schoolSize.value)||1);
-  importBtn.disabled=true; importStatus.textContent=`${file.name} laden als ${count===1?'één vis':`school van ${count}`}…`;
+  const file=fishFiles.files?.[0];if(!file)return;
+  const count=Math.max(1,Math.min(50,Number(schoolSize.value)||1));
+  importBtn.disabled=true;importStatus.textContent=`${file.name} bewaren en toevoegen…`;
+  const thumbnails=createThumbnails();
   try{
-    const buffer=await file.arrayBuffer();
-    const gltf=await new Promise((resolve,reject)=>gltfLoader.parse(buffer,'',resolve,reject));
-    const model=normalizeImportedFish(gltf.scene); model.name=file.name.replace(/\.glb$/i,'');
-    const school=spawnImportedSchool(model,file.name,count); importedCount+=count;
-    importStatus.textContent=`${count===1?'1 vis':`${count} vissen`} van “${school.speciesId}” toegevoegd als ${count===1?'individu':'samenhangende school'} · totaal ${fishes.length} vissen.`;
-  }catch(err){console.error(err);importStatus.textContent='Importeren mislukt. Controleer of dit een geldig GLB-bestand is.';}
-  finally{importBtn.disabled=false;fishFiles.value='';}
+    if(!canPlaceLibraryFish())throw Error('Je kunt alleen vissen toevoegen aan je eigen wereld.');
+    const result=await importFishFile(file,thumbnails),record=await getFish(result.id);
+    await placeLibraryFish(record,count);
+  }catch(err){console.error(err);importStatus.textContent=err.message||'Importeren mislukt. Controleer het GLB-bestand.';}
+  finally{thumbnails.dispose();importBtn.disabled=!canPlaceLibraryFish();fishFiles.value='';}
 });
 
 // Tijdelijke vectoren voor boids; hergebruik voorkomt veel garbage collection.
@@ -3680,7 +3714,7 @@ function updateFollowCamera(dt){
 // Besturing
 const keys = {};
 addEventListener('keydown',e=>{
-  if(e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
+  if(document.getElementById('fishLibraryDialog')?.open || e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
   keys[e.code]=true;
   if(e.code==='Escape' && followMode){ e.preventDefault(); stopFollowing(false); }
 });
@@ -3692,7 +3726,7 @@ const tempDir = new THREE.Vector3();
 const right = new THREE.Vector3();
 
 function updateMovement(dt){
-  if(communityOcean?.busy || cloudBusy || document.getElementById('worldAtlasOverlay').classList.contains('open'))return;
+  if(document.getElementById('fishLibraryDialog')?.open || communityOcean?.busy || cloudBusy || document.getElementById('worldAtlasOverlay').classList.contains('open'))return;
   if(followMode){ updateFollowCamera(dt); return; }
 
   if(editMode){
@@ -3928,6 +3962,12 @@ settleSpeciesHomes();
 updateSchoolBrains(simulationTime());
 drawMinimap();
 animate();
+const requestedFish=new URLSearchParams(location.search).get('fish');
+if(requestedFish){
+  fishLibrary.open(requestedFish);
+  getFish(requestedFish).then(record=>{if(!record)importStatus.textContent='Dit ontwerp staat niet in deze browser. Voeg het GLB-deelbestand toe aan Mijn visbibliotheek.';}).catch(error=>{importStatus.textContent=error.message;});
+}
+
 
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight;
