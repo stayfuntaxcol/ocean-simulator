@@ -314,6 +314,7 @@
       </header>
       <div id="worldAtlasBody">
         <div id="worldAtlasMap">
+          <div id="atlasCompass" aria-label="Noord is boven">N ↑</div>
           <svg id="worldAtlasSvg" viewBox="-420 -300 840 600" role="img" aria-label="Hexagonale wereldatlas"></svg>
           <div id="worldAtlasLegend">
             <span><i class="owned"></i> eigen wereld</span>
@@ -365,7 +366,8 @@
 <script type="module">
 import * as THREE from 'three';
 import { installCommunityOcean } from './worlds/CommunityOcean.js';
-import { fixedHexMeta, neighborSide, closestInHex, HEX } from './worlds/HexWorld.js';
+import { fixedHexMeta, neighborSide, closestInHex, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
+import { mapBounds, mapPoint, worldPoint, mapHeading } from './worlds/MapNavigation.js';
 import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -698,23 +700,13 @@ function setLandscapeEditorMode(active){
 
 function minimapWorldFromEvent(e){
   const rect=minimap.getBoundingClientRect();
-  const px=(e.clientX-rect.left)/rect.width;
-  const py=(e.clientY-rect.top)/rect.height;
+  return worldPoint({x:e.clientX-rect.left,y:e.clientY-rect.top},
+    mapBounds(WORLD_HALF,minimapZoom,camera.position),rect.width,rect.height);
+}
 
-  const visibleHalf=WORLD_HALF/minimapZoom;
-  let cx=0,cz=0;
-  if(minimapZoom>1){cx=camera.position.x;cz=camera.position.z;}
-  cx=THREE.MathUtils.clamp(cx,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
-  cz=THREE.MathUtils.clamp(cz,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
-  if(visibleHalf>=WORLD_HALF){cx=0;cz=0;}
-
-  const minX=cx-visibleHalf,maxX=cx+visibleHalf;
-  const minZ=cz-visibleHalf,maxZ=cz+visibleHalf;
-
-  return {
-    x:THREE.MathUtils.lerp(minX,maxX,px),
-    z:THREE.MathUtils.lerp(maxZ,minZ,py)
-  };
+function orientEditorCamera(){
+  camera.up.set(0,0,-1);
+  camera.lookAt(camera.position.x,terrainHeightAt(camera.position.x,camera.position.z),camera.position.z);
 }
 
 function teleportEditorTo(x,z){
@@ -724,8 +716,7 @@ function teleportEditorTo(x,z){
     height,
     THREE.MathUtils.clamp(z,-WORLD_HALF+1,WORLD_HALF-1)
   );
-  camera.up.set(0,0,-1);
-  camera.lookAt(camera.position.x,terrainHeightAt(camera.position.x,camera.position.z),camera.position.z);
+  orientEditorCamera();
   drawMinimap();
 }
 
@@ -896,14 +887,7 @@ const HEX_WORLD_CONFIG = Object.freeze({
   transitionAreaRatio: 0.10,
   innerScale: Math.sqrt(0.90)
 });
-const HEX_DIRECTIONS = Object.freeze([
-  { name:'noord', q:0, r:-1 },
-  { name:'noordoost', q:1, r:-1 },
-  { name:'zuidoost', q:1, r:0 },
-  { name:'zuid', q:0, r:1 },
-  { name:'zuidwest', q:-1, r:1 },
-  { name:'noordwest', q:-1, r:0 }
-]);
+const HEX_DIRECTIONS = SIDES;
 const hexWorldState = {
   hexQ: 0,
   hexR: 0,
@@ -926,7 +910,8 @@ const WORLD_ATLAS_STORAGE_KEY = 'fiveLoavesWorldAtlasV1';
 
 function axialKey(q,r){ return `${q},${r}`; }
 function axialToAtlas(q,r,size=100){
-  return { x:size*1.5*q, y:size*Math.sqrt(3)*(r+q/2) };
+  const point=axialPosition(q,r,size);
+  return {x:point.x,y:point.z};
 }
 function hexNeighbours(q,r){
   return HEX_DIRECTIONS.map(direction=>({
@@ -1220,16 +1205,10 @@ function drawMinimap(){
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle='#082936'; ctx.fillRect(0,0,w,h);
 
-  const visibleHalf=WORLD_HALF/minimapZoom;
-  let cx=0, cz=0;
-  if(minimapZoom>1){ cx=camera.position.x; cz=camera.position.z; }
-  cx=THREE.MathUtils.clamp(cx,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
-  cz=THREE.MathUtils.clamp(cz,-WORLD_HALF+visibleHalf,WORLD_HALF-visibleHalf);
-  if(visibleHalf>=WORLD_HALF){cx=0;cz=0;}
-
-  const minX=cx-visibleHalf,maxX=cx+visibleHalf,minZ=cz-visibleHalf,maxZ=cz+visibleHalf;
-  const sx=x=>(x-minX)/(maxX-minX)*w;
-  const sy=z=>h-(z-minZ)/(maxZ-minZ)*h;
+  const bounds=mapBounds(WORLD_HALF,minimapZoom,camera.position);
+  const {minX,maxX,minZ,maxZ}=bounds;
+  const sx=x=>mapPoint({x,z:0},bounds,w,h).x;
+  const sy=z=>mapPoint({x:0,z},bounds,w,h).y;
 
   // Subtiel raster.
   ctx.strokeStyle='rgba(180,235,244,.10)'; ctx.lineWidth=1;
@@ -1257,13 +1236,14 @@ function drawMinimap(){
 
   // Kijkrichting en speler.
   const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);
-  const ang=Math.atan2(fwd.x,fwd.z);
+  const ang=editMode?0:mapHeading(fwd);
   ctx.save();ctx.translate(px,py);ctx.rotate(ang);
   ctx.fillStyle='#ffffff';ctx.strokeStyle='rgba(0,0,0,.65)';ctx.lineWidth=3;
   ctx.beginPath();ctx.moveTo(0,-13);ctx.lineTo(8,9);ctx.lineTo(0,5);ctx.lineTo(-8,9);ctx.closePath();ctx.stroke();ctx.fill();ctx.restore();
 
   // Noordmarkering.
   ctx.fillStyle='rgba(255,255,255,.92)';ctx.font='bold 24px Arial';ctx.textAlign='center';ctx.fillText('N',w/2,28);
+  ctx.fillText('Z',w/2,h-12);ctx.fillText('W',20,h/2+8);ctx.fillText('O',w-20,h/2+8);
   ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w/2,34);ctx.lineTo(w/2,49);ctx.stroke();
 }
 
@@ -2026,17 +2006,18 @@ function fillSelection(a,b){
 }
 function setEditMode(on){
   if(on && (!canEditCurrentWorld() || communityOcean?.busy || (cloudBusy&&!referenceMode)))return;
+  if(on && followMode)stopFollowing(false);
   editMode=on;
   if(on){
     controls.unlock();
     savedCamPos=camera.position.clone(); savedCamQuat=camera.quaternion.clone();
-    camera.position.set(0,210,.01); camera.up.set(0,0,-1); camera.lookAt(0,-17.5,0);
+    camera.position.set(0,210,0);orientEditorCamera();
     // Tijdens bouwen tonen we bewust alle ontworpen vakken. Bij terugkeer naar zwemmen wordt weer gestreamd.
     renderAllWorldCellsForEditor();
     grid.visible=false; hexBoundaryGroup.visible=true; editBadge.classList.add('on'); editModeBtn.classList.add('active');
     editModeBtn.textContent='🌊 Terug naar zwemmen';
     document.getElementById('crosshair').style.display='none';
-    hint.textContent='LANDSCHAPSEDITOR · geen water · vissen gepauzeerd · WASD verplaatsen · Q/E hoogte · klik op kaart om direct te reizen';
+    hint.textContent='LANDSCHAPSEDITOR · noord boven · A links / D rechts · W noord / S zuid · Q/E hoogte · klik op kaart om te reizen';
     setTerrainInspectMode(terrainInspectToggle.checked);
     setLandscapeEditorMode(true);
   }else{
@@ -3628,8 +3609,9 @@ function updateFollowCamera(dt){
   const verticalSpeed=dt*5.0;     // meter/s
 
   const manualFollowInput=keys['KeyA']||keys['KeyD']||keys['KeyW']||keys['KeyS']||keys['KeyQ']||keys['KeyE'];
-  if(keys['KeyA']) followOrbitAngle-=orbitSpeed;
-  if(keys['KeyD']) followOrbitAngle+=orbitSpeed;
+  // Positive orbit angles move left on screen; negative angles move right.
+  if(keys['KeyA']) followOrbitAngle+=orbitSpeed;
+  if(keys['KeyD']) followOrbitAngle-=orbitSpeed;
   if(keys['KeyW']) followDistance-=radialSpeed;
   if(keys['KeyS']) followDistance+=radialSpeed;
   if(keys['KeyQ']) followHeight+=verticalSpeed;
@@ -3739,8 +3721,7 @@ function updateMovement(dt){
     camera.position.x=THREE.MathUtils.clamp(camera.position.x,-WORLD_HALF+1,WORLD_HALF-1);
     camera.position.z=THREE.MathUtils.clamp(camera.position.z,-WORLD_HALF+1,WORLD_HALF-1);
     camera.position.y=THREE.MathUtils.clamp(camera.position.y,35,260);
-    camera.up.set(0,0,-1);
-    camera.lookAt(camera.position.x,terrainHeightAt(camera.position.x,camera.position.z),camera.position.z);
+    orientEditorCamera();
 
     depthText.textContent=`editor ${Math.round(camera.position.y)}m`;
     return;

@@ -3,6 +3,7 @@ const chromium=process.env.CHROMIUM_BUNDLE ? (await import(process.env.CHROMIUM_
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const root=new URL('../',import.meta.url).pathname.replace(/\/$/,''),bin=process.env.CHROMIUM_BUNDLE;
+const artifacts=process.env.OCEAN_BROWSER_ARTIFACTS||root+'/docs/community-review';
 const browser=await playwright.launch(bin?{headless:true,executablePath:bin+'/chromium',args:chromium.args,env:{...process.env,LD_LIBRARY_PATH:bin,FONTCONFIG_PATH:bin+'/fonts'}}:{headless:true});
 try{
 const page=await browser.newPage({viewport:{width:1200,height:800}}),errors=[];
@@ -27,8 +28,62 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
   const qa=`
    const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
    window.__communityQA={state:()=>({id:communityOcean.activeId,busy:communityOcean.busy,cells:worldData().cells,position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),editable:canEditCurrentWorld(),status:communityOcean.lastStatus,floor:terrainHeightAt(camera.position.x,camera.position.z)}),
+    navigation:()=>{
+      const check=(condition,message)=>{if(!condition)throw Error(message);};
+      const pose=camera.position.clone(),rotation=camera.quaternion.clone(),zoom=minimapZoom;
+      const originalTranslate=minimapCtx.translate,originalRotate=minimapCtx.rotate;
+      let arrow,angle;
+      minimapCtx.translate=function(x,y){arrow={x,y};return originalTranslate.call(this,x,y);};
+      minimapCtx.rotate=function(a){angle=a;return originalRotate.call(this,a);};
+      const press=(code,dt=.1)=>{dispatchEvent(new KeyboardEvent('keydown',{code}));updateMovement(dt);dispatchEvent(new KeyboardEvent('keyup',{code}));};
+      const probe=new THREE.Object3D();probe.position.set(0,10,0);probe.userData.velocity=new THREE.Vector3(0,0,-1);probe.userData.schoolId='navigation-probe';
+      scene.add(probe);schools.set('navigation-probe',{members:[probe],avgVelocity:probe.userData.velocity.clone(),speciesId:'navigation-probe'});
+      try{
+        minimapZoom=1;
+        for(const [x,z,dx,dz] of [[0,-72,0,-1],[72,0,1,0],[0,72,0,1],[-72,0,-1,0]]){
+          camera.position.set(x,10,z);camera.lookAt(x+dx,10,z+dz);drawMinimap();
+          check(Math.abs(arrow.x-(x+144)/288*minimap.width)<1e-7,'player map X');
+          check(Math.abs(arrow.y-(z+144)/288*minimap.height)<1e-7,'player map north/south');
+          check(Math.abs(Math.sin(angle)-dx)<1e-7&&Math.abs(-Math.cos(angle)-dz)<1e-7,'player arrow heading');
+        }
+        const rect=minimap.getBoundingClientRect();
+        const target=minimapWorldFromEvent({clientX:rect.left+rect.width*.25,clientY:rect.top+rect.height*.25});
+        check(target.x===-72&&target.z===-72,'northwest map click is not mirrored');
+        for(const yaw of [0,Math.PI/2,Math.PI,Math.PI*1.5])for(const code of ['KeyA','KeyD']){
+          camera.position.set(0,10,0);camera.up.set(0,1,0);camera.rotation.set(0,yaw,0);camera.updateMatrixWorld(true);
+          const screenRight=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),before=camera.position.clone();
+          controls.isLocked=true;press(code);controls.isLocked=false;
+          check(camera.position.clone().sub(before).dot(screenRight)*(code==='KeyD'?1:-1)>.1,'A/D screen direction while swimming');
+        }
+        for(const mode of ['fish','school'])for(const orbit of [0,Math.PI/2,Math.PI,Math.PI*1.5])for(const code of ['KeyA','KeyD']){
+          camera.position.set(Math.sin(orbit)*9,10,Math.cos(orbit)*9);camera.lookAt(probe.position);camera.updateMatrixWorld(true);
+          const screenRight=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),before=camera.position.clone();
+          startFollowing(probe,mode);press(code);
+          check(camera.position.clone().sub(before).dot(screenRight)*(code==='KeyD'?1:-1)>.01,'A/D screen direction while following '+mode);
+          stopFollowing(false);
+        }
+        startFollowing(probe,'fish');setEditMode(true);
+        check(editMode&&followMode===null,'entering editor stops follow camera');camera.updateMatrixWorld(true);
+        for(const [x,z] of [[-24,-24],[24,-24],[-24,24],[24,24]]){
+          const projected=new THREE.Vector3(x,-18,z).project(camera);
+          check(projected.x*x>0&&projected.y*z<0,'editor landmark matches map quadrant');
+        }
+        for(const [code,axis,sign] of [['KeyA','x',-1],['KeyD','x',1],['KeyW','z',-1],['KeyS','z',1]]){
+          const before=camera.position[axis];press(code);check((camera.position[axis]-before)*sign>0,'editor key '+code);
+        }
+        teleportEditorTo(target.x,target.z);check(camera.position.x===-72&&camera.position.z===-72,'editor map teleport');
+        camera.updateMatrixWorld(true);check(new THREE.Vector3(-72,-18,-90).project(camera).y>0,'editor stays north-up after teleport');
+        drawMinimap();check(angle===0,'editor map arrow points north');
+        setEditMode(false);return {maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true};
+      }finally{
+        if(editMode)setEditMode(false);stopFollowing(false);scene.remove(probe);schools.delete('navigation-probe');
+        minimapCtx.translate=originalTranslate;minimapCtx.rotate=originalRotate;
+        Object.keys(keys).forEach(k=>keys[k]=false);controls.isLocked=false;minimapZoom=zoom;
+        camera.position.copy(pose);camera.quaternion.copy(rotation);camera.up.set(0,1,0);drawMinimap();
+      }
+    },
     edit:()=>{addLayerToCell(0,0,'sponge');},render:()=>renderer.render(scene,camera),
-    cross:()=>{const previous=camera.position.clone();camera.position.set(0,-20,-125);communityOcean.update(previous,{revision:habitatRevision});},
+    cross:()=>{camera.position.set(0,-20,-124);const previous=camera.position.clone();controls.isLocked=true;keys.KeyW=true;updateMovement(.2);keys.KeyW=false;controls.isLocked=false;communityOcean.update(previous,{revision:habitatRevision});},
     visit:id=>communityOcean.visit(id),sync:()=>communityOcean.rebuild(),
     orient:()=>{camera.rotation.set(.05,.3,0);},move:()=>{controls.isLocked=true;keys.KeyW=true;updateMovement(.01);keys.KeyW=false;controls.isLocked=false;}};
   `;
@@ -39,6 +94,8 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
 await page.goto('http://127.0.0.1:8765/?world=A&reef=organic');
 await page.waitForFunction(()=>window.__communityQA?.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual(errors,[]);
+const navigation=await page.evaluate(()=>window.__communityQA.navigation());
+assert.deepEqual(navigation,{maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true});
 await page.evaluate(()=>window.__communityQA.edit());
 const own=await page.evaluate(()=>window.__communityQA.state());assert.equal(own.cells[0].layers.length,2);
 await page.locator('#journeyAtlas').click();
@@ -46,8 +103,10 @@ await page.locator('#journeyWorldLink').fill('http://localhost/?world=B');
 await page.locator('#journeyConnect').click();
 await page.waitForFunction(()=>document.getElementById('journeyStatus').textContent.includes('Verbonden met'),null,{timeout:60000});
 assert.equal(await page.locator('#worldAtlasSvg .atlas-world').count(),2);
-await fs.mkdir(root+'/docs/community-review',{recursive:true});
-await page.screenshot({path:root+'/docs/community-review/atlas.png'});
+const atlasLabels=await page.locator('#worldAtlasSvg .atlas-world-label').evaluateAll(elements=>elements.map(e=>({name:e.textContent,y:Number(e.getAttribute('y'))})));
+assert.ok(atlasLabels.find(e=>e.name==='Diepe buurwereld').y<atlasLabels.find(e=>e.name==='Mijn koraaltuin').y,'north neighbor is above source');
+await fs.mkdir(artifacts,{recursive:true});
+await page.screenshot({path:artifacts+'/atlas.png'});
 await page.locator('#worldAtlasClose').click();
 await page.evaluate(()=>{window.__communityQA.orient();window.__communityQA.cross();});
 await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
@@ -56,7 +115,7 @@ assert.ok(Math.abs(state.quaternion[1]-.14939143548941183)<1e-10,'swimming direc
 assert.equal(state.editable,false);assert.equal(state.cells[0].key,'1,1');assert.ok(state.position[2]>120);assert.ok(state.position[1]>=state.floor+1-1e-5);assert.ok(state.position[1]<-15);
 assert.ok(await page.locator('#editModeBtn').isDisabled());
 await page.evaluate(()=>window.__communityQA.move());assert.ok((await page.evaluate(()=>window.__communityQA.state())).position[1]<-15);
-await page.evaluate(()=>window.__communityQA.render());await page.screenshot({path:root+'/docs/community-review/neighbor.png'});
+await page.evaluate(()=>window.__communityQA.render());await page.screenshot({path:artifacts+'/neighbor.png'});
 await page.evaluate(()=>window.__deny=true);
 assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),false);assert.equal((await page.evaluate(()=>window.__communityQA.state())).id,'B');
 await page.evaluate(()=>window.__deny=false);
@@ -66,7 +125,7 @@ await page.locator('#journeyMenu').click();assert.ok(await page.evaluate(()=>{co
 assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
 await page.setViewportSize({width:390,height:844});await page.locator('#journeyAtlas').click();
 assert.ok(await page.evaluate(()=>{const e=document.getElementById('worldAtlasDetails');e.scrollTop=e.scrollHeight;return e.clientHeight>0&&e.scrollTop>0;}),'mobile atlas form scrolls');
-await page.screenshot({path:root+'/docs/community-review/mobile-atlas.png'});
-console.log(JSON.stringify({passed:true,checks:['Firebase read adapter','two atlas hexes','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
-await fs.writeFile(root+'/docs/community-review/browser-result.json',JSON.stringify({passed:true,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true},null,2));
+await page.screenshot({path:artifacts+'/mobile-atlas.png'});
+console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
+await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true},null,2));
 }finally{await browser.close();}

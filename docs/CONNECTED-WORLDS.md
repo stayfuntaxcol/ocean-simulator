@@ -28,6 +28,8 @@ heen- en terugreis. Bewaar je werk online of exporteer het voordat je het tabbla
 - Mislukte reis laat de huidige wereld intact; mislukte activering probeert de bronwereld terug te zetten.
 - Bouwknoppen uitgeschakeld bij bezoek; bestaande Firebase-eigenaarsregels blijven de grens voor online wijzigingen.
 - Scrollbaar bouwmenu en atlasformulier. Typen in formulieren beweegt de camera niet.
+- Atlas, minimap en bouwkaart gebruiken noord boven en oost rechts. Kaartklikken en de kijkpijl volgen dezelfde richting.
+- A beweegt links en D rechts tijdens vrij zwemmen, vis/school volgen en bouwen. Overschakelen naar bouwen stopt de volgcamera.
 - Diepe geulen blijven bereikbaar: de ondergrens van de zwemcamera volgt de bodem.
 - Opslaan behoudt de bestaande zichtbaarheid; linkwerelden worden niet automatisch in een openbare index geplaatst.
 
@@ -68,14 +70,14 @@ apparaatgebonden; duurzaam eigenaarschap over meerdere apparaten vereist een acc
 
 ## Validatie
 
-`npm test`: 126 geslaagde tests, inclusief zes nieuwe tests met scenario's voor alle
+`npm test`: 130 geslaagde tests, met scenario's voor alle
 zijden, gedeelde randen/driehoekspunten, oud formaat, rechtenfouten, behoud van concepten,
 rollback, dubbele reisaanvragen, timeout en begrensde cache.
 
 `scripts/test-community-browser.mjs`: echte `index.html` en Three.js in Chromium,
 met een afgevangen Firebase-adapter en twee expliciete testwerelden. Controleert
 heen/terug, richting, tegenoverliggende ingang, diepe bodem, bezoekersknoppen, geweigerde
-toegang, behoud van eigen wijzigingen, desktopmenu en mobiel atlasformulier. Geen
+toegang, behoud van eigen wijzigingen, desktopmenu en mobiel atlasformulier. Ook gecontroleerd: vier kijkrichtingen bij vrij zwemmen, links/rechts rond vis én school, alle kwadranten in de bouwkaart, kaartteleport en W over de noordgrens. Geen
 browserfouten en nul databasewrites. Dit is geen test tegen de productie-Firebase.
 
 Uitvoeren met Playwright en Chromium beschikbaar:
@@ -87,3 +89,4 @@ node scripts/test-community-browser.mjs
 `PLAYWRIGHT_MODULE` kan naar een geïnstalleerde Playwright-module verwijzen. Voor een
 serverless Chromium-bundel zijn `CHROMIUM_MODULE` en `CHROMIUM_BUNDLE` optioneel.
 Het script maakt screenshots en `browser-result.json` in `docs/community-review/`.
+Met `OCEAN_BROWSER_ARTIFACTS` kun je een andere uitvoermap instellen.

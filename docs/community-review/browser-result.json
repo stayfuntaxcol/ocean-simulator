@@ -1,5 +1,12 @@
 {
   "passed": true,
+  "navigation": {
+    "maps": true,
+    "freeSwim": true,
+    "fishFollow": true,
+    "schoolFollow": true,
+    "editor": true
+  },
   "errors": [],
   "cloudWrites": 0,
   "ownDraftPreserved": true,

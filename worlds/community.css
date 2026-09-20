@@ -16,5 +16,6 @@
 #journeyWaterVeil{position:fixed;inset:0;z-index:70;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 45% 20%,#23687d,#062d43 62%,#031e30);transition:opacity .16s ease}
 #journeyWaterVeil.visible{opacity:1}
 #worldAtlasDetails{overflow-y:auto;min-height:0}
+#atlasCompass{position:absolute;top:12px;right:16px;z-index:1;color:#d8f7ff;font-weight:bold;pointer-events:none}
 @media(max-width:900px){#journeyHud{top:auto;bottom:10px;left:10px;transform:none;max-width:calc(100vw - 210px)}#journeyStatus{max-height:56px;overflow:auto}}
 @media(prefers-reduced-motion:reduce){#journeyWaterVeil{transition:none}}
