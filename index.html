@@ -26,6 +26,17 @@
       border-radius:14px;background:var(--panel);backdrop-filter:blur(8px);
       box-shadow:0 10px 30px rgba(0,0,0,.25)
     }
+    #hud.swimming.settings-open{display:block}
+    #swimmingSettingsBtn{
+      display:none;position:absolute;left:16px;top:16px;z-index:11;
+      border:1px solid rgba(255,255,255,.24);border-radius:10px;padding:9px 12px;
+      background:rgba(5,18,30,.86);backdrop-filter:blur(8px);color:#eef8ff;
+      font-weight:700;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.24)
+    }
+    #swimmingSettingsBtn.visible{display:block}
+    #graphicsOptionsPanel{margin-top:10px}
+    #graphicsOptionsPanel>summary{font-size:14px;color:#d9f5ff}
+    #fishStyleStatus{margin:7px 0 0;color:#bfe5f3;font-size:11px;line-height:1.35}
     #hud h1{font-size:18px;margin:0 0 6px}
     #hud p{margin:5px 0;color:var(--muted);font-size:13px;line-height:1.4}
     #startBtn{
@@ -181,8 +192,8 @@
         <p id="ecosystemAdvice" class="ecosystem-warning">Begin met zeegras of koraal. Een lege oceaan kan geen vissen voeden.</p>
       </div>
     </details>
-    <details class="graphics-panel" open>
-      <summary>Water & licht</summary>
+    <details id="graphicsOptionsPanel" class="graphics-panel">
+      <summary>🎨 Grafische vormgeving &amp; opties</summary>
       <label>Beeld <select id="visualStyle"><option value="upgraded">Nieuwe onderwatersfeer</option><option value="original">Oorspronkelijk beeld</option></select></label>
       <label>Kwaliteit <select id="visualQuality"><option value="low">Licht</option><option value="medium" selected>Gebalanceerd</option><option value="high">Hoog</option></select></label>
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
@@ -194,8 +205,9 @@
       <small id="microLifeStatus">Garnalen, zeesterren, zee-egels, schelpen en krabben rond het rif.</small>
       <p><a href="./graphics/micro-life-review.html" target="_blank" rel="noopener" style="color:#b6efff">Bekijk het microleven van dichtbij</a></p>
       <button id="viewButterfly" type="button" style="margin-top:9px">Bekijk koraalvlindervis</button>
-      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistisch · in ontwikkeling</option></select></label>
-      <small>Wissel de rifvissen tussen cartoon en realistisch. Nieuw: doktersvis, kardinaalvis en rifbaars.</small>
+      <label>Visstijl <select id="fishRenderStyle"><option value="cartoon">Cartoon animatie</option><option value="realistic">Realistische animatie</option></select></label>
+      <p id="fishStyleStatus">Cartoonstijl actief. De stijlkeuze geldt voor de ingebouwde rifvissen; geïmporteerde GLB-vissen behouden hun eigen ontwerp.</p>
+      <small>Wissel de ingebouwde rifvissen tussen cartoon en realistisch. Zet de relevante detailvinkjes aan om de modellen te bekijken.</small>
       <p><a href="./graphics/fish-review.html" target="_blank" rel="noopener" style="color:#b6efff">Open vergelijking: beide soorten in beide stijlen</a></p>
       <p><a href="./graphics/fish-review-batch-two.html" target="_blank" rel="noopener" style="color:#b6efff">Vergelijk platvis en clownvis met de gele koraalvis</a></p>
       <label>Blauwe vis detail <input id="blueFishDetail" type="checkbox" checked></label>
@@ -301,6 +313,7 @@
 
   </div>
 
+  <button id="swimmingSettingsBtn" type="button" aria-label="Grafische opties openen">⚙ Beeld &amp; opties</button>
   <nav id="journeyHud" aria-label="Wereldbezoek">
     <strong id="journeyWorldName">Mijn oceaanwereld</strong>
     <span id="journeyPermission"></span>
@@ -461,6 +474,8 @@ const openFishStudioBtn = document.getElementById('openFishStudioBtn');
 const fishFiles = document.getElementById('fishFiles');
 const importStatus = document.getElementById('importStatus');
 const schoolSize = document.getElementById('schoolSize');
+const swimmingSettingsBtn = document.getElementById('swimmingSettingsBtn');
+const graphicsOptionsPanel = document.getElementById('graphicsOptionsPanel');
 const schoolCountText = document.getElementById('schoolCountText');
 const healthText = document.getElementById('healthText');
 const criticalFishText = document.getElementById('criticalFishText');
@@ -549,12 +564,23 @@ renderer.domElement.addEventListener('click', () => {
 
 controls.addEventListener('lock', () => {
   document.getElementById('hud').classList.add('swimming');
+  swimmingSettingsBtn.classList.add('visible');
   startBtn.textContent = 'Verkennen actief';
   hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · klik een vis om te volgen';
 });
 controls.addEventListener('unlock', () => {
   startBtn.textContent = 'Verder verkennen';
+  swimmingSettingsBtn.classList.remove('visible');
+  document.getElementById('hud').classList.remove('settings-open');
   hint.textContent = 'Klik op “Verder verkennen” om de besturing weer te activeren.';
+});
+swimmingSettingsBtn.addEventListener('click',event=>{
+  event.stopPropagation();
+  controls.unlock();
+  swimmingSettingsBtn.classList.remove('visible');
+  graphicsOptionsPanel.open=true;
+  document.getElementById('hud').classList.remove('swimming');
+  document.getElementById('hud').classList.add('settings-open');
 });
 
 // Licht
@@ -2572,6 +2598,15 @@ const greenFishDetail = document.getElementById('greenFishDetail');
 const blueFishDetail = document.getElementById('blueFishDetail');
 const fishRenderStyle = document.getElementById('fishRenderStyle');
 const fishDetail = document.getElementById('fishDetail');
+const fishStyleStatus = document.getElementById('fishStyleStatus');
+function updateFishStyleStatus(){
+  const realistic=fishRenderStyle.value==='realistic';
+  fishStyleStatus.textContent=realistic
+    ? 'Realistische animatie actief voor de ingebouwde rifvissen. Geïmporteerde GLB-vissen behouden hun eigen materiaal en vorm.'
+    : 'Cartoon animatie actief. Geïmporteerde GLB-vissen behouden hun eigen materiaal en vorm.';
+}
+fishRenderStyle.addEventListener('change',updateFishStyleStatus);
+updateFishStyleStatus();
 
 
 function orientFishForward(fish,target){
@@ -4195,11 +4230,13 @@ function animate(){
     const school=schools.get(fish.userData.schoolId);school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
     if(fish.visible)whale.animate(dt,t,atmosphere.quality,distance);
   }
-  butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked && atmosphere.enabled,fishRenderStyle.value);
-  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
-  clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
-  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked && atmosphere.enabled,t,fishRenderStyle.value);
-  pufferLibrary.update(t,camera,atmosphere.quality,atmosphere.enabled,fishRenderStyle.value);
+  // Visstijl en waterstijl zijn onafhankelijk: ook in de oorspronkelijke
+  // belichting moet Cartoon ↔ Realistisch direct kunnen wisselen.
+  butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked,fishRenderStyle.value);
+  blueReefLibrary.update(camera,atmosphere.quality,blueFishDetail.checked,t,fishRenderStyle.value);
+  clownReefLibrary.update(camera,atmosphere.quality,clownFishDetail.checked,t,fishRenderStyle.value);
+  greenReefLibrary.update(camera,atmosphere.quality,greenFishDetail.checked,t,fishRenderStyle.value);
+  pufferLibrary.update(t,camera,atmosphere.quality,fishDetail.checked,fishRenderStyle.value);
   newReefSpecies.update(t,camera,atmosphere.quality,fishRenderStyle.value);
   microLife.update(dt,camera,{enabled:microLifeEnabled.checked&&ecosystemState.stageId>=1,editor:editMode||landscapeEditorActive,inspect:terrainInspectActive,paused:referencePaused,
     quality:atmosphere.quality,revision:habitatRevision,showSchools:microSchoolsEnabled.checked&&ecosystemState.stageId>=2,showPlankton:microPlanktonEnabled.checked&&ecosystemState.stageId>=1});

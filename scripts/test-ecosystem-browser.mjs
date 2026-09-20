@@ -42,6 +42,17 @@ await context.route(origin+'/**',async route=>{
 
 await page.goto(origin+'/',{waitUntil:'networkidle'});
 await page.waitForFunction(()=>window.__ecosystemQA);
+const ui=await page.evaluate(()=>{
+  const panel=document.getElementById('graphicsOptionsPanel');
+  const collapsedInitially=!panel.open;
+  const style=document.getElementById('fishRenderStyle');
+  style.value='realistic';style.dispatchEvent(new Event('change',{bubbles:true}));
+  const styleStatus=document.getElementById('fishStyleStatus').textContent;
+  document.getElementById('hud').classList.add('swimming');
+  const button=document.getElementById('swimmingSettingsBtn');button.classList.add('visible');button.click();
+  return {collapsedInitially,style:style.value,status:styleStatus,openedFromSwimming:panel.open,hudSettingsOpen:document.getElementById('hud').classList.contains('settings-open')};
+});
+assert.equal(ui.collapsedInitially,true);assert.equal(ui.style,'realistic');assert.match(ui.status,/Realistische animatie actief/);assert.equal(ui.openedFromSwimming,true);assert.equal(ui.hudSettingsOpen,true);
 const empty=await page.evaluate(()=>window.__ecosystemQA.snapshot());
 assert.equal(empty.capacity,0);assert.equal(empty.natural,0);assert.equal(empty.stage,0);
 await page.evaluate(()=>window.__ecosystemQA.addGuests(3));
@@ -64,5 +75,5 @@ const mobile=await page.evaluate(()=>{const panel=document.getElementById('ecosy
 assert.ok(mobile.panelRight<=mobile.viewport&&mobile.hudRight<=mobile.viewport);
 await page.screenshot({path:'/tmp/ecosystem-dashboard-mobile.png',fullPage:true});
 assert.deepEqual(errors,[]);
-console.log(JSON.stringify({empty,starving:{capacity:starving.capacity,shortage:starving.shortage,health:starving.health,reserves:starving.reserves},depleted:{health:depleted.health},burial,rich:{score:rich.score,stage:rich.stage,capacity:rich.capacity,natural:rich.natural,target:rich.target,sectors:rich.sectors.active},migration,mobile,firebaseWrites:0,errors},null,2));
+console.log(JSON.stringify({ui,empty,starving:{capacity:starving.capacity,shortage:starving.shortage,health:starving.health,reserves:starving.reserves},depleted:{health:depleted.health},burial,rich:{score:rich.score,stage:rich.stage,capacity:rich.capacity,natural:rich.natural,target:rich.target,sectors:rich.sectors.active},migration,mobile,firebaseWrites:0,errors},null,2));
 await browser.close();
