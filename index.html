@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Ocean Simulator — Water & Licht</title>
   <link rel="stylesheet" href="./graphics/graphics.css">
+  <link rel="stylesheet" href="./worlds/community.css">
   <style>
     :root{
       --bg:#061827;
@@ -273,6 +274,14 @@
 
   </div>
 
+  <nav id="journeyHud" aria-label="Wereldbezoek">
+    <strong id="journeyWorldName">Mijn oceaanwereld</strong>
+    <span id="journeyPermission"></span>
+    <button id="journeyAtlas" type="button">Werelden &amp; doorgangen</button>
+    <button id="journeyMenu" type="button">Menu</button>
+    <p id="journeyStatus" role="status" aria-live="polite"></p>
+  </nav>
+  <div id="journeyWaterVeil" aria-hidden="true"></div>
   <div id="stats">
     <div id="graphicsMetrics">Beeldmeting starten…</div>
     <div>Vissen: <span id="fishCount">0</span></div>
@@ -317,8 +326,19 @@
           <p id="worldAtlasSelectedText">Selecteer een wereld of een lege aangrenzende positie.</p>
           <div id="worldAtlasStats"></div>
           <button id="worldAtlasEnterBtn" type="button" hidden>Deze wereld openen</button>
-          <button id="worldAtlasPrepareBtn" type="button" class="secondary" hidden>Positie voorbereiden</button>
+          <button id="worldAtlasPrepareBtn" type="button" class="secondary" hidden>Hier een wereld verbinden</button>
           <div id="worldAtlasStatus" aria-live="polite"></div>
+          <div id="journeyRouteForm">
+            <label>Bekende werelden<select id="journeyKnownWorlds"></select></label>
+            <label>Wereldlink of ID<input id="journeyWorldLink" type="text" placeholder="Plak een gedeelde wereldlink" autocomplete="off"></label>
+            <label>Aansluitzijde<select id="journeyDirection">
+              <option value="0">Noord</option><option value="1">Noordoost</option><option value="2">Zuidoost</option>
+              <option value="3">Zuid</option><option value="4">Zuidwest</option><option value="5">Noordwest</option>
+            </select></label>
+            <button id="journeyConnect" type="button">Verbind bezoekwereld</button>
+            <small>Deze bezoekkaart wordt op dit apparaat bewaard. Je bezoekt de opgeslagen wereld; je wijzigt daarmee geen wereld van een ander. Je eigen onopgeslagen werk blijft tijdens deze sessie bewaard.</small>
+            <div id="journeyNeighbors" aria-label="Doorgangen"></div>
+          </div>
         </aside>
       </div>
     </section>
@@ -344,6 +364,9 @@
 
 <script type="module">
 import * as THREE from 'three';
+import { installCommunityOcean } from './worlds/CommunityOcean.js';
+import { fixedHexMeta, neighborSide, closestInHex, HEX } from './worlds/HexWorld.js';
+import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
@@ -432,6 +455,7 @@ const minimapCtx = minimap.getContext('2d');
 let minimapZoom = 1;
 let lastMinimapDraw = 0;
 let firebaseUser = null;
+let communityOcean = null, cloudBusy = false, currentCloudVisibility = "link", cloudWorldLoaded = false;
 let currentCloudWorldId = new URLSearchParams(location.search).get('world');
 let currentCloudOwnerId = null;
 
@@ -472,6 +496,7 @@ renderer.domElement.addEventListener('click', () => {
 });
 
 controls.addEventListener('lock', () => {
+  document.getElementById('hud').classList.add('swimming');
   startBtn.textContent = 'Verkennen actief';
   hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · klik een vis om te volgen';
 });
@@ -531,6 +556,9 @@ function terrainOffsetAt(x,z){
   return THREE.MathUtils.lerp(ab,cd,fz);
 }
 function terrainHeightAt(x,z){
+  return communityOcean?.sample(x,z) ?? rawTerrainHeightAt(x,z);
+}
+function rawTerrainHeightAt(x,z){
   return TERRAIN_BASE_Y + terrainBaseNoise(x,z) + terrainOffsetAt(x,z);
 }
 
@@ -928,14 +956,9 @@ function worldHexMeta(){
   };
 }
 function applyWorldHexMeta(meta){
-  if(!meta || typeof meta!=='object') return;
-  if(Number.isFinite(meta.hexQ)) hexWorldState.hexQ=Math.trunc(meta.hexQ);
-  if(Number.isFinite(meta.hexR)) hexWorldState.hexR=Math.trunc(meta.hexR);
-  if(Number.isFinite(meta.outerRadius) && meta.outerRadius>0) hexWorldState.outerRadius=meta.outerRadius;
-  hexWorldState.innerScale=Number.isFinite(meta.innerScale) && meta.innerScale>0 && meta.innerScale<1
-    ? meta.innerScale : HEX_WORLD_CONFIG.innerScale;
+  Object.assign(hexWorldState,fixedHexMeta(meta));
 }
-function currentAtlasWorldId(){ return currentCloudWorldId || 'local-world'; }
+function currentAtlasWorldId(){ return (cloudWorldLoaded && currentCloudWorldId) || 'local-world'; }
 function currentAtlasWorldName(){ return cloudWorldName?.value?.trim() || 'Mijn oceaanwereld'; }
 function registerAtlasWorld(world){
   if(!world?.id) return;
@@ -953,9 +976,9 @@ function syncCurrentAtlasWorld(){
     id,
     name:currentAtlasWorldName(),
     ownerId:currentCloudOwnerId||firebaseUser?.uid||null,
-    visibility:currentCloudWorldId?'link':'local',
-    hexQ:hexWorldState.hexQ,
-    hexR:hexWorldState.hexR,
+    visibility:cloudWorldLoaded?currentCloudVisibility:'local',
+    hexQ:communityOcean?.positionFor(id)?.hexQ ?? hexWorldState.hexQ,
+    hexR:communityOcean?.positionFor(id)?.hexR ?? hexWorldState.hexR,
     current:true,
     owned:!currentCloudOwnerId || currentCloudOwnerId===firebaseUser?.uid
   });
@@ -1012,7 +1035,7 @@ function selectAtlasWorld(world){
   if(title) title.textContent=world.name||'Oceaanwereld';
   if(textElement) textElement.textContent=atlasWorldIsCurrent(world)
     ? 'Dit is de wereld waarin je nu werkt.'
-    : 'Deze wereld staat in je atlas en kan later worden geopend.';
+    : 'Een verbonden buurwereld kun je bezoeken. Andere werelden verbind je hieronder met een vrije zijde.';
   atlasStats(world);
   if(enter){ enter.hidden=atlasWorldIsCurrent(world); enter.dataset.worldId=world.id; }
   if(prepare) prepare.hidden=true;
@@ -1037,8 +1060,13 @@ function renderWorldAtlas(){
   if(!svg) return;
   svg.replaceChildren();
   syncCurrentAtlasWorld();
-  const occupied=new Set([...worldAtlasState.worlds.values()].map(world=>axialKey(world.hexQ,world.hexR)));
-  const visibleWorlds=[...worldAtlasState.worlds.values()];
+  const occupied=new Set();
+  const visibleWorlds=[...worldAtlasState.worlds.values()].sort((a,b)=>Number(atlasWorldIsCurrent(b))-Number(atlasWorldIsCurrent(a))).filter(world=>{
+    const position=communityOcean?.positionFor(world.id);
+    if(communityOcean&&!position)return false;
+    if(position)Object.assign(world,position);
+    const key=axialKey(world.hexQ,world.hexR);if(occupied.has(key))return false;occupied.add(key);return true;
+  });
   const emptyPositions=new Map();
   visibleWorlds.forEach(world=>{
     hexNeighbours(world.hexQ,world.hexR).forEach(position=>{
@@ -1075,6 +1103,9 @@ function openWorldAtlas(){
   const overlay=document.getElementById('worldAtlasOverlay');
   if(!overlay) return;
   syncCurrentAtlasWorld();
+  controls.unlock();
+  document.getElementById('hud').classList.add('swimming');
+  communityOcean?.refreshHUD();
   overlay.classList.add('open');
   overlay.setAttribute('aria-hidden','false');
   renderWorldAtlas();
@@ -1094,14 +1125,20 @@ function installWorldAtlasInteractions(){
   });
   document.getElementById('worldAtlasEnterBtn')?.addEventListener('click',event=>{
     const worldId=event.currentTarget.dataset.worldId;
-    if(worldId && worldId!==currentAtlasWorldId()) location.href=cloudWorldUrl(worldId);
+    if(worldId && worldId!==currentAtlasWorldId()) {
+      document.getElementById('journeyWorldLink').value=worldId;
+      void communityOcean?.visit(worldId);
+    }
   });
   document.getElementById('worldAtlasPrepareBtn')?.addEventListener('click',event=>{
     const q=Number(event.currentTarget.dataset.q), r=Number(event.currentTarget.dataset.r);
     if(!Number.isFinite(q)||!Number.isFinite(r)) return;
-    hexWorldState.pendingPosition={hexQ:q,hexR:r};
-    saveLocalWorldAtlas();
-    setAtlasStatus(`Positie ${q}, ${r} is voorbereid. De nieuwe wereld kan in een volgende stap worden aangemaakt.`);
+    const origin=communityOcean?.positionFor(currentAtlasWorldId());
+    const side=origin?neighborSide(origin,{hexQ:q,hexR:r}):-1;
+    if(side<0){setAtlasStatus('Kies een positie naast je huidige wereld.');return;}
+    document.getElementById('journeyDirection').value=String(side);
+    document.getElementById('journeyWorldLink').focus();
+    setAtlasStatus('Plak een bestaande wereldlink en kies “Verbind bezoekwereld”.');
   });
   document.getElementById('worldAtlasSvg')?.addEventListener('wheel',event=>{
     event.preventDefault();
@@ -1129,7 +1166,8 @@ async function loadRemoteWorldAtlasIndex(){
     const snapshot=await get(ref(firebaseDatabase,'worldIndex'));
     if(snapshot.exists()){
       const index=snapshot.val();
-      Object.entries(index||{}).forEach(([id,world])=>registerAtlasWorld({id,...world}));
+      Object.entries(index||{}).filter(([,world])=>world.visibility==='public'||world.ownerId===firebaseUser.uid).forEach(([id,world])=>registerAtlasWorld({id,...world}));
+      communityOcean?.refreshHUD();
       saveLocalWorldAtlas();
       if(document.getElementById('worldAtlasOverlay')?.classList.contains('open')) renderWorldAtlas();
     }
@@ -1139,7 +1177,7 @@ async function loadRemoteWorldAtlasIndex(){
   }
 }
 async function saveRemoteWorldAtlasIndex(worldId,record){
-  if(!firebaseUser||!worldId) return;
+  if(!firebaseUser||!worldId||record.visibility!=='public') return;
   try{
     await set(ref(firebaseDatabase,`worldIndex/${worldId}`),{
       name:record.name,
@@ -1305,7 +1343,7 @@ function isCellInsideBuildHex(ix, iz) {
   const x = ix * CELL + CELL / 2;
   const z = iz * CELL + CELL / 2;
 
-  return isPointInsideBuildHex(x, z);
+  return [-CELL/2,CELL/2].every(dx=>[-CELL/2,CELL/2].every(dz=>isPointInsideBuildHex(x+dx,z+dz)));
 }
 
 const selectionMat = new THREE.MeshBasicMaterial({
@@ -1987,6 +2025,7 @@ function fillSelection(a,b){
   else editorInfo.textContent=`${count} vakken kregen een extra laag ${worldBrush.options[worldBrush.selectedIndex].text}. Wereld: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
 }
 function setEditMode(on){
+  if(on && (!canEditCurrentWorld() || communityOcean?.busy || (cloudBusy&&!referenceMode)))return;
   editMode=on;
   if(on){
     controls.unlock();
@@ -2152,8 +2191,25 @@ function cloudWorldUrl(worldId){
   return url.toString();
 }
 
+function canEditCurrentWorld(){
+  return (!currentCloudWorldId || cloudWorldLoaded) && (!currentCloudOwnerId || currentCloudOwnerId===firebaseUser?.uid);
+}
+// Visitor controls are read-only; Firebase remains the authority for writes.
+document.addEventListener('click',event=>{
+  const button=event.target.closest?.('button');
+  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale'].includes(button.id))return;
+  if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
+},true);
+function refreshWorldPermissions(){
+  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale']){
+    const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld();
+  }
+  cloudWorldName.readOnly=!canEditCurrentWorld();
+  communityOcean?.refreshHUD();
+}
 function setCloudBusy(busy){
-  cloudSaveBtn.disabled=busy || !firebaseUser;
+  cloudBusy=busy&&!referenceMode;
+  cloudSaveBtn.disabled=busy || !firebaseUser || !canEditCurrentWorld();
   shareWorldBtn.disabled=busy || !currentCloudWorldId;
 }
 
@@ -2165,11 +2221,18 @@ async function loadCloudWorld(worldId){
     const snapshot=await get(ref(firebaseDatabase,`worlds/${worldId}`));
     if(!snapshot.exists())throw new Error('Wereld niet gevonden');
     const record=snapshot.val();
-    if(!record.world)throw new Error('Wereldbestand ontbreekt');
+    validateWorldRecord(record);
+    if(record.world.orca&&!validateOrcaRecord(record.world.orca))throw Error('Ongeldige orkapositie');
+    if(record.world.whale&&!validateWhaleRecord(record.world.whale))throw Error('Ongeldige walvispositie');
+    if(typeof record.ownerId!=='string'||!record.ownerId)throw Error('Eigenaar ontbreekt');
+    cloudWorldLoaded=true;
+    currentCloudVisibility=record.visibility||'link';
     currentCloudWorldId=worldId;
     currentCloudOwnerId=record.ownerId||null;
     cloudWorldName.value=record.name||'Gedeelde oceaanwereld';
     restoreWorld(record.world);
+    communityOcean?.syncCurrent();
+    refreshWorldPermissions();
     syncCurrentAtlasWorld();
     saveLocalWorldAtlas();
     history.replaceState(null,'',cloudWorldUrl(worldId));
@@ -2183,7 +2246,7 @@ async function loadCloudWorld(worldId){
 }
 
 async function saveCloudWorld(){
-  if(!firebaseUser)return;
+  if(!firebaseUser || cloudBusy || communityOcean?.busy || !canEditCurrentWorld())return;
   if(currentCloudOwnerId && currentCloudOwnerId!==firebaseUser.uid){
     cloudStatus.textContent='Deze wereld is van iemand anders en kan alleen worden bekeken.';
     return;
@@ -2195,13 +2258,17 @@ async function saveCloudWorld(){
     const record={
       name:(cloudWorldName.value.trim()||'Mijn oceaanwereld').slice(0,60),
       ownerId:firebaseUser.uid,
-      visibility:'link',
+      visibility:currentCloudVisibility,
       updatedAt:serverTimestamp(),
       world:worldData()
     };
     await set(ref(firebaseDatabase,`worlds/${worldId}`),record);
     currentCloudWorldId=worldId;
     currentCloudOwnerId=firebaseUser.uid;
+    cloudWorldLoaded=true;
+    communityOcean?.syncCurrent();
+    communityOcean?.engine.forgetDraft(worldId);
+    refreshWorldPermissions();
     syncCurrentAtlasWorld();
     saveLocalWorldAtlas();
     await saveRemoteWorldAtlasIndex(worldId,record);
@@ -3631,16 +3698,19 @@ function updateFollowCamera(dt){
 // Besturing
 const keys = {};
 addEventListener('keydown',e=>{
+  if(e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
   keys[e.code]=true;
   if(e.code==='Escape' && followMode){ e.preventDefault(); stopFollowing(false); }
 });
 addEventListener('keyup',e=>keys[e.code]=false);
+addEventListener('blur',()=>Object.keys(keys).forEach(key=>keys[key]=false));
 
 const clock = new THREE.Clock();
 const tempDir = new THREE.Vector3();
 const right = new THREE.Vector3();
 
 function updateMovement(dt){
+  if(communityOcean?.busy || cloudBusy || document.getElementById('worldAtlasOverlay').classList.contains('open'))return;
   if(followMode){ updateFollowCamera(dt); return; }
 
   if(editMode){
@@ -3706,7 +3776,7 @@ function updateMovement(dt){
     speedText.textContent = '0.0';
   }
 
-  camera.position.y = THREE.MathUtils.clamp(camera.position.y,-15,60);
+  camera.position.y = THREE.MathUtils.clamp(camera.position.y,terrainHeightAt(camera.position.x,camera.position.z)+1,60);
   const r = Math.hypot(camera.position.x,camera.position.z);
   if(r>310){
     const s = 310/r;
@@ -3767,7 +3837,9 @@ function animate(){
   const t = simulationTime();
   const streamingTime = performance.now()/1000;
 
+  const previousPosition=camera.position.clone();
   updateMovement(dt);
+  communityOcean?.update(previousPosition,{enabled:!editMode&&!referencePaused&&!cloudBusy,revision:habitatRevision});
   if(!editMode && streamingTime-lastStreamingUpdate>.20){ refreshWorldStreaming(); lastStreamingUpdate=streamingTime; }
   if(!editMode && !referencePaused){
     pufferLibrary.step(dt,orca?.root);
@@ -3833,6 +3905,43 @@ function animate(){
     metricStart = metricNow;
   }
 }
+function captureVisitWorld(){
+  return {name:currentAtlasWorldName(),ownerId:cloudWorldLoaded?currentCloudOwnerId:null,
+    visibility:cloudWorldLoaded?currentCloudVisibility:'local',world:worldData()};
+}
+if(!referenceMode){
+  communityOcean=installCommunityOcean({scene,camera,floor,
+    getWorldId:currentAtlasWorldId,getUserId:()=>firebaseUser?.uid,
+    canTravel:()=>!cloudBusy && (!currentCloudWorldId||cloudWorldLoaded),
+    capture:captureVisitWorld,rawTerrain:rawTerrainHeightAt,
+    readWorld:async id=>{
+      if(!firebaseUser)throw Error('Wacht tot Firebase is verbonden.');
+      const snapshot=await get(ref(firebaseDatabase,`worlds/${id}`));
+      if(!snapshot.exists())throw Error('Deze wereld bestaat niet of is niet toegankelijk.');
+      const record=validateWorldRecord(snapshot.val());
+      if(typeof record.ownerId!=='string'||!record.ownerId)throw Error('Eigenaar ontbreekt');
+      return record;
+    },
+    applyRecord:async(id,record,arrival)=>{
+      if(followMode)stopFollowing(false);
+      if(editMode)setEditMode(false);
+      currentCloudWorldId=id==='local-world'?null:id;cloudWorldLoaded=id!=='local-world';
+      currentCloudOwnerId=record.ownerId||null;currentCloudVisibility=record.visibility||'link';
+      cloudWorldName.value=record.name||'Oceaanwereld';
+      const p=closestInHex(arrival,HEX.radius-.65);camera.position.set(p.x,p.y,p.z);
+      restoreWorld(record.world);settleSpeciesHomes();lastStreamingCell='';refreshWorldStreaming(true);
+      const url=new URL(location.href);if(currentCloudWorldId)url.searchParams.set('world',currentCloudWorldId);else url.searchParams.delete('world');
+      history.replaceState(null,'',url);refreshWorldPermissions();setCloudBusy(false);
+      cloudStatus.textContent=canEditCurrentWorld()?'Eigen wereld · je werk uit deze sessie is hersteld.':'Bezoekwereld · alleen bekijken.';
+    },
+    getAtlasWorlds:()=>[...worldAtlasState.worlds.values()],registerAtlas:registerAtlasWorld,
+    onChanged:()=>{syncCurrentAtlasWorld();saveLocalWorldAtlas();if(document.getElementById('worldAtlasOverlay').classList.contains('open'))renderWorldAtlas();},
+    prepareTravel:()=>{closeWorldAtlas();if(editMode)setEditMode(false);if(followMode)stopFollowing(false);},
+    openAtlas:openWorldAtlas,
+    openMenu:()=>{controls.unlock();closeWorldAtlas();document.getElementById('hud').classList.remove('swimming');}
+  });
+  refreshWorldPermissions();
+}else document.getElementById('journeyHud').hidden=true;
 refreshWorldStreaming(true);
 settleSpeciesHomes();
 updateSchoolBrains(simulationTime());
