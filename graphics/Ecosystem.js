@@ -50,7 +50,7 @@ function ecosystemStage(score,capacity,livingLayers){
   return 5;
 }
 
-export function evaluateEcosystem({habitats:source={},lavaVents=0,importedFish=0,naturalFish=0,megafaunaLoad=0,maxNaturalFish=220}={}){
+export function evaluateEcosystem({habitats:source={},lavaVents=0,importedFish=0,naturalFish=0,megafaunaLoad=0,maxNaturalFish=220,capacityOverride=null}={}){
   const {habitats,resources}=habitatResources(source);
   const livingTypes=['coral','seagrass','sponge','mixed'].filter(type=>habitats[type]>0).length;
   const livingLayers=habitats.coral+habitats.seagrass+habitats.sponge+habitats.mixed;
@@ -62,19 +62,22 @@ export function evaluateEcosystem({habitats:source={},lavaVents=0,importedFish=0
   const filtrationRatio=livingLayers?clamp(resources.filtration/(livingLayers*3),0,1):0;
   const quality=clamp((.48+filtrationRatio*.52)*(1-lavaPressure),0,1);
   const rawCapacity=livingLayers?Math.min(resources.food,resources.shelter*1.35,resources.nursery*1.45):0;
-  const capacity=Math.max(0,Math.floor(rawCapacity*diversityFactor*quality));
+  const calculatedCapacity=Math.max(0,Math.floor(rawCapacity*diversityFactor*quality));
+  const capacity=capacityOverride==null?calculatedCapacity:Math.max(0,Math.floor(Number(capacityOverride)||0));
   const maturity=clamp(livingLayers/36,0,1);
   const diversity=clamp(structuralTypes/5,0,1);
   const score=livingLayers?Math.round(100*(maturity*.34+diversity*.24+balance*.22+quality*.20)):0;
   const stageId=ecosystemStage(score,capacity,livingLayers),stage=ECOSYSTEM_STAGES[stageId];
   const imported=cleanCount(importedFish),natural=cleanCount(naturalFish),megafauna=Math.max(0,Number(megafaunaLoad)||0);
-  const availableAfterGuests=Math.max(0,capacity-imported-megafauna);
-  const naturalTarget=stageId<2?0:Math.min(cleanCount(maxNaturalFish),Math.floor(availableAfterGuests*.72));
+  // Natuurlijke populaties worden uitsluitend door het habitat bepaald. Importvissen
+  // nemen dus geen soorten weg; zij gebruiken de overblijvende lokale voedselruimte.
+  const naturalHabitatCapacity=Math.max(0,capacity-megafauna);
+  const naturalTarget=stageId<2?0:Math.min(cleanCount(maxNaturalFish),Math.floor(naturalHabitatCapacity*.72));
   const totalLoad=imported+natural+megafauna;
   const supportRatio=totalLoad>0?clamp(capacity/totalLoad,0,1):1;
   const shortage=imported>0?clamp(1-supportRatio,0,1):0;
   return {habitats,resources,livingLayers,livingTypes,diversityFactor,balance,quality,lavaPressure,
-    capacity,score,stageId,stage,naturalTarget,importedFish:imported,naturalFish:natural,megafaunaLoad:megafauna,totalLoad,supportRatio,shortage};
+    capacity,calculatedCapacity,score,stageId,stage,naturalTarget,importedFish:imported,naturalFish:natural,megafaunaLoad:megafauna,totalLoad,supportRatio,shortage};
 }
 
 function splitGroups(species,count,maxGroup,min){

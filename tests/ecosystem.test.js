@@ -37,12 +37,13 @@ test('species are introduced in five habitat phases',()=>{
   }
 });
 
-test('imported fish take available capacity before health is affected',()=>{
+test('imported fish do not reduce the habitat-driven natural population target',()=>{
   const habitats={coral:15,seagrass:15,sponge:10,rocks:10,mixed:10};
+  const baseline=evaluateEcosystem({habitats});
   const healthy=evaluateEcosystem({habitats,importedFish:150});
-  assert.equal(healthy.capacity,186);assert.equal(healthy.shortage,0);assert.ok(healthy.naturalTarget<40);
+  assert.equal(healthy.capacity,186);assert.equal(healthy.naturalTarget,baseline.naturalTarget);
   const overloaded=evaluateEcosystem({habitats:{coral:10},importedFish:150});
-  assert.ok(overloaded.shortage>.9);assert.equal(overloaded.naturalTarget,0);
+  assert.ok(overloaded.shortage>.9);assert.ok(overloaded.naturalTarget>0);
 });
 
 test('lava reduces capacity and only shortage or hazards lower imported health',()=>{
@@ -58,6 +59,8 @@ test('the app starts normal worlds empty, computes locally and limits health to 
   assert.match(html,/const FISH_COUNT = referenceMode \? REFERENCE\.fishCount : 0/);
   assert.match(html,/if\(!fish\.userData\.imported\)continue/);
   assert.match(html,/evaluateEcosystem\(\{[\s\S]*habitats:ecosystemHabitatCounts\(\)/);
+  assert.match(html,/advanceImportedVitality/);
+  assert.match(html,/updateFoodSectors/);
   const worldData=html.slice(html.indexOf('function worldData()'),html.indexOf('function restoreWorld'));
   assert.doesNotMatch(worldData,/ecosystem|capacity|naturalTarget/);
 });

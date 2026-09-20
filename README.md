@@ -16,10 +16,12 @@ Zie [gebruik en beperkingen](docs/fish-library.md).
 ## Leefbaarheid en natuurlijke groei
 
 Een normale wereld begint nu zonder vissen. Koraal, zeegras, sponzen, anemonen,
-rotsen, gemengde habitat en lavabronnen bepalen lokaal de draagkracht. Natuurlijke
-soorten verschijnen gefaseerd wanneer het voedselweb gezond genoeg is en vertrekken
-weer wanneer habitat verdwijnt. Alleen geïmporteerde vissen gebruiken health en een
-kritieke toestand. Deze berekening voegt geen Firebase-data toe. Zie
+rotsen, gemengde habitat en lavabronnen bepalen de draagkracht van lokale
+voedselzones. Natuurlijke soorten verschijnen gefaseerd en alle scholen migreren
+regelmatig naar nieuwe zones. Alleen geïmporteerde vissen hebben individuele
+health en een voedselreserve van 3–6 minuten. Op 20% zwemmen ze trager; op 5%
+stoppen ze, zakken naar de bodem en verdwijnen uiteindelijk in het zand. Deze
+runtimeberekening voegt geen Firebase-data toe. Zie
 [leefbaarheid en draagkracht](docs/ecosystem.md).
 
 ## Nieuw: natuurlijk microleven
