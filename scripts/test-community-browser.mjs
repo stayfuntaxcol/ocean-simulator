@@ -21,6 +21,13 @@ await page.route('https://www.gstatic.com/firebasejs/**',route=>route.fulfill({c
   (window.__reads??=[]).push(path);if(path==='worldIndex')return {exists:()=>false};
   if(window.__deny)throw Error('permission_denied');
   const id=path.split('/')[1],names={A:'Mijn koraaltuin',B:'Diepe buurwereld',C:'Verre rifwereld'},record={name:names[id]||id,ownerId:id==='A'?'owner-A':'owner-B',visibility:'link',world:{version:4,worldHalf:144,cellSize:12,cells:[{key:id==='A'?'0,0':'1,1',layers:[{id:1,type:'coral'}]}],terrain:id==='B'?Array.from({length:25},(_,i)=>({key:((i%5)-2)+','+(Math.floor(i/5)+8),offset:-12})):[],hexWorld:{hexQ:0,hexR:0},orca:null,whale:null,lavaVents:[]}};
+  // Exercise RTDB list representations, not just the arrays the editor exports.
+  if(id==='B'){
+   record.world.cells={4:{key:'1,1',layers:{3:{id:1,type:'coral'}}}};
+   record.world.terrain=Object.fromEntries(record.world.terrain.map((item,i)=>[i*3,item]));
+   delete record.world.lavaVents;
+  }
+  if(id==='C'){delete record.world.cells;delete record.world.lavaVents;record.world.terrain={7:{key:'0,0',offset:6}};}
   return {exists:()=>['A','B','C'].includes(id),val:()=>record};
  };
  export const set=async()=>{window.__writes=(window.__writes??0)+1;throw Error('Unexpected write in travel test');};
@@ -31,7 +38,8 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
   let html=await fs.readFile(root+'/index.html','utf8');
   const qa=`
    const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
-   window.__communityQA={state:()=>({id:communityOcean.activeId,busy:communityOcean.busy,cells:worldData().cells,position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),editable:canEditCurrentWorld(),status:communityOcean.lastStatus,floor:terrainHeightAt(camera.position.x,camera.position.z),neighbors:SIDES.map((_,side)=>communityOcean.engine.neighbor(side))}),
+   window.__communityQA={state:()=>({id:communityOcean.activeId,busy:communityOcean.busy,cells:worldData().cells,terrain:worldData().terrain,position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),editable:canEditCurrentWorld(),status:communityOcean.lastStatus,floor:terrainHeightAt(camera.position.x,camera.position.z),neighbors:SIDES.map((_,side)=>communityOcean.engine.neighbor(side))}),
+    restore:data=>restoreWorld(data),
     navigation:()=>{
       const check=(condition,message)=>{if(!condition)throw Error(message);};
       const pose=camera.position.clone(),rotation=camera.quaternion.clone(),zoom=minimapZoom;
@@ -131,6 +139,7 @@ await page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Verre rifwere
 await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='C'&&!window.__communityQA.state().busy,null,{timeout:60000});
 let state=await page.evaluate(()=>window.__communityQA.state());assert.ok(Math.abs(state.position[0])<1e-8&&Math.abs(state.position[2])<1e-8,'distant atlas arrival is central');
+assert.deepEqual(state.cells,[]);assert.deepEqual(state.terrain,[{key:'0,0',offset:6}],'terrain-only world is rebuilt despite omitted cells');
 assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
 await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 
@@ -175,6 +184,15 @@ assert.deepEqual(errors,[]);
 await page.setViewportSize({width:390,height:844});await page.locator('#journeyAtlas').click();
 assert.ok(await page.evaluate(()=>{const e=document.getElementById('worldAtlasDetails');e.scrollTop=e.scrollHeight;return e.clientHeight>0&&e.scrollTop>0;}),'mobile atlas form scrolls');
 await page.screenshot({path:artifacts+'/mobile-atlas.png'});
+// A direct world URL uses the same normalization as atlas and border travel.
+await page.goto('http://127.0.0.1:8765/?world=C&reef=organic');
+await page.waitForFunction(()=>window.__communityQA?.state().id==='C'&&!window.__communityQA.state().busy,null,{timeout:60000});
+state=await page.evaluate(()=>window.__communityQA.state());assert.deepEqual(state.cells,[]);assert.deepEqual(state.terrain,[{key:'0,0',offset:6}]);
+assert.equal(await page.evaluate(()=>{try{window.__communityQA.restore({version:4,cells:{bad:{}}});return false;}catch{return true;}}),true);
+assert.deepEqual((await page.evaluate(()=>window.__communityQA.state())).terrain,state.terrain,'bad local import does not clear current terrain');
+await page.evaluate(()=>window.__communityQA.restore({version:4}));
+const empty=await page.evaluate(()=>window.__communityQA.state());assert.deepEqual(empty.cells,[]);assert.deepEqual(empty.terrain,[]);
+assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
 console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','atlas button opens adjacent world','atlas directly opens distant known world','failed atlas travel remains visible','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
-await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true},null,2));
+await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true,firebaseListNormalization:true,terrainOnlyWorld:true,emptyWorld:true,invalidImportPreservesTerrain:true},null,2));
 }finally{await browser.close();}
