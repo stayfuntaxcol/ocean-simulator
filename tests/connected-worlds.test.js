@@ -40,6 +40,45 @@ test('legacy records accepted; malformed and incompatible data rejected before a
  for(const v of [1,2,3,4])assert.ok(validateWorldRecord({world:{version:v,cells:[{key:'-1,2',type:'coral'}]}}));
  for(const world of [{version:4,cells:[{key:'bad'}]},{version:4,cells:[],terrain:[{key:'0,0',offset:NaN}]},{version:4,cells:[],worldHalf:200}])assert.throws(()=>validateWorldRecord({world}));
 });
+test('Firebase missing lists, indexed objects and sparse arrays normalize without changing the source',()=>{
+ for(const value of [undefined,null,[],{}]){
+  const source={name:'Lege wereld',world:{version:4,cells:value,terrain:value,lavaVents:value}};
+  const before=structuredClone(source),result=validateWorldRecord(source);
+  assert.deepEqual(result.world.cells,[]);assert.deepEqual(result.world.terrain,[]);assert.deepEqual(result.world.lavaVents,[]);
+  assert.deepEqual(source,before);
+ }
+ const source={...record('Sparse'),world:{version:4,nextLayerId:100,hexWorld:a,
+  cells:{20:{key:'2,1',layers:{9:{id:99,type:'coral',habitatPoint:{x:1,y:-2,z:3}},2:{id:22,type:'sponge'},5:null}},3:{key:'-1,2',type:'seagrass'}},
+  terrain:[null,{key:'2,1',offset:-12},null],lavaVents:{7:{id:'vent',x:3,z:9,amount:2}}}};
+ const before=structuredClone(source),result=validateWorldRecord(source);
+ assert.deepEqual(source,before);assert.deepEqual(result.world.cells.map(c=>c.key),['-1,2','2,1']);
+ assert.equal(result.world.cells[0].type,'seagrass');assert.equal(result.world.cells[0].layers,undefined);
+ assert.deepEqual(result.world.cells[1].layers.map(l=>l.id),[22,99]);
+ assert.deepEqual(result.world.cells[1].layers[1].habitatPoint,{x:1,y:-2,z:3});
+ assert.deepEqual(result.world.terrain,[{key:'2,1',offset:-12}]);assert.equal(result.world.lavaVents[0].id,'vent');
+ assert.equal(result.world.nextLayerId,100);assert.deepEqual(result.world.hexWorld,a);
+ assert.deepEqual(validateWorldRecord(result),result,'normalization is idempotent');
+ assert.equal(validateWorldRecord({world:{version:4,cells:{2147483647:{key:'0,0',layers:[null,{id:1,type:'coral'}]}}}}).world.cells[0].layers.length,1);
+});
+test('malformed nonempty lists and oversized data are not silently replaced by an empty world',()=>{
+ for(const cells of ['broken',false,42,{'0,0':{type:'coral'}},{nope:{}},{'-1':{key:'0,0'}},new Array(20001).fill(null)])
+  assert.throws(()=>validateWorldRecord({world:{version:4,cells}}),/cells/);
+ assert.throws(()=>validateWorldRecord({world:{version:4,terrain:{0:{key:'0,0',offset:'3'}}}}),/bodemhoogte/);
+ assert.throws(()=>validateWorldRecord({world:{version:4,cells:[{key:'0,0',layers:{0:{id:7}}}]}}),/landschapslaag/);
+ assert.throws(()=>validateWorldRecord({world:{version:4,cells:[{key:'0,0',layers:{bad:{type:'coral'}}}]}}),/layers/);
+});
+test('travel caches and activates normalized records; invalid data leaves the active world untouched',async()=>{
+ const db={A:{name:'Empty',ownerId:'me',world:{version:4}},B:{name:'Terrain',ownerId:'other',world:{version:4,terrain:{8:{key:'0,0',offset:4}}}}};
+ const before=structuredClone(db);let active=db.A,activations=0;
+ const e=createWorldTravel({readWorld:async id=>db[id],capture:()=>active,getUserId:()=> 'me',activate:async(id,r)=>{activations++;active=r;assert.ok(Array.isArray(r.world.cells));assert.ok(Array.isArray(r.world.terrain));}});
+ e.setCurrent('A',db.A,a);assert.deepEqual(e.current.record.world.cells,[]);
+ e.setPosition('B',{hexQ:0,hexR:-1});assert.deepEqual((await e.prefetch('B')).world.terrain,[{key:'0,0',offset:4}]);
+ assert.equal(await e.travelTo('B',{x:0,y:-12,z:-125}),true);assert.deepEqual(active.world.cells,[]);
+ assert.equal(await e.travelTo('A',{x:0,y:-12,z:125}),true);assert.equal(activations,2);
+ assert.deepEqual(db,before,'normalizing reads never rewrites the source');
+ db.B.world.cells={broken:{key:'0,0'}};assert.equal(await e.travelTo('B',{x:0,y:-12,z:-125}),false);
+ assert.equal(e.current.id,'A');assert.equal(activations,2);e.dispose();
+});
 test('own draft survives foreign visit; entry rechecks access and positions never overlap',async()=>{
  const db={A:record('A'),B:record('B','other')};let active=structuredClone(db.A),reads=0,denied=false;
  const e=createWorldTravel({readWorld:async id=>{reads++;if(denied)throw Error('permission_denied');return structuredClone(db[id]);},capture:()=>active,getUserId:()=> 'me',activate:async(id,r)=>active=r});
