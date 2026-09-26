@@ -44,10 +44,11 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
     pending.set(id,request);return request;
   }
   function neighbor(side){if(!current)return null;const a=positions.get(current.id),s=SIDES[side];if(!s)return null;return [...positions].find(([id,b])=>id!==current.id&&b.hexQ===a.hexQ+s.q&&b.hexR===a.hexR+s.r)?.[0]??null;}
-  async function travelTo(id,exitPosition) {
+  async function travelTo(id,exitPosition,{allowDistant=false,beforeActivate=null,mode='swim'}={}) {
     if(busy||disposed||!current||id===current.id)return false;
     const from=current,fromPosition=positions.get(from.id),toPosition=positions.get(id);
-    if(!toPosition||neighborSide(fromPosition,toPosition)<0){onStatus('Kies eerst een wereld die direct naast je ligt.');return false;}
+    const side=toPosition&&fromPosition?neighborSide(fromPosition,toPosition):-1;
+    if(!toPosition||(!allowDistant&&side<0)){onStatus('Kies eerst een wereld die direct naast je ligt.');return false;}
     busy=true;onStatus('Doorgang voorbereiden…');let previous=null,activated=false;
     try{
       // Re-read through the adapter rather than trusting our preview cache.
@@ -62,10 +63,15 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
       const destination=owned(remote)&&drafts.has(id)?copy(drafts.get(id)):remote;
       // Always honor the fresh owner's identity, even when an old local draft exists.
       destination.ownerId=remote.ownerId;destination.visibility=remote.visibility;
-      const arrival=arrivalPosition(fromPosition,toPosition,exitPosition);
+      // Zwemmen gebruikt de gedeelde grens. De atlas mag ook naar een verder
+      // gelegen bekende wereld springen en zet de bezoeker dan veilig centraal.
+      const arrival=side>=0
+        ? arrivalPosition(fromPosition,toPosition,exitPosition)
+        : {x:0,y:Number.isFinite(exitPosition?.y)?exitPosition.y:0,z:0};
+      if(beforeActivate)await beforeActivate({from:from.id,to:id,direct:side<0});
       current={id,record:copy(destination)};activated=true;
-      await activate(id,copy(destination),arrival,{from:from.id,toPosition,restoreDraft:destination!==remote});
-      onStatus(`Je zwemt nu in ${destination.name||'de volgende wereld'}.`);return true;
+      await activate(id,copy(destination),arrival,{from:from.id,toPosition,restoreDraft:destination!==remote,direct:side<0});
+      onStatus(`${mode==='atlas'?'Je bent nu in':'Je zwemt nu in'} ${destination.name||'de volgende wereld'}.`);return true;
     }catch(error){
       current=from;
       if(activated&&previous){try{await activate(from.id,previous,exitPosition,{rollback:true,toPosition:fromPosition});}catch{onStatus('Terugzetten mislukte. Je bouwwerk blijft in de reisbuffer beschikbaar.');return false;}}

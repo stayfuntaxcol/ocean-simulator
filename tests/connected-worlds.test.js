@@ -64,3 +64,11 @@ test('cache stays bounded and a fresh read follows an in-flight prefetch',async(
  e.setCurrent('A',record('A'),a);await Promise.all([e.prefetch('B'),e.prefetch('B',{fresh:true})]);assert.equal(reads,2);
  for(let i=0;i<12;i++)await e.prefetch('world'+i);assert.equal(e.cacheSize,7);assert.ok(e.cached('A'));e.dispose();
 });
+test('atlas transport may open a known distant world while swimming stays neighbor-only',async()=>{
+ const db={A:record('A'),C:record('C','other')};let active=structuredClone(db.A),prepared=0,last='';
+ const e=createWorldTravel({readWorld:async id=>structuredClone(db[id]),capture:()=>active,getUserId:()=> 'me',onStatus:text=>last=text,activate:async(id,r,p)=>{active=r;assert.deepEqual(p,{x:0,y:-11,z:0});}});
+ e.setCurrent('A',active,a);e.setPosition('C',{hexQ:0,hexR:-2});
+ assert.equal(await e.travelTo('C',{x:0,y:-11,z:-125}),false);assert.match(last,/direct naast/);assert.equal(e.current.id,'A');
+ assert.equal(await e.travelTo('C',{x:0,y:-11,z:0},{allowDistant:true,mode:'atlas',beforeActivate:()=>{prepared++;}}),true);
+ assert.equal(prepared,1);assert.equal(e.current.id,'C');assert.match(last,/Je bent nu in C/);e.dispose();
+});

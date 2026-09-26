@@ -37,18 +37,23 @@ export function installCommunityOcean(api) {
     }finally{rebuilding=false;}
   }
   const engine=createWorldTravel({readWorld,capture,getUserId,onStatus:say,onCache:()=>{rebuild();refreshHUD();},activate:async(id,record,arrival,context)=>{
-    const oldPosition=camera.position.clone(),oldQuaternion=camera.quaternion.clone();
+    const oldPosition=camera.position.clone(),oldQuaternion=camera.quaternion.clone(),oldSample=sample;
     veil.classList.add('visible');
     await new Promise(resolve=>setTimeout(resolve,160));
     try{
-      activeId=id;
+      // Tijdens restore mag geen terreinblend van de vorige wereld worden
+      // gebruikt voor objecthoogtes in de bestemming.
+      sample=null;floor.visible=true;
       await applyRecord(id,record,arrival,context);
+      // Houd tijdens het herstellen nog de oude wereld actief. Anders kan de
+      // animatielus de nieuwe ID combineren met de oude terreinblend.
+      activeId=id;
       camera.quaternion.copy(oldQuaternion);
       rebuild();
       const floorY=sample?sample(id,camera.position.x,camera.position.z):api.rawTerrain(camera.position.x,camera.position.z);
       camera.position.y=Math.min(18.8,Math.max(camera.position.y,floorY+1.0));
       api.onChanged?.();refreshHUD();
-    }catch(error){camera.position.copy(oldPosition);camera.quaternion.copy(oldQuaternion);throw error;}
+    }catch(error){sample=oldSample;floor.visible=!sample;camera.position.copy(oldPosition);camera.quaternion.copy(oldQuaternion);throw error;}
     finally{requestAnimationFrame(()=>veil.classList.remove('visible'));}
   }});
   function restoreAtlasPositions({refresh=true}={}) {
@@ -79,9 +84,14 @@ export function installCommunityOcean(api) {
   }
   function syncCurrent() {
     const record=capture(),id=api.getWorldId();validateWorldRecord(record);
-    // Renaming a newly saved local world keeps its visit position.
+    // Bij het opslaan van een nieuwe lokale wereld nemen we de lokale positie
+    // over. Bij het openen van een bestaande Firebase-wereld behouden we juist
+    // diens al bekende atlaspositie; anders verschuift de route bij elke reload.
     if(activeId==='local-world'&&id!=='local-world'){
-      const old=engine.positions.get(activeId);engine.positions.delete(activeId);localRoutes.delete(activeId);if(old)localRoutes.set(id,old);
+      const old=engine.positions.get(activeId),known=engine.positions.get(id)??localRoutes.get(id)??api.getAtlasWorlds?.().find(world=>world.id===id);
+      engine.positions.delete(activeId);localRoutes.delete(activeId);
+      if(known&&Number.isSafeInteger(known.hexQ)&&Number.isSafeInteger(known.hexR))localRoutes.set(id,{hexQ:known.hexQ,hexR:known.hexR});
+      else if(old)localRoutes.set(id,old);
     }
     activeId=id;
     for(const [other,p] of localRoutes){try{engine.setPosition(other,p);}catch{localRoutes.delete(other);}}
@@ -124,21 +134,30 @@ export function installCommunityOcean(api) {
       rebuild();refreshHUD();api.onChanged?.();say(`Verbonden met ${record.name||id} aan de ${s.name}kant. Dit is een bezoekroute op dit apparaat.`);
     }catch(error){say(error.message);}finally{connect.disabled=false;}
   }
-  function approach(side) {
+  async function approach(side) {
     const s=SIDES[side],id=engine.neighbor(side);if(!s||!id||engine.busy||api.canTravel?.()===false)return;
-    api.prepareTravel?.();
-    camera.position.set(s.nx*(apothem(HEX.radius)-27),0,s.nz*(apothem(HEX.radius)-27));
-    const h=sample?sample(activeId,camera.position.x,camera.position.z):api.rawTerrain(camera.position.x,camera.position.z);camera.position.y=Math.max(-14,h+3);
-    camera.lookAt(s.nx*apothem(HEX.radius),camera.position.y,s.nz*apothem(HEX.radius));
-    say(`Doorgang naar ${s.name}. Klik op het water en zwem met W verder.`);
-    engine.prefetch(id).catch(error=>say(`Doorgang niet beschikbaar: ${error.message}`));
+    say('De buurwereld wordt gecontroleerd…');
+    try{
+      await engine.prefetch(id,{fresh:true});
+      if(engine.busy||api.canTravel?.()===false)return;
+      failures.delete(id);api.prepareTravel?.();
+      camera.position.set(s.nx*(apothem(HEX.radius)-27),0,s.nz*(apothem(HEX.radius)-27));
+      const h=sample?sample(activeId,camera.position.x,camera.position.z):api.rawTerrain(camera.position.x,camera.position.z);camera.position.y=Math.max(-14,h+3);
+      camera.lookAt(s.nx*apothem(HEX.radius),camera.position.y,s.nz*apothem(HEX.radius));
+      say(`Doorgang naar ${s.name}. Klik op het water en zwem met W verder.`);
+    }catch(error){failures.set(id,performance.now());say(`Doorgang niet beschikbaar: ${error.message}`);}
   }
   async function visit(id) {
     if(engine.busy||api.canTravel?.()===false)return false;
     const target=engine.positions.get(id),origin=engine.positions.get(activeId),side=target&&origin?neighborSide(origin,target):-1;
-    if(side<0){say('Verbind deze wereld eerst met een vrije zijde via de wereldlink.');return false;}
-    const s=SIDES[side];api.prepareTravel?.();
-    return engine.travelTo(id,{x:s.nx*(apothem(HEX.radius)+.2),y:camera.position.y,z:s.nz*(apothem(HEX.radius)+.2)});
+    if(!target){say('Deze wereld heeft nog geen geldige positie in je atlas. Verbind hem eerst via een vrije zijde.');return false;}
+    const s=SIDES[side],exit=s
+      ? {x:s.nx*(apothem(HEX.radius)+.2),y:camera.position.y,z:s.nz*(apothem(HEX.radius)+.2)}
+      : {x:0,y:camera.position.y,z:0};
+    say('Wereld laden…');
+    const ok=await engine.travelTo(id,exit,{allowDistant:true,mode:'atlas',beforeActivate:()=>api.prepareTravel?.()});
+    if(ok)failures.delete(id);else api.onTravelError?.(lastStatus);
+    return ok;
   }
   function update(previous,{enabled=true,revision:nextRevision=0}={}) {
     if(disposed||!activeId)return;
