@@ -566,23 +566,34 @@ renderer.domElement.addEventListener('click', () => {
 
 controls.addEventListener('lock', () => {
   document.getElementById('hud').classList.add('swimming');
+  document.getElementById('hud').classList.remove('settings-open');
   swimmingSettingsBtn.classList.add('visible');
+  swimmingSettingsBtn.textContent='⚙ Beeld & opties · Esc of O';
   startBtn.textContent = 'Verkennen actief';
-  hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · klik een vis om te volgen';
+  hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: opties';
 });
 controls.addEventListener('unlock', () => {
   startBtn.textContent = 'Verder verkennen';
-  swimmingSettingsBtn.classList.remove('visible');
-  document.getElementById('hud').classList.remove('settings-open');
-  hint.textContent = 'Klik op “Verder verkennen” om de besturing weer te activeren.';
+  // Escape frees the cursor: keep the shortcut reachable while the HUD is hidden.
+  // An asynchronous unlock must also leave an already opened settings panel alone.
+  swimmingSettingsBtn.classList.toggle('visible',document.getElementById('hud').classList.contains('swimming'));
+  swimmingSettingsBtn.textContent='⚙ Beeld & opties';
+  Object.keys(keys).forEach(key=>keys[key]=false);
+  hint.textContent = 'Muis vrij · klik op Beeld & opties of druk O. Klik op het water om verder te verkennen.';
 });
-swimmingSettingsBtn.addEventListener('click',event=>{
-  event.stopPropagation();
+function openGraphicsSettings(){
+  if(followMode)stopFollowing(false);
   controls.unlock();
   swimmingSettingsBtn.classList.remove('visible');
   graphicsOptionsPanel.open=true;
   document.getElementById('hud').classList.remove('swimming');
   document.getElementById('hud').classList.add('settings-open');
+  graphicsOptionsPanel.querySelector('summary').focus();
+  graphicsOptionsPanel.scrollIntoView({block:'nearest'});
+}
+swimmingSettingsBtn.addEventListener('click',event=>{
+  event.stopPropagation();
+  openGraphicsSettings();
 });
 
 // Licht
@@ -2240,6 +2251,8 @@ function worldData(){
   };
 }
 function restoreWorld(data){
+  // Validate and normalize before clearing the currently loaded world.
+  data=validateWorldRecord({world:data}).world;
   const savedOrca=validateOrcaRecord(data?.orca);
   if(data?.orca && !savedOrca)throw new Error('Ongeldige orkapositie in dit wereldbestand.');
   const savedWhale=validateWhaleRecord(data?.whale);
@@ -2254,10 +2267,6 @@ function restoreWorld(data){
   }
   clearAllWorldVisuals();
   worldCells.clear(); terrainOffsets.clear(); clearLavaVents(); nextLayerId=1;
-  if(!data || !Array.isArray(data.cells)){
-    queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
-    return;
-  }
   if(Array.isArray(data.terrain)){
     for(const item of data.terrain){
       if(item?.key && Number.isFinite(item.offset)) terrainOffsets.set(String(item.key),THREE.MathUtils.clamp(item.offset,-12,10));
@@ -2333,8 +2342,7 @@ async function loadCloudWorld(worldId){
   try{
     const snapshot=await get(ref(firebaseDatabase,`worlds/${worldId}`));
     if(!snapshot.exists())throw new Error('Wereld niet gevonden');
-    const record=snapshot.val();
-    validateWorldRecord(record);
+    const record=validateWorldRecord(snapshot.val());
     if(record.world.orca&&!validateOrcaRecord(record.world.orca))throw Error('Ongeldige orkapositie');
     if(record.world.whale&&!validateWhaleRecord(record.world.whale))throw Error('Ongeldige walvispositie');
     if(typeof record.ownerId!=='string'||!record.ownerId)throw Error('Eigenaar ontbreekt');
@@ -4108,6 +4116,9 @@ function updateFollowCamera(dt){
 const keys = {};
 addEventListener('keydown',e=>{
   if(document.getElementById('fishLibraryDialog')?.open || e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
+  if(e.code==='KeyO'&&!editMode&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('worldAtlasOverlay').classList.contains('open')){
+    e.preventDefault();openGraphicsSettings();return;
+  }
   keys[e.code]=true;
   if(e.code==='Escape' && followMode){ e.preventDefault(); stopFollowing(false); }
 });
@@ -4353,7 +4364,7 @@ if(!referenceMode){
     prepareTravel:()=>{closeWorldAtlas();if(editMode)setEditMode(false);if(followMode)stopFollowing(false);},
     onTravelError:message=>{openWorldAtlas();setAtlasStatus(message);},
     openAtlas:openWorldAtlas,
-    openMenu:()=>{controls.unlock();closeWorldAtlas();document.getElementById('hud').classList.remove('swimming');}
+    openMenu:()=>{controls.unlock();closeWorldAtlas();document.getElementById('hud').classList.remove('swimming');swimmingSettingsBtn.classList.remove('visible');}
   });
   refreshWorldPermissions();
 }else document.getElementById('journeyHud').hidden=true;

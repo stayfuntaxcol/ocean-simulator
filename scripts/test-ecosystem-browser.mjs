@@ -23,8 +23,9 @@ await context.route(origin+'/**',async route=>{
     let html=await fs.readFile(root+'/index.html','utf8');
     const marker='drawMinimap();\nanimate();';
     assert.ok(html.includes(marker));
-    html=html.replace(marker,`window.requestAnimationFrame=()=>0;
+    html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
+        lateUnlock:()=>controls.dispatchEvent({type:'unlock'}),
         snapshot:()=>({score:ecosystemState.score,stage:ecosystemState.stageId,capacity:ecosystemState.capacity,natural:livingNaturalFish(),imported:livingImportedFish().length,target:ecosystemState.naturalTarget,shortage:ecosystemState.shortage,health:livingImportedFish().map(f=>f.userData.health),reserves:livingImportedFish().map(f=>f.userData.foodReserve),states:livingImportedFish().map(f=>f.userData.vitalState),sectors:foodSectorSummary,saved:worldData()}),
         addGuests:(count=3)=>{const school=makeSchool('qa-guests');for(let i=0;i<count;i++){const fish=new THREE.Group();fish.position.set(i,-10,0);fish.userData.velocity=new THREE.Vector3(1,0,0);fish.userData.imported=true;fish.userData.health=100;registerFish(fish,'qa-guests',school);scene.add(fish);fishes.push(fish);}updateEcosystem(performance.now()/1000,true);updateLocalFood(.5);return window.__ecosystemQA.snapshot();},
         starve:(seconds=5)=>{for(let t=0;t<seconds;t+=.25){updateLocalFood(.25);updateImportedHealth(.25);}return window.__ecosystemQA.snapshot();},
@@ -48,11 +49,37 @@ const ui=await page.evaluate(()=>{
   const style=document.getElementById('fishRenderStyle');
   style.value='realistic';style.dispatchEvent(new Event('change',{bubbles:true}));
   const styleStatus=document.getElementById('fishStyleStatus').textContent;
-  document.getElementById('hud').classList.add('swimming');
-  const button=document.getElementById('swimmingSettingsBtn');button.classList.add('visible');button.click();
-  return {collapsedInitially,style:style.value,status:styleStatus,openedFromSwimming:panel.open,hudSettingsOpen:document.getElementById('hud').classList.contains('settings-open')};
+  return {collapsedInitially,style:style.value,status:styleStatus};
 });
-assert.equal(ui.collapsedInitially,true);assert.equal(ui.style,'realistic');assert.match(ui.status,/Realistische animatie actief/);assert.equal(ui.openedFromSwimming,true);assert.equal(ui.hudSettingsOpen,true);
+assert.equal(ui.collapsedInitially,true);assert.equal(ui.style,'realistic');assert.match(ui.status,/Realistische animatie actief/);
+// Actual pointer-lock lifecycle, not a manual CSS class toggle.
+await page.locator('#startBtn').click();
+await page.waitForFunction(()=>Boolean(document.pointerLockElement)&&document.getElementById('startBtn').textContent==='Verkennen actief'&&!document.getElementById('hud').classList.contains('settings-open'));
+assert.equal(await page.locator('#hud').isVisible(),false);
+await page.keyboard.press('Escape');
+// Headless Chromium may not run the browser-chrome Escape action. In that case
+// exit via the native API; PointerLockControls still receives the real event.
+await page.evaluate(()=>{if(document.pointerLockElement)document.exitPointerLock();});
+await page.waitForFunction(()=>!document.pointerLockElement&&document.getElementById('startBtn').textContent==='Verder verkennen');
+assert.equal(await page.locator('#swimmingSettingsBtn').isVisible(),true,'settings shortcut survives Escape/unlock');
+await page.locator('#swimmingSettingsBtn').click();
+assert.equal(await page.locator('#hud').isVisible(),true);
+assert.equal(await page.locator('#graphicsOptionsPanel').evaluate(e=>e.open),true);
+await page.evaluate(()=>window.__ecosystemQA.lateUnlock());
+assert.equal(await page.locator('#hud').isVisible(),true,'late unlock cannot hide the open panel');
+assert.equal(await page.locator('#swimmingSettingsBtn').isVisible(),false);
+await page.locator('#fishRenderStyle').selectOption('cartoon');
+await page.locator('#fishRenderStyle').selectOption('realistic');
+await page.locator('#startBtn').click();
+await page.waitForFunction(()=>Boolean(document.pointerLockElement)&&document.getElementById('startBtn').textContent==='Verkennen actief'&&!document.getElementById('hud').classList.contains('settings-open'));
+assert.equal(await page.locator('#hud').isVisible(),false,'resuming swimming hides settings again');
+await page.keyboard.press('o');
+await page.waitForFunction(()=>!document.pointerLockElement&&document.getElementById('hud').classList.contains('settings-open'));
+assert.equal(await page.locator('#hud').isVisible(),true,'O opens options directly during swimming');
+assert.equal(await page.locator('#graphicsOptionsPanel').evaluate(e=>e.open),true);
+await page.locator('#cloudWorldName').fill('Mijn oceaan');await page.keyboard.press('o');
+assert.equal(await page.locator('#cloudWorldName').inputValue(),'Mijn oceaano','O remains text in input fields');
+ui.pointerLockOptions=true;ui.keyboardOptions=true;ui.lateUnlockSafe=true;
 const empty=await page.evaluate(()=>window.__ecosystemQA.snapshot());
 assert.equal(empty.capacity,0);assert.equal(empty.natural,0);assert.equal(empty.stage,0);
 await page.evaluate(()=>window.__ecosystemQA.addGuests(3));

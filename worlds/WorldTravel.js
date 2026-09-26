@@ -1,14 +1,31 @@
 import { HEX, SIDES, neighborSide, arrivalPosition, parseWorldId } from './HexWorld.js';
 
+// RTDB omits empty lists and may return sparse indexed children as an object.
+// Normalize only the in-memory read: never rewrite or discard saved objects.
+function readWorldList(value,field) {
+  if(value==null)return [];
+  if(typeof value!=='object')throw Error(`Ongeldige landschapsgegevens: ${field} is geen lijst.`);
+  const keys=Object.keys(value);
+  if(keys.length>20000 || (Array.isArray(value)&&value.length>20000))throw Error(`Ongeldige landschapsgegevens: ${field} bevat meer dan 20000 plaatsen.`);
+  if(keys.some(key=>!/^(0|[1-9]\d*)$/.test(key)||!Number.isSafeInteger(Number(key))))throw Error(`Ongeldige landschapsgegevens: ${field} bevat ongeldige lijstnummers.`);
+  // Sorting values, not expanding to the largest index, also bounds sparse data.
+  return keys.sort((a,b)=>Number(a)-Number(b)).map(key=>value[key]).filter(item=>item!=null);
+}
+
 export function validateWorldRecord(record) {
   if(!record||typeof record!=='object'||!record.world||![1,2,3,4].includes(record.world.version))throw Error('Dit wereldbestand wordt nog niet ondersteund.');
   const w=record.world;
-  if(!Array.isArray(w.cells)||w.cells.length>20000||!Array.isArray(w.terrain??[]))throw Error('De wereld bevat ongeldige landschapsgegevens.');
+  const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents');
   if(w.worldHalf!=null&&w.worldHalf!==HEX.radius)throw Error('Deze wereld heeft een andere maat en kan nog niet aansluiten.');
-  for(const item of [...w.cells,...(w.terrain??[])])if(!item||!/^[-]?\d+,[-]?\d+$/.test(String(item.key)))throw Error('Een terreincoördinaat is ongeldig.');
-  if((w.terrain??[]).some(t=>!Number.isFinite(t.offset)))throw Error('Een bodemhoogte is ongeldig.');
-  for(const c of w.cells)if(c.layers!=null&&(!Array.isArray(c.layers)||c.layers.some(l=>!l||typeof l.type!=='string')))throw Error('Een landschapslaag is ongeldig.');
-  return record;
+  for(const [field,items] of [['cells',cells],['terrain',terrain]])for(const item of items)if(!item||!/^[-]?\d+,[-]?\d+$/.test(String(item.key)))throw Error(`Een terreincoördinaat in ${field} is ongeldig.`);
+  if(terrain.some(t=>!Number.isFinite(t.offset)))throw Error('Een bodemhoogte is ongeldig.');
+  const normalizedCells=cells.map(c=>{
+    if(c.layers==null)return {...c}; // Preserve legacy v1 cells with a single type.
+    const layers=readWorldList(c.layers,`cells[${c.key}].layers`);
+    if(layers.some(l=>!l||typeof l.type!=='string'))throw Error(`Een landschapslaag in cells[${c.key}] is ongeldig.`);
+    return {...c,layers};
+  });
+  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents}};
 }
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,
@@ -24,7 +41,7 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
     positions.set(id,{hexQ:position.hexQ,hexR:position.hexR});
   }
   function setCurrent(id,record,position) {
-    validateWorldRecord(record);setPosition(id,position);current={id,record:copy(record)};cache.set(id,copy(record));prune();
+    record=validateWorldRecord(record);setPosition(id,position);current={id,record:copy(record)};cache.set(id,copy(record));prune();
   }
   function prune(){for(const id of cache.keys()){if(cache.size<=7)break;if(id!==current?.id)cache.delete(id);}}
   async function prefetch(id,{fresh=false}={}) {
@@ -39,7 +56,7 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
     }
     let timer;
     const request=Promise.race([Promise.resolve().then(()=>readWorld(id)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Laden duurt te lang. Je blijft in je huidige wereld.')),timeout);})])
-      .then(record=>{validateWorldRecord(record);if(disposed)throw Error('Reissessie is afgesloten.');cache.delete(id);cache.set(id,copy(record));prune();onCache(id);return copy(record);})
+      .then(record=>{record=validateWorldRecord(record);if(disposed)throw Error('Reissessie is afgesloten.');cache.delete(id);cache.set(id,copy(record));prune();onCache(id);return copy(record);})
       .finally(()=>{clearTimeout(timer);pending.delete(id);});
     pending.set(id,request);return request;
   }
@@ -54,7 +71,7 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
       // Re-read through the adapter rather than trusting our preview cache.
       // The Firebase SDK may fall back to its cache offline; this is not a server-only guarantee.
       const remote=await prefetch(id,{fresh:true});
-      previous=copy(capture());validateWorldRecord(previous);
+      previous=validateWorldRecord(copy(capture()));
       if(owned(previous)){
         const snapshot=copy(previous);const budget=[...drafts].filter(([key])=>key!==from.id).reduce((n,[,v])=>n+JSON.stringify(v).length,0)+JSON.stringify(snapshot).length;
         if(budget>32000000)throw Error('Bewaar of exporteer eerst je open bouwwerken; de reisbuffer is vol.');

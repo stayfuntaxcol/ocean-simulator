@@ -83,7 +83,7 @@ export function installCommunityOcean(api) {
     throw Error('Geen vrije bezoekpositie gevonden.');
   }
   function syncCurrent() {
-    const record=capture(),id=api.getWorldId();validateWorldRecord(record);
+    const record=validateWorldRecord(capture()),id=api.getWorldId();
     // Bij het opslaan van een nieuwe lokale wereld nemen we de lokale positie
     // over. Bij het openen van een bestaande Firebase-wereld behouden we juist
     // diens al bekende atlaspositie; anders verschuift de route bij elke reload.
