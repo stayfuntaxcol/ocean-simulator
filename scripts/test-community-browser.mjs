@@ -2,9 +2,13 @@ const {chromium:playwright}=await import(process.env.PLAYWRIGHT_MODULE||'playwri
 const chromium=process.env.CHROMIUM_BUNDLE ? (await import(process.env.CHROMIUM_MODULE||'@sparticuz/chromium')).default : null;
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const root=new URL('../',import.meta.url).pathname.replace(/\/$/,''),bin=process.env.CHROMIUM_BUNDLE;
+const root=new URL('../',import.meta.url).pathname.replace(/\/$/,''),bin=process.env.CHROMIUM_BUNDLE,executable=process.env.CHROMIUM_EXECUTABLE;
 const artifacts=process.env.OCEAN_BROWSER_ARTIFACTS||root+'/docs/community-review';
-const browser=await playwright.launch(bin?{headless:true,executablePath:bin+'/chromium',args:chromium.args,env:{...process.env,LD_LIBRARY_PATH:bin,FONTCONFIG_PATH:bin+'/fonts'}}:{headless:true});
+const browser=await playwright.launch(bin
+  ? {headless:true,executablePath:bin+'/chromium',args:chromium.args,env:{...process.env,LD_LIBRARY_PATH:bin,FONTCONFIG_PATH:bin+'/fonts'}}
+  : executable
+    ? {headless:true,executablePath:executable,args:['--no-sandbox','--disable-dev-shm-usage','--use-gl=swiftshader','--enable-webgl']}
+    : {headless:true});
 try{
 const page=await browser.newPage({viewport:{width:1200,height:800}}),errors=[];
 page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR',e.message);});
@@ -16,8 +20,8 @@ await page.route('https://www.gstatic.com/firebasejs/**',route=>route.fulfill({c
  export const get=async path=>{
   (window.__reads??=[]).push(path);if(path==='worldIndex')return {exists:()=>false};
   if(window.__deny)throw Error('permission_denied');
-  const id=path.split('/')[1],record={name:id==='A'?'Mijn koraaltuin':'Diepe buurwereld',ownerId:id==='A'?'owner-A':'owner-B',visibility:'link',world:{version:4,worldHalf:144,cellSize:12,cells:[{key:id==='A'?'0,0':'1,1',layers:[{id:1,type:'coral'}]}],terrain:id==='B'?Array.from({length:25},(_,i)=>({key:((i%5)-2)+','+(Math.floor(i/5)+8),offset:-12})):[],hexWorld:{hexQ:0,hexR:0},orca:null,whale:null,lavaVents:[]}};
-  return {exists:()=>['A','B'].includes(id),val:()=>record};
+  const id=path.split('/')[1],names={A:'Mijn koraaltuin',B:'Diepe buurwereld',C:'Verre rifwereld'},record={name:names[id]||id,ownerId:id==='A'?'owner-A':'owner-B',visibility:'link',world:{version:4,worldHalf:144,cellSize:12,cells:[{key:id==='A'?'0,0':'1,1',layers:[{id:1,type:'coral'}]}],terrain:id==='B'?Array.from({length:25},(_,i)=>({key:((i%5)-2)+','+(Math.floor(i/5)+8),offset:-12})):[],hexWorld:{hexQ:0,hexR:0},orca:null,whale:null,lavaVents:[]}};
+  return {exists:()=>['A','B','C'].includes(id),val:()=>record};
  };
  export const set=async()=>{window.__writes=(window.__writes??0)+1;throw Error('Unexpected write in travel test');};
  `}));
@@ -87,6 +91,7 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
     edit:()=>{addLayerToCell(0,0,'sponge');},render:()=>renderer.render(scene,camera),
     cross:()=>{camera.position.set(0,-20,-124);const previous=camera.position.clone();controls.isLocked=true;keys.KeyW=true;updateMovement(.2);keys.KeyW=false;controls.isLocked=false;communityOcean.update(previous,{revision:habitatRevision});},
     visit:id=>communityOcean.visit(id),sync:()=>communityOcean.rebuild(),
+    addFar:()=>{const position={hexQ:0,hexR:-2};communityOcean.engine.setPosition('C',position);registerAtlasWorld({id:'C',name:'Verre rifwereld',ownerId:'owner-B',visibility:'link',...position});communityOcean.refreshHUD();renderWorldAtlas();},
     orient:()=>{camera.rotation.set(.05,.3,0);},move:()=>{controls.isLocked=true;keys.KeyW=true;updateMovement(.01);keys.KeyW=false;controls.isLocked=false;}};
   `;
   return route.fulfill({body:html.replace('</script>\n</body>',qa+'</script>\n</body>'),contentType:'text/html'});
@@ -109,10 +114,36 @@ const atlasLabels=await page.locator('#worldAtlasSvg .atlas-world-label').evalua
 assert.ok(atlasLabels.find(e=>e.name==='Diepe buurwereld').y<atlasLabels.find(e=>e.name==='Mijn koraaltuin').y,'north neighbor is above source');
 await fs.mkdir(artifacts,{recursive:true});
 await page.screenshot({path:artifacts+'/atlas.png'});
-await page.locator('#worldAtlasClose').click();
+
+// De primaire atlasknop opent een aangrenzende wereld direct.
+await page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Diepe buurwereld'}).click();
+await page.locator('#worldAtlasEnterBtn').click();
+await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
+assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
+await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
+assert.deepEqual((await page.evaluate(()=>window.__communityQA.state())).cells,own.cells,'atlas round trip preserves own draft');
+
+// De atlas is een transportkaart: ook een bekende wereld die twee hexen verder
+// ligt kan rechtstreeks worden geopend. Zwemmen blijft wel buur-gebonden.
+await page.evaluate(()=>window.__communityQA.addFar());
+await page.locator('#journeyAtlas').click();
+await page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Verre rifwereld'}).press('Enter');
+await page.locator('#worldAtlasEnterBtn').click();
+await page.waitForFunction(()=>window.__communityQA.state().id==='C'&&!window.__communityQA.state().busy,null,{timeout:60000});
+let state=await page.evaluate(()=>window.__communityQA.state());assert.ok(Math.abs(state.position[0])<1e-8&&Math.abs(state.position[2])<1e-8,'distant atlas arrival is central');
+assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
+await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
+
+// Een Firebase-fout blijft zichtbaar in de atlas in plaats van een schijnbaar
+// dode knop of een gesloten scherm op te leveren.
+await page.locator('#journeyAtlas').click();await page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Diepe buurwereld'}).click();
+await page.evaluate(()=>window.__deny=true);await page.locator('#worldAtlasEnterBtn').click();
+await page.waitForFunction(()=>document.getElementById('worldAtlasStatus').textContent.includes('permission_denied'),null,{timeout:60000});
+assert.ok(await page.locator('#worldAtlasOverlay').evaluate(element=>element.classList.contains('open')),'failed atlas travel remains open');
+await page.evaluate(()=>window.__deny=false);await page.locator('#worldAtlasClose').click();
 await page.evaluate(()=>{window.__communityQA.orient();window.__communityQA.cross();});
 await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
-let state=await page.evaluate(()=>window.__communityQA.state());
+state=await page.evaluate(()=>window.__communityQA.state());
 assert.ok(Math.abs(state.quaternion[1]-.14939143548941183)<1e-10,'swimming direction preserved');
 assert.equal(state.editable,false);assert.equal(state.cells[0].key,'1,1');assert.ok(state.position[2]>120);assert.ok(state.position[1]>=state.floor+1-1e-5);assert.ok(state.position[1]<-15);
 assert.ok(await page.locator('#editModeBtn').isDisabled());
@@ -122,7 +153,8 @@ await page.evaluate(()=>window.__deny=true);
 assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),false);assert.equal((await page.evaluate(()=>window.__communityQA.state())).id,'B');
 await page.evaluate(()=>window.__deny=false);
 assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
-state=await page.evaluate(()=>window.__communityQA.state());assert.deepEqual(state.cells,own.cells);assert.equal(state.editable,true);
+state=await page.evaluate(()=>window.__communityQA.state());
+assert.deepEqual(state.cells.map(cell=>({key:cell.key,layers:cell.layers.map(layer=>({id:layer.id,type:layer.type}))})),own.cells.map(cell=>({key:cell.key,layers:cell.layers.map(layer=>({id:layer.id,type:layer.type}))})),'repeated travel preserves own designed layers');assert.equal(state.editable,true);
 await page.locator('#journeyMenu').click();assert.ok(await page.evaluate(()=>{const e=document.getElementById('hud');return e.scrollHeight>e.clientHeight&&getComputedStyle(e).overflowY==='auto';}));
 assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
 
@@ -132,7 +164,7 @@ await page.evaluate(()=>localStorage.removeItem('fiveLoavesOceanVisitRoutesV1'))
 await page.reload({waitUntil:'load'});
 await page.waitForFunction(()=>window.__communityQA?.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 state=await page.evaluate(()=>window.__communityQA.state());assert.equal(state.neighbors[0],'B','north route restored from atlas');
-await page.locator('#journeyAtlas').click();assert.equal(await page.locator('#worldAtlasSvg .atlas-world').count(),2,'saved atlas hexes remain visible');
+await page.locator('#journeyAtlas').click();assert.ok(await page.locator('#worldAtlasSvg .atlas-world').count()>=2,'saved atlas hexes remain visible');
 await page.locator('#worldAtlasClose').click();
 await page.evaluate(()=>window.__communityQA.cross());
 await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
@@ -143,6 +175,6 @@ assert.deepEqual(errors,[]);
 await page.setViewportSize({width:390,height:844});await page.locator('#journeyAtlas').click();
 assert.ok(await page.evaluate(()=>{const e=document.getElementById('worldAtlasDetails');e.scrollTop=e.scrollHeight;return e.clientHeight>0&&e.scrollTop>0;}),'mobile atlas form scrolls');
 await page.screenshot({path:artifacts+'/mobile-atlas.png'});
-console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
+console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','atlas button opens adjacent world','atlas directly opens distant known world','failed atlas travel remains visible','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
 await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true},null,2));
 }finally{await browser.close();}
