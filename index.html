@@ -1204,11 +1204,16 @@ function installWorldAtlasInteractions(){
   document.getElementById('worldAtlasOverlay')?.addEventListener('click',event=>{
     if(event.target.id==='worldAtlasOverlay') closeWorldAtlas();
   });
-  document.getElementById('worldAtlasEnterBtn')?.addEventListener('click',event=>{
+  document.getElementById('worldAtlasEnterBtn')?.addEventListener('click',async event=>{
     const worldId=event.currentTarget.dataset.worldId;
     if(worldId && worldId!==currentAtlasWorldId()) {
       document.getElementById('journeyWorldLink').value=worldId;
-      void communityOcean?.visit(worldId);
+      const button=event.currentTarget,label=button.textContent;
+      button.disabled=true;button.textContent='Wereld laden…';setAtlasStatus('De wereld en toegangsrechten worden gecontroleerd.');
+      try{
+        const ok=await communityOcean?.visit(worldId);
+        if(ok===false){openWorldAtlas();setAtlasStatus(communityOcean?.lastStatus||'Deze wereld kon niet worden geopend.');}
+      }finally{button.disabled=false;button.textContent=label;}
     }
   });
   document.getElementById('worldAtlasPrepareBtn')?.addEventListener('click',event=>{
@@ -4346,6 +4351,7 @@ if(!referenceMode){
     getAtlasWorlds:()=>[...worldAtlasState.worlds.values()],registerAtlas:registerAtlasWorld,
     onChanged:()=>{syncCurrentAtlasWorld();saveLocalWorldAtlas();if(document.getElementById('worldAtlasOverlay').classList.contains('open'))renderWorldAtlas();},
     prepareTravel:()=>{closeWorldAtlas();if(editMode)setEditMode(false);if(followMode)stopFollowing(false);},
+    onTravelError:message=>{openWorldAtlas();setAtlasStatus(message);},
     openAtlas:openWorldAtlas,
     openMenu:()=>{controls.unlock();closeWorldAtlas();document.getElementById('hud').classList.remove('swimming');}
   });
