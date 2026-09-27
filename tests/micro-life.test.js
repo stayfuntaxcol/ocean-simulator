@@ -157,6 +157,16 @@ test('world changes replace only the destination shoals and require no stored an
   life.dispose();
 });
 
+test('resident reef schools patrol beyond their original small orbit without respawning',()=>{
+  const {life,camera}=fixture();camera.position.set(110,5,110);life.update(0,camera);
+  const initial=life.schoolSnapshot();let excursion=0;
+  for(let frame=0;frame<1500;frame++){
+    life.update(.04,camera);
+    if(frame%50===0){const s=life.schoolSnapshot()[0];const center=s.members.reduce((a,f)=>[a[0]+f.position[0]/s.members.length,a[1]+f.position[2]/s.members.length],[0,0]);excursion=Math.max(excursion,Math.hypot(center[0]-s.home[0],center[1]-s.home[2]));}
+  }
+  assert.ok(excursion>6);assert.deepEqual(life.schoolSnapshot().map(s=>s.id),initial.map(s=>s.id));life.dispose();
+});
+
 test('micro shaders preserve lighting and fog; review imports actual models and app handles pause',()=>{
   const material=createMicroMaterial('shrimp',{value:0});
   const s={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};material.onBeforeCompile(s);

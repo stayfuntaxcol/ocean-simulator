@@ -85,7 +85,8 @@ export function updateFoodSectors(sectors,consumers=[],dt=0,{sectorSize=FOOD_SEC
     for(const {sector,weight} of sectorInfluences(consumer.x,consumer.z,sectors,{sectorSize}))sector.demand+=biomass*weight;
   }
   for(const sector of sectors.values()){
-    sector.stock=clamp(sector.stock+(sector.capacity-sector.demand)*delta,0,sector.maxFood);
+    const balance=sector.capacity-sector.demand;
+    sector.stock=clamp(sector.stock+balance*(balance>0?1.5:1)*delta,0,sector.maxFood);
     const instant=sector.demand>0?clamp(sector.capacity/sector.demand,0,1):1;
     sector.supply=sector.capacity<=0?0:(sector.stock>0?1:instant);
     sector.pressure=sector.capacity>0?sector.demand/sector.capacity:(sector.demand>0?Infinity:0);
@@ -154,7 +155,7 @@ export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0}={}){
       next.foodReserve=Math.max(0,next.foodReserve-delta*deficit);
       if(next.foodReserve<=0)next.starvationSeconds+=delta*deficit;
     }else{
-      next.foodReserve=Math.min(next.maxFoodReserve,next.foodReserve+delta*.55);
+      next.foodReserve=Math.min(next.maxFoodReserve,next.foodReserve+delta*.85);
       next.starvationSeconds=Math.max(0,next.starvationSeconds-delta*2);
       next.health=Math.min(100,next.health+delta*.05);
     }

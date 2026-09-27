@@ -8,6 +8,17 @@ import {
 const richLayers=[];
 for(const type of ['coral','seagrass','sponge','rocks','mixed'])for(let i=0;i<8;i++)richLayers.push({x:2+(i%3),z:2+Math.floor(i/3),type});
 
+test('unoccupied food recovers faster without increasing sustainable capacity',()=>{
+  const sectors=buildFoodSectors(richLayers),sector=[...sectors.values()][0];sector.stock=0;
+  for(let i=0;i<32;i++)updateFoodSectors(sectors,[],5);
+  assert.ok(Math.abs(sector.stock-sector.maxFood)<1e-6);
+  sector.stock=sector.maxFood;updateFoodSectors(sectors,[{x:4,z:4,biomass:sector.capacity*2}],5);
+  assert.ok(Math.abs(sector.stock-(sector.maxFood-sector.capacity*5))<1e-6);
+  let vitality={...createImportedVitality(),foodReserve:0};
+  for(let i=0;i<240;i++)vitality=advanceImportedVitality(vitality,.25,{foodSupply:1});
+  assert.ok(Math.abs(vitality.foodReserve-51)<1e-6);
+});
+
 test('food sectors derive local capacity only from existing world layers',()=>{
   const sectors=buildFoodSectors(richLayers);
   const summary=summarizeFoodSectors(sectors);

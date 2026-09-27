@@ -128,3 +128,30 @@ Ook bezoekers mogen bestaande dieren via **Volg orka / Volg walvis** terugvinden
 Grote dieren gebruiken geen importvis-health; oude opgeslagen nul-health wordt
 bij het laden hersteld. Bewegings-, groeistatus en nieuwe nakomelingen worden niet
 permanent opgeslagen; importontwerpen blijven in de bestaande visbibliotheek.
+
+
+## Kleine bijstelling: overleving, routes en overzicht
+
+Draagkracht, sterftegrenzen en de tijdsnelheid blijven ongewijzigd. Alleen bij
+voedseloverschot herstellen zones 1,5× sneller; een gezonde vis vult 0,85 in plaats
+van 0,55 reserveseconde per ecologische seconde bij. Overbelasting put de voorraad
+nog even snel uit. Voortplanting houdt 20% lokale ruimte vrij, reserveert de
+toekomstige biomassa van jongen, vraagt meer dan 75% zonevoorraad en minstens 70%
+reserve en 80% health bij alle overlevende schoolleden.
+
+Importscholen kiezen per voedselzone op beschikbare ruimte ten opzichte van hun
+eigen biomassa. Scholen onderweg reserveren ruimte voor elkaar. Bij weinig lokaal
+voedsel of lage reserves wordt elke twaalf ecologische seconden bekeken of ze
+moeten vertrekken; een gezonde bestemming blijft behouden tijdens de reis.
+Bestemmingen liggen boven de begroeiing. Botsing met afzonderlijke rotsvolumes
+houdt rekening met lichaamsgrootte, werkt buiten beeld, laat langs vlakken glijden
+en corrigeert vissen die al in steen zitten. Na langdurig blokkeren kiezen ze opnieuw.
+
+Kleine rifscholen patrouilleren op circa 0,55 m/s rond hun vaste leefgebied (straal
+12 meter), zoeken bij blokkades een andere koers en houden hun vaste individuen.
+
+Onder Leefbaarheid → Mijn importvissen staat per ontwerpnaam het aantal levende
+vissen en kritieke vissen, met een Volg-knop. Soorten op nul blijven deze sessie
+zichtbaar als uitgestorven. Gelijknamige ontwerpen tellen samen. Het volgvenster
+toont gezondheid, reserve en voedsel in drie gekleurde LED-balkjes, inclusief
+percentages en toegankelijke meterwaarden. Geen extra Firebase-verkeer.
