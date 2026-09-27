@@ -62,12 +62,12 @@ export function evaluateEcosystem({habitats:source={},lavaVents=0,importedFish=0
   const filtrationRatio=livingLayers?clamp(resources.filtration/(livingLayers*3),0,1):0;
   const quality=clamp((.48+filtrationRatio*.52)*(1-lavaPressure),0,1);
   const rawCapacity=livingLayers?Math.min(resources.food,resources.shelter*1.35,resources.nursery*1.45):0;
-  const calculatedCapacity=Math.max(0,Math.floor(rawCapacity*diversityFactor*quality));
-  const capacity=capacityOverride==null?calculatedCapacity:Math.max(0,Math.floor(Number(capacityOverride)||0));
+  const calculatedCapacity=Math.max(0,Math.floor(rawCapacity*diversityFactor*quality))/10;
+  const capacity=capacityOverride==null?Math.min(1000,calculatedCapacity):Math.min(1000,Math.max(0,Number(capacityOverride)||0));
   const maturity=clamp(livingLayers/36,0,1);
   const diversity=clamp(structuralTypes/5,0,1);
   const score=livingLayers?Math.round(100*(maturity*.34+diversity*.24+balance*.22+quality*.20)):0;
-  const stageId=ecosystemStage(score,capacity,livingLayers),stage=ECOSYSTEM_STAGES[stageId];
+  const stageId=ecosystemStage(score,capacity*10,livingLayers),stage=ECOSYSTEM_STAGES[stageId];
   const imported=cleanCount(importedFish),natural=cleanCount(naturalFish),megafauna=Math.max(0,Number(megafaunaLoad)||0);
   // Natuurlijke populaties worden uitsluitend door het habitat bepaald. Importvissen
   // nemen dus geen soorten weg; zij gebruiken de overblijvende lokale voedselruimte.
