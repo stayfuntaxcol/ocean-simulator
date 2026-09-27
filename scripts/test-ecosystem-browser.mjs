@@ -7,6 +7,7 @@ const origin='http://127.0.0.1:8875',errors=[];
 const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:null)});
 const context=await browser.newContext({viewport:{width:1440,height:1000}});
 const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
+page.on('console',message=>{if(message.type()==='error'&&/shader|WebGLProgram|VALIDATE_STATUS/i.test(message.text()))errors.push(message.text());});
 
 await context.route('https://cdn.jsdelivr.net/npm/three@0.179.1/**',route=>route.fulfill({
   path:root+'/node_modules/three/'+route.request().url().split('three@0.179.1/')[1],contentType:'text/javascript'
@@ -26,6 +27,13 @@ await context.route(origin+'/**',async route=>{
     html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
         lateUnlock:()=>controls.dispatchEvent({type:'unlock'}),
+        viewSmallSchool:(distance=6)=>{
+          microLife.update(0,camera,{quality:'high',revision:habitatRevision,worldKey:currentAtlasWorldId()});
+          const before=microLife.schoolSnapshot(),fish=before[0]?.members[0];if(!fish)throw Error('No small school in rich test habitat');
+          const target=new THREE.Vector3().fromArray(fish.position);camera.position.copy(target).add(new THREE.Vector3(distance,.4,0));camera.lookAt(target);camera.updateMatrixWorld(true);
+          microLife.update(0,camera,{quality:'high',revision:habitatRevision,worldKey:currentAtlasWorldId()});
+          renderer.render(scene,camera);return {before,after:microLife.schoolSnapshot(),visible:microLife.stats.fish};
+        },
         snapshot:()=>({score:ecosystemState.score,stage:ecosystemState.stageId,capacity:ecosystemState.capacity,natural:livingNaturalFish(),imported:livingImportedFish().length,target:ecosystemState.naturalTarget,shortage:ecosystemState.shortage,health:livingImportedFish().map(f=>f.userData.health),reserves:livingImportedFish().map(f=>f.userData.foodReserve),states:livingImportedFish().map(f=>f.userData.vitalState),sectors:foodSectorSummary,saved:worldData()}),
         addGuests:(count=3)=>{const school=makeSchool('qa-guests');for(let i=0;i<count;i++){const fish=new THREE.Group();fish.position.set(i,-10,0);fish.userData.velocity=new THREE.Vector3(1,0,0);fish.userData.imported=true;fish.userData.health=100;registerFish(fish,'qa-guests',school);scene.add(fish);fishes.push(fish);}updateEcosystem(performance.now()/1000,true);updateLocalFood(.5);return window.__ecosystemQA.snapshot();},
         starve:(seconds=5)=>{for(let t=0;t<seconds;t+=.25){updateLocalFood(.25);updateImportedHealth(.25);}return window.__ecosystemQA.snapshot();},
@@ -52,6 +60,10 @@ const ui=await page.evaluate(()=>{
   return {collapsedInitially,style:style.value,status:styleStatus};
 });
 assert.equal(ui.collapsedInitially,true);assert.equal(ui.style,'realistic');assert.match(ui.status,/Realistische animatie actief/);
+assert.equal(await page.locator('#swimmingSettingsBtn').count(),0,'one menu entry instead of a duplicate graphics button');
+await page.waitForFunction(()=>document.getElementById('hud').getBoundingClientRect().top>=document.getElementById('journeyHud').getBoundingClientRect().bottom);
+const worldPanel=await page.locator('#journeyHud').boundingBox();
+assert.ok(worldPanel.x<20&&worldPanel.y<20&&worldPanel.x+worldPanel.width<1440*.35,'world panel leaves center clear');
 // Actual pointer-lock lifecycle, not a manual CSS class toggle.
 await page.locator('#startBtn').click();
 await page.waitForFunction(()=>Boolean(document.pointerLockElement)&&document.getElementById('startBtn').textContent==='Verkennen actief'&&!document.getElementById('hud').classList.contains('settings-open'));
@@ -61,13 +73,16 @@ await page.keyboard.press('Escape');
 // exit via the native API; PointerLockControls still receives the real event.
 await page.evaluate(()=>{if(document.pointerLockElement)document.exitPointerLock();});
 await page.waitForFunction(()=>!document.pointerLockElement&&document.getElementById('startBtn').textContent==='Verder verkennen');
-assert.equal(await page.locator('#swimmingSettingsBtn').isVisible(),true,'settings shortcut survives Escape/unlock');
-await page.locator('#swimmingSettingsBtn').click();
+assert.equal(await page.locator('#journeyMenu').isVisible(),true,'world menu survives Escape/unlock');
+await page.locator('#journeyMenu').click();
 assert.equal(await page.locator('#hud').isVisible(),true);
+await page.locator('#graphicsOptionsPanel > summary').click();
 assert.equal(await page.locator('#graphicsOptionsPanel').evaluate(e=>e.open),true);
 await page.evaluate(()=>window.__ecosystemQA.lateUnlock());
 assert.equal(await page.locator('#hud').isVisible(),true,'late unlock cannot hide the open panel');
-assert.equal(await page.locator('#swimmingSettingsBtn').isVisible(),false);
+assert.equal(await page.locator('#journeyMenu').getAttribute('aria-expanded'),'true');
+await page.locator('#journeyMenu').click();assert.equal(await page.locator('#hud').isVisible(),false);
+await page.locator('#journeyMenu').click();assert.equal(await page.locator('#hud').isVisible(),true);
 await page.locator('#fishRenderStyle').selectOption('cartoon');
 await page.locator('#fishRenderStyle').selectOption('realistic');
 await page.locator('#startBtn').click();
@@ -79,7 +94,7 @@ assert.equal(await page.locator('#hud').isVisible(),true,'O opens options direct
 assert.equal(await page.locator('#graphicsOptionsPanel').evaluate(e=>e.open),true);
 await page.locator('#cloudWorldName').fill('Mijn oceaan');await page.keyboard.press('o');
 assert.equal(await page.locator('#cloudWorldName').inputValue(),'Mijn oceaano','O remains text in input fields');
-ui.pointerLockOptions=true;ui.keyboardOptions=true;ui.lateUnlockSafe=true;
+ui.pointerLockOptions=true;ui.keyboardOptions=true;ui.lateUnlockSafe=true;ui.singleLeftMenu=true;
 const empty=await page.evaluate(()=>window.__ecosystemQA.snapshot());
 assert.equal(empty.capacity,0);assert.equal(empty.natural,0);assert.equal(empty.stage,0);
 await page.evaluate(()=>window.__ecosystemQA.addGuests(3));
@@ -100,7 +115,17 @@ await page.screenshot({path:'/tmp/ecosystem-dashboard.png',fullPage:true});
 await page.setViewportSize({width:390,height:844});
 const mobile=await page.evaluate(()=>{const panel=document.getElementById('ecosystemPanel').getBoundingClientRect(),hud=document.getElementById('hud').getBoundingClientRect();return {panelRight:panel.right,hudRight:hud.right,viewport:innerWidth};});
 assert.ok(mobile.panelRight<=mobile.viewport&&mobile.hudRight<=mobile.viewport);
+await page.waitForFunction(()=>document.getElementById('hud').getBoundingClientRect().top>=document.getElementById('journeyHud').getBoundingClientRect().bottom);
 await page.screenshot({path:'/tmp/ecosystem-dashboard-mobile.png',fullPage:true});
+assert.equal(await page.locator('#minimapWrap').isVisible(),false,'mobile map cannot cover menu controls');
+await page.setViewportSize({width:1440,height:1000});
+await page.locator('#journeyMenu').click();
+for(const distance of [6,1]){
+  const shoals=await page.evaluate(distance=>window.__ecosystemQA.viewSmallSchool(distance),distance);
+  assert.deepEqual(shoals.after,shoals.before,'moving the camera closer leaves each small fish intact');
+  assert.ok(shoals.visible>0);
+  await page.screenshot({path:'/tmp/ocean-small-school-'+distance+'m.png'});
+}
 assert.deepEqual(errors,[]);
 console.log(JSON.stringify({ui,empty,starving:{capacity:starving.capacity,shortage:starving.shortage,health:starving.health,reserves:starving.reserves},depleted:{health:depleted.health},burial,rich:{score:rich.score,stage:rich.stage,capacity:rich.capacity,natural:rich.natural,target:rich.target,sectors:rich.sectors.active},migration,mobile,firebaseWrites:0,errors},null,2));
 await browser.close();

@@ -27,13 +27,6 @@
       box-shadow:0 10px 30px rgba(0,0,0,.25)
     }
     #hud.swimming.settings-open{display:block}
-    #swimmingSettingsBtn{
-      display:none;position:absolute;left:16px;top:16px;z-index:11;
-      border:1px solid rgba(255,255,255,.24);border-radius:10px;padding:9px 12px;
-      background:rgba(5,18,30,.86);backdrop-filter:blur(8px);color:#eef8ff;
-      font-weight:700;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.24)
-    }
-    #swimmingSettingsBtn.visible{display:block}
     #graphicsOptionsPanel{margin-top:10px}
     #graphicsOptionsPanel>summary{font-size:14px;color:#d9f5ff}
     #fishStyleStatus{margin:7px 0 0;color:#bfe5f3;font-size:11px;line-height:1.35}
@@ -202,7 +195,7 @@
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
       <label>Microleven <input id="microLifeEnabled" type="checkbox" checked></label>
-      <label>Kleine scholen in de verte <input id="microSchoolsEnabled" type="checkbox" checked></label>
+      <label>Kleine rifscholen <input id="microSchoolsEnabled" type="checkbox" checked></label>
       <label>Planktonlagen <input id="microPlanktonEnabled" type="checkbox" checked></label>
       <small id="microLifeStatus">Garnalen, zeesterren, zee-egels, schelpen en krabben rond het rif.</small>
       <p><a href="./graphics/micro-life-review.html" target="_blank" rel="noopener" style="color:#b6efff">Bekijk het microleven van dichtbij</a></p>
@@ -315,12 +308,12 @@
 
   </div>
 
-  <button id="swimmingSettingsBtn" type="button" aria-label="Grafische opties openen">⚙ Beeld &amp; opties</button>
   <nav id="journeyHud" aria-label="Wereldbezoek">
     <strong id="journeyWorldName">Mijn oceaanwereld</strong>
     <span id="journeyPermission"></span>
     <button id="journeyAtlas" type="button">Werelden &amp; doorgangen</button>
-    <button id="journeyMenu" type="button">Menu</button>
+    <button id="journeyMenu" type="button" aria-controls="hud" aria-expanded="true" title="Menu openen of sluiten (O)">Menu</button>
+    <span id="journeyControls">Esc: muis vrij · O: menu</span>
     <p id="journeyStatus" role="status" aria-live="polite"></p>
   </nav>
   <div id="journeyWaterVeil" aria-hidden="true"></div>
@@ -476,7 +469,13 @@ const openFishStudioBtn = document.getElementById('openFishStudioBtn');
 const fishFiles = document.getElementById('fishFiles');
 const importStatus = document.getElementById('importStatus');
 const schoolSize = document.getElementById('schoolSize');
-const swimmingSettingsBtn = document.getElementById('swimmingSettingsBtn');
+const journeyHud = document.getElementById('journeyHud');
+const journeyMenu = document.getElementById('journeyMenu');
+const journeyResize = new ResizeObserver(()=>{
+  app.style.setProperty('--journey-panel-bottom',`${journeyHud.hidden?16:journeyHud.getBoundingClientRect().bottom+10}px`);
+});
+journeyResize.observe(journeyHud);
+addEventListener('pagehide',()=>journeyResize.disconnect(),{once:true});
 const graphicsOptionsPanel = document.getElementById('graphicsOptionsPanel');
 const schoolCountText = document.getElementById('schoolCountText');
 const healthText = document.getElementById('healthText');
@@ -567,34 +566,33 @@ renderer.domElement.addEventListener('click', () => {
 controls.addEventListener('lock', () => {
   document.getElementById('hud').classList.add('swimming');
   document.getElementById('hud').classList.remove('settings-open');
-  swimmingSettingsBtn.classList.add('visible');
-  swimmingSettingsBtn.textContent='⚙ Beeld & opties · Esc of O';
+  journeyMenu.setAttribute('aria-expanded','false');
   startBtn.textContent = 'Verkennen actief';
-  hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: opties';
+  hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: menu';
 });
 controls.addEventListener('unlock', () => {
   startBtn.textContent = 'Verder verkennen';
-  // Escape frees the cursor: keep the shortcut reachable while the HUD is hidden.
-  // An asynchronous unlock must also leave an already opened settings panel alone.
-  swimmingSettingsBtn.classList.toggle('visible',document.getElementById('hud').classList.contains('swimming'));
-  swimmingSettingsBtn.textContent='⚙ Beeld & opties';
+  // Escape frees the cursor; the world panel and its Menu button stay available.
+  // An asynchronous unlock must leave an already opened menu alone.
   Object.keys(keys).forEach(key=>keys[key]=false);
-  hint.textContent = 'Muis vrij · klik op Beeld & opties of druk O. Klik op het water om verder te verkennen.';
+  hint.textContent = 'Muis vrij · klik op Menu of druk O. Klik op het water om verder te verkennen.';
 });
-function openGraphicsSettings(){
+function openMainMenu(){
   if(followMode)stopFollowing(false);
   controls.unlock();
-  swimmingSettingsBtn.classList.remove('visible');
-  graphicsOptionsPanel.open=true;
+  closeWorldAtlas();
   document.getElementById('hud').classList.remove('swimming');
   document.getElementById('hud').classList.add('settings-open');
-  graphicsOptionsPanel.querySelector('summary').focus();
-  graphicsOptionsPanel.scrollIntoView({block:'nearest'});
+  journeyMenu.setAttribute('aria-expanded','true');
 }
-swimmingSettingsBtn.addEventListener('click',event=>{
-  event.stopPropagation();
-  openGraphicsSettings();
-});
+function toggleMainMenu(){
+  if(document.getElementById('hud').classList.contains('swimming'))openMainMenu();
+  else{
+    document.getElementById('hud').classList.remove('settings-open');
+    document.getElementById('hud').classList.add('swimming');
+    journeyMenu.setAttribute('aria-expanded','false');
+  }
+}
 
 // Licht
 const ambient = new THREE.HemisphereLight(0x8fe7ff, 0x10242a, 1.6);
@@ -1153,7 +1151,11 @@ function renderWorldAtlas(){
   svg.replaceChildren();
   syncCurrentAtlasWorld();
   const occupied=new Set();
-  const visibleWorlds=[...worldAtlasState.worlds.values()].sort((a,b)=>Number(atlasWorldIsCurrent(b))-Number(atlasWorldIsCurrent(a))).filter(world=>{
+  // Old local placeholders may share a coordinate with a real cloud world.
+  // Prefer the active route before de-duplicating positions, independent of
+  // insertion order or which world the visitor currently occupies.
+  const priority=world=>atlasWorldIsCurrent(world)?2:atlasWorldIsConnected(world)?1:0;
+  const visibleWorlds=[...worldAtlasState.worlds.values()].sort((a,b)=>priority(b)-priority(a)).filter(world=>{
     const position=communityOcean?.positionFor(world.id);
     if(position)Object.assign(world,position);
     const key=axialKey(world.hexQ,world.hexR);if(occupied.has(key))return false;occupied.add(key);return true;
@@ -1167,7 +1169,7 @@ function renderWorldAtlas(){
   visibleWorlds.forEach(world=>{
     const point=axialToAtlas(world.hexQ,world.hexR);
     const current=atlasWorldIsCurrent(world),connected=atlasWorldIsConnected(world);
-    const group=createSvgElement('g',{class:`atlas-world${current?' atlas-world-current':''}${connected?'':' atlas-world-unconnected'}`,tabindex:'0'});
+    const group=createSvgElement('g',{class:`atlas-world${current?' atlas-world-current':''}${connected?'':' atlas-world-unconnected'}`,'data-world-id':world.id,tabindex:'0'});
     const outer=createSvgElement('polygon',{class:'atlas-world-outer',points:svgPoints(flatTopHexPoints(point.x,point.y,100))});
     const inner=createSvgElement('polygon',{class:'atlas-world-inner',points:svgPoints(flatTopHexPoints(point.x,point.y,100*HEX_WORLD_CONFIG.innerScale))});
     const label=createSvgElement('text',{class:'atlas-world-label',x:point.x,y:point.y-4}); label.textContent=(world.name||'Wereld').slice(0,22);
@@ -1196,7 +1198,9 @@ function openWorldAtlas(){
   if(!overlay) return;
   syncCurrentAtlasWorld();
   controls.unlock();
+  document.getElementById('hud').classList.remove('settings-open');
   document.getElementById('hud').classList.add('swimming');
+  journeyMenu.setAttribute('aria-expanded','false');
   communityOcean?.refreshHUD();
   overlay.classList.add('open');
   overlay.setAttribute('aria-hidden','false');
@@ -4117,7 +4121,7 @@ const keys = {};
 addEventListener('keydown',e=>{
   if(document.getElementById('fishLibraryDialog')?.open || e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
   if(e.code==='KeyO'&&!editMode&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('worldAtlasOverlay').classList.contains('open')){
-    e.preventDefault();openGraphicsSettings();return;
+    e.preventDefault();toggleMainMenu();return;
   }
   keys[e.code]=true;
   if(e.code==='Escape' && followMode){ e.preventDefault(); stopFollowing(false); }
@@ -4300,7 +4304,7 @@ function animate(){
   pufferLibrary.update(t,camera,atmosphere.quality,fishDetail.checked,fishRenderStyle.value);
   newReefSpecies.update(t,camera,atmosphere.quality,fishRenderStyle.value);
   microLife.update(dt,camera,{enabled:microLifeEnabled.checked&&ecosystemState.stageId>=1,editor:editMode||landscapeEditorActive,inspect:terrainInspectActive,paused:referencePaused,
-    quality:atmosphere.quality,revision:habitatRevision,showSchools:microSchoolsEnabled.checked&&ecosystemState.stageId>=2,showPlankton:microPlanktonEnabled.checked&&ecosystemState.stageId>=1});
+    quality:atmosphere.quality,revision:habitatRevision,worldKey:currentAtlasWorldId(),showSchools:microSchoolsEnabled.checked&&ecosystemState.stageId>=2,showPlankton:microPlanktonEnabled.checked&&ecosystemState.stageId>=1});
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
@@ -4321,7 +4325,7 @@ function animate(){
   const metricNow = performance.now();
   if (metricNow - metricStart >= 1000) {
     const micro=microLife.stats;
-    document.getElementById('microLifeStatus').textContent=!microLifeEnabled.checked?'Microleven uitgeschakeld':ecosystemState.stageId<1?'Bouw eerst levend habitat; een lege oceaan heeft nog geen voedselweb.':`${micro.bottom} kleine bodemdieren · ${micro.shrimp} garnalen · ${micro.fish} verre schoolvissen · ${micro.plankton} planktondeeltjes`;
+    document.getElementById('microLifeStatus').textContent=!microLifeEnabled.checked?'Microleven uitgeschakeld':ecosystemState.stageId<1?'Bouw eerst levend habitat; een lege oceaan heeft nog geen voedselweb.':`${micro.bottom} kleine bodemdieren · ${micro.shrimp} garnalen · ${micro.fish} kleine rifvissen · ${micro.plankton} planktondeeltjes`;
     if(selectedFish?.userData.imported)followInfo.textContent=`${importedFishInfo(selectedFish)} · A/D rond school · W/S afstand`;
     graphicsMetrics.textContent = Math.round(metricFrames * 1000 / (metricNow - metricStart)) + ' FPS · '
       + renderer.info.render.calls + ' draw calls · '
@@ -4364,7 +4368,7 @@ if(!referenceMode){
     prepareTravel:()=>{closeWorldAtlas();if(editMode)setEditMode(false);if(followMode)stopFollowing(false);},
     onTravelError:message=>{openWorldAtlas();setAtlasStatus(message);},
     openAtlas:openWorldAtlas,
-    openMenu:()=>{controls.unlock();closeWorldAtlas();document.getElementById('hud').classList.remove('swimming');swimmingSettingsBtn.classList.remove('visible');}
+    openMenu:toggleMainMenu
   });
   refreshWorldPermissions();
 }else document.getElementById('journeyHud').hidden=true;

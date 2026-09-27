@@ -127,7 +127,12 @@ await page.screenshot({path:artifacts+'/atlas.png'});
 await page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Diepe buurwereld'}).click();
 await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
-assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
+// A stale local-world placeholder at 0,0 must not hide the connected home world.
+await page.locator('#journeyAtlas').click();
+const homeHex=page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Mijn koraaltuin'});
+assert.equal(await homeHex.count(),1,'connected home remains visible when visiting its neighbor');
+assert.match(await homeHex.textContent(),/VERBONDEN/);
+await homeHex.click();await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual((await page.evaluate(()=>window.__communityQA.state())).cells,own.cells,'atlas round trip preserves own draft');
 
@@ -177,7 +182,9 @@ await page.locator('#journeyAtlas').click();assert.ok(await page.locator('#world
 await page.locator('#worldAtlasClose').click();
 await page.evaluate(()=>window.__communityQA.cross());
 await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
-assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true,'restored route remains swimmable');
+await page.locator('#journeyAtlas').click();
+assert.equal(await homeHex.count(),1,'home remains visible after reloading the saved atlas');
+await homeHex.click();await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual(errors,[]);
 
@@ -194,5 +201,5 @@ await page.evaluate(()=>window.__communityQA.restore({version:4}));
 const empty=await page.evaluate(()=>window.__communityQA.state());assert.deepEqual(empty.cells,[]);assert.deepEqual(empty.terrain,[]);
 assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
 console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','atlas button opens adjacent world','atlas directly opens distant known world','failed atlas travel remains visible','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
-await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true,firebaseListNormalization:true,terrainOnlyWorld:true,emptyWorld:true,invalidImportPreservesTerrain:true},null,2));
+await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true,homeVisibleFromNeighbor:true,homeVisibleAfterReload:true,firebaseListNormalization:true,terrainOnlyWorld:true,emptyWorld:true,invalidImportPreservesTerrain:true},null,2));
 }finally{await browser.close();}

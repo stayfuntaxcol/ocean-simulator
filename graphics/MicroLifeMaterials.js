@@ -80,7 +80,7 @@ export function createMicroMaterial(type,clock,caustics={oceanTime:{value:0},oce
     `);
     shader.fragmentShader='varying vec3 vMicroLocal; varying float vMicroRange;\n'+shader.fragmentShader;
     if(rangeFade)shader.fragmentShader=shader.fragmentShader.replace('#include <alphatest_fragment>',`#include <alphatest_fragment>
-      float visibility=${type==='minnow'?'smoothstep(1.2,3.2,vMicroRange)*(1.0-smoothstep(42.0,56.0,vMicroRange))':'1.0-smoothstep(26.0,34.0,vMicroRange)'};
+      float visibility=${type==='minnow'?'1.0-smoothstep(42.0,56.0,vMicroRange)':'1.0-smoothstep(26.0,34.0,vMicroRange)'};
       if(visibility<fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453))discard;
     `);
     shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
@@ -90,6 +90,6 @@ export function createMicroMaterial(type,clock,caustics={oceanTime:{value:0},oce
     `);
     addSurfaceRelief(shader,'surfaceNoise*.18','surfaceNoise*.06',type==='starfish'?.001:type==='minnow'?.0001:.00035);
   };
-  material.customProgramCacheKey=()=>`micro-life-v3-${type}-${rangeFade}-${classic}`;
+  material.customProgramCacheKey=()=>`micro-life-v4-${type}-${rangeFade}-${classic}`;
   return material;
 }

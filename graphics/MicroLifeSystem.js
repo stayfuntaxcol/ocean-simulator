@@ -6,8 +6,8 @@ import { createMicroBehavior } from './MicroLifeBehavior.js';
 export { createMicroMaterial } from './MicroLifeMaterials.js';
 
 export const MICRO_QUALITY=Object.freeze({
-  low:{patches:6,copies:1,schools:2,fishPerSchool:24,plankton:160,detailRange:0},
-  medium:{patches:14,copies:2,schools:3,fishPerSchool:32,plankton:440,detailRange:7},
+  low:{patches:6,copies:1,schools:4,fishPerSchool:40,plankton:160,detailRange:0},
+  medium:{patches:14,copies:2,schools:4,fishPerSchool:40,plankton:440,detailRange:7},
   high:{patches:24,copies:2,schools:4,fishPerSchool:40,plankton:800,detailRange:10},
 });
 const SURFACE=19.55;
@@ -17,6 +17,8 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
   const root=new THREE.Group();root.name='Microleven';scene.add(root);
   const clock={value:0},dummy=new THREE.Object3D(),up=new THREE.Vector3(0,1,0),color=new THREE.Color(),probe=new THREE.Vector3();
   const assets=new Map();let disposed=false,records=[],schools=[],boxes=[],lastKey='',sinceRefresh=3;
+  let schoolWorldKey=null;
+  const schoolCenter=new THREE.Vector3(),schoolAway=new THREE.Vector3(),schoolFlee=new THREE.Vector3(),schoolOffset=new THREE.Vector3();
   let settings=MICRO_QUALITY.medium,quality='medium',visibleSchools=0;
   for(const type of [...MICRO_TYPES,'minnow']) {
     const material=createMicroMaterial(type,clock,caustics),capacity=type==='minnow'?160:48;
@@ -86,10 +88,77 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
         // open water when a rock blocks it instead of dropping the whole shoal.
         const volume=new THREE.Box3(new THREE.Vector3(x-6,y-1.5,z-6),new THREE.Vector3(x+6,y+1.5,z+6));
         if(boxes.some(b=>b.intersectsBox(volume)))continue;
-        return {x,y,z,phase:random()*Math.PI*2};
+        return {x,y,z,floor,lift,phase:random()*Math.PI*2};
       }
     }
     return null;
+  }
+  function poseSchool(s,angle,time,offset,y) {
+    const x=s.x+Math.cos(angle)*2.5+offset.x,z=s.z+Math.sin(angle)*2.2+offset.z;
+    const heading=-Math.atan2(2.2*Math.cos(angle),-2.5*Math.sin(angle)),c=Math.cos(heading),sine=Math.sin(heading),spread=1+.04*Math.sin(time*.31+s.phase);
+    let safe=true;
+    for(const f of s.members){
+      f.next.set(x+(c*f.x+sine*f.z)*spread,y+f.y+Math.sin(time*.6+s.phase)*.12+Math.sin(time*.83+f.phase)*.022,z+(-sine*f.x+c*f.z)*spread);
+      if(!swimSafe(f.next.x,f.next.y,f.next.z))safe=false;
+    }
+    return {safe,heading};
+  }
+  function syncSchools(habitats) {
+    const key=h=>`${h.x},${h.z}`,byKey=new Map(habitats.map(h=>[key(h),h]));
+    schools=schools.filter(s=>{
+      if(!byKey.has(s.habitat))return false;
+      let floor=-Infinity;
+      for(let dx=-6;dx<=6;dx+=3)for(let dz=-6;dz<=6;dz+=3)floor=Math.max(floor,terrain(s.x+dx,s.z+dz));
+      if(!Number.isFinite(floor)||floor+s.lift>SURFACE-1.8)return false;
+      s.targetY=floor+s.lift;return true;
+    });
+    // Camera distance only affects rendering detail, never ownership of a slot.
+    const sorted=[...habitats].sort((a,b)=>Math.hypot(a.x,a.z)-Math.hypot(b.x,b.z)||a.x-b.x||a.z-b.z);
+    for(const h of sorted){
+      if(schools.length>=MICRO_QUALITY.high.schools)break;
+      if(schools.some(s=>s.habitat===key(h)))continue;
+      const home=schoolCandidate(h);if(!home)continue;
+      const id=`${schoolWorldKey}:shoal:${key(h)}`,random=seededRandom(seedFor(home.x,home.z)+911),members=[];
+      for(let attempt=0;attempt<1500&&members.length<MICRO_QUALITY.high.fishPerSchool;attempt++){
+        const f={id:`${id}:${members.length}`,x:(random()-.5)*4.3,y:(random()-.5)*1.8,z:(random()-.5)*3.5,scale:.76+random()*.34,phase:random()*6.28};
+        if(Math.hypot(f.x/2.4,f.z/2.0)>1||members.some(o=>Math.hypot(o.x-f.x,o.y-f.y,o.z-f.z)<.85))continue;
+        members.push({...f,position:new THREE.Vector3(),next:new THREE.Vector3(),velocity:new THREE.Vector3(),yaw:0,gait:1});
+      }
+      const s={...home,id,habitat:key(h),members,targetY:home.y,angle:home.phase,time:0,offset:new THREE.Vector3()};
+      const pose=poseSchool(s,s.angle,s.time,s.offset,s.y);if(!pose.safe)continue;
+      for(const f of members){f.position.copy(f.next);f.yaw=pose.heading;}
+      schools.push(s);
+    }
+  }
+  function updateSchools(delta,camera) {
+    if(!delta)return;
+    const threats=[{position:camera.position,radius:.5},...getThreats()];
+    for(const s of schools){
+      schoolCenter.set(s.x+Math.cos(s.angle)*2.5+s.offset.x,s.y,s.z+Math.sin(s.angle)*2.2+s.offset.z);
+      schoolFlee.set(0,0,0);
+      for(const threat of threats){
+        const reach=6+Math.min(4,threat.radius||0),distance=schoolCenter.distanceTo(threat.position);
+        if(distance>=reach)continue;
+        schoolAway.copy(schoolCenter).sub(threat.position);schoolAway.y=0;
+        if(schoolAway.lengthSq()<.0001)schoolAway.set(Math.cos(s.phase),0,Math.sin(s.phase));
+        schoolFlee.addScaledVector(schoolAway.normalize(),3*(1-distance/reach));
+      }
+      schoolFlee.clampLength(0,3);
+      schoolOffset.copy(s.offset).lerp(schoolFlee,1-Math.exp(-delta*1.4));
+      schoolAway.copy(schoolOffset).sub(s.offset).clampLength(0,delta*1.2);schoolOffset.copy(s.offset).add(schoolAway);
+      const angle=s.angle+delta*.10,time=s.time+delta,y=s.y+THREE.MathUtils.clamp(s.targetY-s.y,-delta*.8,delta*.8);
+      let pose=poseSchool(s,angle,time,schoolOffset,y);
+      // A blocked avoidance maneuver falls back to the safe home trajectory.
+      // If that too is blocked, keep the shoal in place instead of hiding fish.
+      if(!pose.safe){schoolOffset.copy(s.offset).multiplyScalar(Math.exp(-delta*1.4));pose=poseSchool(s,angle,time,schoolOffset,y);}
+      if(!pose.safe){for(const f of s.members){f.velocity.set(0,0,0);f.gait=0;}continue;}
+      s.angle=angle;s.time=time;s.y=y;s.offset.copy(schoolOffset);
+      for(const f of s.members){
+        f.velocity.copy(f.next).sub(f.position).divideScalar(delta);
+        if(f.velocity.lengthSq()>.000001)f.yaw=-Math.atan2(f.velocity.z,f.velocity.x);
+        f.gait=Math.min(1,f.velocity.length()/.25);f.position.copy(f.next);
+      }
+    }
   }
   function refresh(camera,revision) {
     boxes=getObstacles().filter(b=>b&&!b.isEmpty()).map(b=>b.clone());
@@ -113,18 +182,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
         records.push({type,x,z,phase,scale,yaw,pose,footprint});break;
       }
     }
-    schools=[];
-    for(const h of habitats) {
-      if(schools.length>=settings.schools)break;
-      const s=schoolCandidate(h);if(!s)continue;
-      const random=seededRandom(seedFor(s.x,s.z)+911),members=[];
-      for(let attempt=0;attempt<1500&&members.length<settings.fishPerSchool;attempt++) {
-        const f={x:(random()-.5)*4.3,y:(random()-.5)*1.8,z:(random()-.5)*3.5,scale:.76+random()*.34,phase:random()*6.28};
-        if(Math.hypot(f.x/2.4,f.z/2.0)>1||members.some(o=>Math.hypot(o.x-f.x,o.y-f.y,o.z-f.z)<.85))continue;
-        members.push(f);
-      }
-      schools.push({...s,members});
-    }
+    syncSchools(allHabitats);
     const cx=Math.floor(camera.position.x/12)*12,cz=Math.floor(camera.position.z/12)*12,cy=Math.floor(camera.position.y/8)*8;
     let count=0;
     for(let tx=-2;tx<=2;tx++)for(let tz=-2;tz<=2;tz++)for(let layer=-1;layer<=1;layer++) {
@@ -148,14 +206,16 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
     // Close to white: the old multiplicative brown tint hid the anatomy.
     color.setRGB(1,.94+.06*Math.sin(scale*7)**2,.89+.10*Math.cos(scale*7)**2);mesh.setColorAt(i,color);
   }
-  function update(dt,camera,{enabled=true,editor=false,inspect=false,paused=false,quality:nextQuality='medium',revision=0,showSchools=true,showPlankton=true}={}) {
+  function update(dt,camera,{enabled=true,editor=false,inspect=false,paused=false,quality:nextQuality='medium',revision=0,worldKey='local-world',showSchools=true,showPlankton=true}={}) {
     if(disposed)return;
+    if(worldKey!==schoolWorldKey){schoolWorldKey=worldKey;schools=[];lastKey='';}
     root.visible=enabled&&!editor&&!inspect;if(!root.visible){lastKey='';return;}
     quality=Object.hasOwn(MICRO_QUALITY,nextQuality)?nextQuality:'medium';settings=MICRO_QUALITY[quality];
     const delta=!paused&&Number.isFinite(dt)?THREE.MathUtils.clamp(dt,0,.08):0;clock.value+=delta;sinceRefresh+=delta;
     const key=`${Math.floor(camera.position.x/12)*12},${Math.floor(camera.position.y/8)*8},${Math.floor(camera.position.z/12)*12},${quality},${revision}`;
     if(key!==lastKey||sinceRefresh>=2)refresh(camera,revision);
     behavior.update(delta);
+    updateSchools(delta,camera);
     for(const asset of assets.values())for(const level of asset.levels)level.mesh.count=0;
     contact.count=0;
     for(const r of records) {
@@ -174,16 +234,10 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
     }
     visibleSchools=0;
     if(showSchools)for(const s of schools) {
-      const angle=clock.value*.10+s.phase,x=s.x+Math.cos(angle)*2.5,z=s.z+Math.sin(angle)*2.2;
-      const heading=-Math.atan2(2.2*Math.cos(angle),-2.5*Math.sin(angle)),c=Math.cos(heading),sine=Math.sin(heading);
-      const spread=1+.04*Math.sin(clock.value*.31+s.phase);
       let shown=false;
       for(const f of s.members) {
-        const px=x+(c*f.x+sine*f.z)*spread,py=s.y+f.y+Math.sin(clock.value*.6+s.phase)*.12+Math.sin(clock.value*.83+f.phase)*.022,pz=z+(-sine*f.x+c*f.z)*spread;
-        probe.set(px,py,pz);const distance=probe.distanceTo(camera.position);
-        if(distance<1.2||distance>56||!swimSafe(px,py,pz))continue;
-        // swimSafe uses the scratch vector; its final coordinates equal px,py,pz.
-        instance('minnow',probe,up,heading,f.scale,f.phase,1,distance,Math.cos(clock.value*.6+s.phase)*.045,.10+.05*Math.sin(clock.value*.7+f.phase));shown=true;
+        const distance=f.position.distanceTo(camera.position);if(distance>56)continue;
+        instance('minnow',f.position,up,f.yaw,f.scale,f.phase,f.gait,distance,Math.cos(s.time*.6+s.phase)*.045,.10+.05*Math.sin(s.time*.7+f.phase));shown=true;
       }
       if(shown)visibleSchools++;
     }
@@ -206,5 +260,6 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
       escaping:behavior.animals.filter(a=>a.type==='shrimp'&&a.state==='EVADE').length,
       fish:root.visible?assets.get('minnow').levels.reduce((n,l)=>n+l.mesh.count,0):0,
       plankton:root.visible&&plankton.visible?particleGeometry.drawRange.count:0,schools:root.visible?visibleSchools:0,species};
-  },get clock(){return clock.value;},snapshot:behavior.snapshot};
+  },get clock(){return clock.value;},snapshot:behavior.snapshot,
+    schoolSnapshot:()=>schools.map(s=>({id:s.id,home:[s.x,s.targetY,s.z],offset:s.offset.toArray(),members:s.members.map(f=>({id:f.id,position:f.position.toArray(),velocity:f.velocity.toArray(),yaw:f.yaw}))}))};
 }
