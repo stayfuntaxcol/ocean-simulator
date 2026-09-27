@@ -69,7 +69,7 @@ test('distant schools and layered plankton stay submerged and respect independen
   const fish=levels(life,'minnow');assert.ok(life.stats.fish>0);
   for(let frame=0;frame<50;frame++){
     life.update(.08,camera,{quality:'high'});
-    for(const mesh of fish)for(const p of positions(mesh)){assert.ok(p.y<19.25&&p.y>-17.3);assert.ok(p.distanceTo(camera.position)>=1.19);}
+    for(const mesh of fish)for(const p of positions(mesh)){assert.ok(p.y<19.25&&p.y>-17.3);}
   }
   // Centers retain safe separation as each group turns; no packed intersecting fish.
   const all=fish.flatMap(positions);for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++)assert.ok(all[i].distanceTo(all[j])>.75);
@@ -88,14 +88,73 @@ test('plankton overlapping world tiles retain positions when the camera moves',(
   assert.ok([...after].filter(key=>before.has(key)).length>after.size*.65);life.dispose();
 });
 
-test('quality decreases geometry and populations, and all allocated resources dispose once',()=>{
+test('quality decreases geometry and particles while preserving small fish; resources dispose once',()=>{
   const {life,camera,scene}=fixture();life.update(.04,camera,{quality:'high'});
   const mesh=life.root.getObjectByName('starfish'),high=mesh.geometry.attributes.position.count;let materialDisposed=0,geometryDisposed=0;
   mesh.material.addEventListener('dispose',()=>materialDisposed++);mesh.geometry.addEventListener('dispose',()=>geometryDisposed++);
-  life.update(0,camera,{quality:'low'});assert.equal(mesh.count,0);assert.ok(life.root.getObjectByName('starfish-far').geometry.attributes.position.count<high);assert.ok(life.stats.bottom<=MICRO_QUALITY.low.patches*5);assert.ok(life.stats.fish<=48);assert.ok(life.stats.plankton<=160);
+  const fishBefore=life.stats.fish;
+  life.update(0,camera,{quality:'low'});assert.equal(mesh.count,0);assert.ok(life.root.getObjectByName('starfish-far').geometry.attributes.position.count<high);assert.ok(life.stats.bottom<=MICRO_QUALITY.low.patches*5);assert.equal(life.stats.fish,fishBefore);assert.ok(life.stats.plankton<=160);
   life.update(0,camera,{quality:'invalid'});assert.ok(life.stats.bottom<=140);
   const ray=new THREE.Raycaster(new THREE.Vector3(0,30,0),new THREE.Vector3(0,-1,0));assert.equal(ray.intersectObject(life.root,true).length,0);
   life.dispose();life.dispose();assert.equal(materialDisposed,1);assert.equal(geometryDisposed,1);assert.equal(life.root.parent,null);assert.equal(scene.children.length,0);
+});
+
+test('small shoals retain identity and positions across camera tiles, quality, pauses and streaming revisions',()=>{
+  const {life,camera}=fixture();life.update(0,camera,{quality:'high'});
+  const before=life.schoolSnapshot();assert.ok(before.length>1);
+  for(const [x,y,z,quality] of [[24,-13,24,'low'],[-85,-4,22,'medium'],[0,0,95,'high'],[0,-16,0,'high']]){
+    camera.position.set(x,y,z);life.update(0,camera,{quality,revision:3});
+    assert.deepEqual(life.schoolSnapshot(),before,'camera and detail cannot respawn schools');
+  }
+  life.update(10,camera,{paused:true});assert.deepEqual(life.schoolSnapshot(),before);
+  life.update(2,camera,{enabled:false});life.update(0,camera);assert.deepEqual(life.schoolSnapshot(),before);
+  const peer=fixture();peer.camera.position.set(110,5,90);peer.life.update(0,peer.camera,{quality:'low'});
+  assert.deepEqual(peer.life.schoolSnapshot(),before,'first viewing location does not select different schools');
+  life.dispose();peer.life.dispose();
+});
+
+test('small fish remain rendered at close range, including when the viewer enters a school',()=>{
+  const {life,camera}=fixture();life.update(0,camera,{quality:'high'});
+  const fish=life.schoolSnapshot()[0].members[0];
+  for(const distance of [5,3,1,.4,0]){
+    camera.position.fromArray(fish.position);camera.position.z+=distance;life.update(0,camera,{quality:'high'});
+    const rendered=levels(life,'minnow').flatMap(positions);
+    assert.ok(rendered.some(p=>p.distanceTo(new THREE.Vector3(...fish.position))<1e-5),'same fish is present at '+distance+' metres');
+  }
+  const material=createMicroMaterial('minnow',{value:0}),shader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  material.onBeforeCompile(shader);
+  assert.doesNotMatch(shader.fragmentShader,/smoothstep\(1\.2,3\.2/,'the GPU must not dissolve nearby fish');
+  material.dispose();life.dispose();
+});
+
+test('small schools continuously avoid the viewer and return home without jumps or vanishing members',()=>{
+  const {life,camera}=fixture();life.update(0,camera);
+  const first=life.schoolSnapshot()[0],member=first.members[0];camera.position.fromArray(member.position);
+  let previous=life.schoolSnapshot(),largestOffset=0;
+  for(let frame=0;frame<300;frame++){
+    life.update(.04,camera,{revision:frame%4});const after=life.schoolSnapshot();
+    assert.deepEqual(after.map(s=>s.id),previous.map(s=>s.id));
+    for(let i=0;i<after.length;i++){
+      assert.equal(after[i].members.length,previous[i].members.length);
+      for(let j=0;j<after[i].members.length;j++){
+        const p=after[i].members[j].position,b=previous[i].members[j].position;
+        assert.ok(Math.hypot(...p.map((v,k)=>v-b[k]))<.09,'each frame moves continuously');
+        assert.ok(p[1]>-17.3&&p[1]<19.25);
+      }
+    }
+    largestOffset=Math.max(largestOffset,Math.hypot(...after[0].offset));previous=after;
+  }
+  assert.ok(largestOffset>.25,'approaching the school elicits a visible avoidance response');
+  camera.position.set(110,5,110);for(let frame=0;frame<200;frame++)life.update(.04,camera);
+  assert.ok(Math.hypot(...life.schoolSnapshot()[0].offset)<.001,'school returns to its original habitat');
+  life.dispose();
+});
+
+test('world changes replace only the destination shoals and require no stored animal records',()=>{
+  const {life,camera}=fixture();life.update(0,camera,{worldKey:'A'});const a=life.schoolSnapshot();
+  life.update(0,camera,{worldKey:'B'});assert.ok(life.schoolSnapshot().every(s=>s.id.startsWith('B:')));
+  life.update(0,camera,{worldKey:'A'});assert.deepEqual(life.schoolSnapshot(),a);
+  life.dispose();
 });
 
 test('micro shaders preserve lighting and fog; review imports actual models and app handles pause',()=>{
