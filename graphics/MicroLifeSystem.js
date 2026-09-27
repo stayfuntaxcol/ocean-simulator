@@ -93,8 +93,8 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
     }
     return null;
   }
-  function poseSchool(s,angle,time,offset,y) {
-    const x=s.x+Math.cos(angle)*2.5+offset.x,z=s.z+Math.sin(angle)*2.2+offset.z;
+  function poseSchool(s,angle,time,offset,y,patrol=s.patrol) {
+    const x=s.x+Math.cos(angle)*2.5+offset.x+(patrol?.x||0),z=s.z+Math.sin(angle)*2.2+offset.z+(patrol?.z||0);
     const heading=-Math.atan2(2.2*Math.cos(angle),-2.5*Math.sin(angle)),c=Math.cos(heading),sine=Math.sin(heading),spread=1+.04*Math.sin(time*.31+s.phase);
     let safe=true;
     for(const f of s.members){
@@ -124,7 +124,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
         if(Math.hypot(f.x/2.4,f.z/2.0)>1||members.some(o=>Math.hypot(o.x-f.x,o.y-f.y,o.z-f.z)<.85))continue;
         members.push({...f,position:new THREE.Vector3(),next:new THREE.Vector3(),velocity:new THREE.Vector3(),yaw:0,gait:1});
       }
-      const s={...home,id,habitat:key(h),members,targetY:home.y,angle:home.phase,time:0,offset:new THREE.Vector3()};
+      const s={...home,id,habitat:key(h),members,targetY:home.y,angle:home.phase,time:0,offset:new THREE.Vector3(),patrol:new THREE.Vector3(),routeTarget:null,routeHeading:home.phase};
       const pose=poseSchool(s,s.angle,s.time,s.offset,s.y);if(!pose.safe)continue;
       for(const f of members){f.position.copy(f.next);f.yaw=pose.heading;}
       schools.push(s);
@@ -134,7 +134,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
     if(!delta)return;
     const threats=[{position:camera.position,radius:.5},...getThreats()];
     for(const s of schools){
-      schoolCenter.set(s.x+Math.cos(s.angle)*2.5+s.offset.x,s.y,s.z+Math.sin(s.angle)*2.2+s.offset.z);
+      schoolCenter.set(s.x+Math.cos(s.angle)*2.5+s.offset.x+s.patrol.x,s.y,s.z+Math.sin(s.angle)*2.2+s.offset.z+s.patrol.z);
       schoolFlee.set(0,0,0);
       for(const threat of threats){
         const reach=6+Math.min(4,threat.radius||0),distance=schoolCenter.distanceTo(threat.position);
@@ -147,12 +147,24 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
       schoolOffset.copy(s.offset).lerp(schoolFlee,1-Math.exp(-delta*1.4));
       schoolAway.copy(schoolOffset).sub(s.offset).clampLength(0,delta*1.2);schoolOffset.copy(s.offset).add(schoolAway);
       const angle=s.angle+delta*.10,time=s.time+delta,y=s.y+THREE.MathUtils.clamp(s.targetY-s.y,-delta*.8,delta*.8);
-      let pose=poseSchool(s,angle,time,schoolOffset,y);
+      if(!s.routeTarget||s.patrol.distanceTo(s.routeTarget)<.3){
+        s.routeHeading+=1.1;s.routeTarget=new THREE.Vector3(Math.cos(s.routeHeading)*12,0,Math.sin(s.routeHeading)*12);
+      }
+      const patrol=s.patrol.clone().add(s.routeTarget.clone().sub(s.patrol).clampLength(0,delta*.55));
+      let poseY=y,pose=poseSchool(s,angle,time,schoolOffset,y,patrol);
       // A blocked avoidance maneuver falls back to the safe home trajectory.
       // If that too is blocked, keep the shoal in place instead of hiding fish.
-      if(!pose.safe){schoolOffset.copy(s.offset).multiplyScalar(Math.exp(-delta*1.4));pose=poseSchool(s,angle,time,schoolOffset,y);}
+      if(!pose.safe){
+        patrol.copy(s.patrol);s.routeTarget=null;
+        schoolOffset.copy(s.offset).multiplyScalar(Math.exp(-delta*1.4));pose=poseSchool(s,angle,time,schoolOffset,y,patrol);
+      }
+      if(!pose.safe){
+        // Try turning back and gently clearing a newly streamed obstacle.
+        pose=poseSchool(s,s.angle-delta*.10,time,schoolOffset,Math.min(SURFACE-1.8,y+delta*.35),patrol);
+        if(pose.safe){s.angle-=delta*.20;poseY=Math.min(SURFACE-1.8,y+delta*.35);}
+      }
       if(!pose.safe){for(const f of s.members){f.velocity.set(0,0,0);f.gait=0;}continue;}
-      s.angle=angle;s.time=time;s.y=y;s.offset.copy(schoolOffset);
+      s.angle+=delta*.10;s.time=time;s.y=poseY;s.offset.copy(schoolOffset);s.patrol.copy(patrol);
       for(const f of s.members){
         f.velocity.copy(f.next).sub(f.position).divideScalar(delta);
         if(f.velocity.lengthSq()>.000001)f.yaw=-Math.atan2(f.velocity.z,f.velocity.x);
