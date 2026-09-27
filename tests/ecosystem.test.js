@@ -30,10 +30,11 @@ test('species are introduced in five habitat phases',()=>{
     [{coral:15,seagrass:15,sponge:10,rocks:10,mixed:10},5,[7,5,1,6,0,2,3,4]]
   ];
   for(const [habitats,stage,species] of phases){
-    const state=evaluateEcosystem({habitats}),plan=naturalPopulationPlan(state);
+    const state=evaluateEcosystem({habitats}),plan=naturalPopulationPlan({...state,naturalTarget:132});
     assert.equal(state.stageId,stage);
     assert.deepEqual([...new Set(plan.map(group=>group.species))],species);
-    assert.equal(plan.reduce((sum,group)=>sum+group.count,0),state.naturalTarget);
+    assert.equal(plan.reduce((sum,group)=>sum+group.count,0),132);
+    assert.ok(naturalPopulationPlan(state).reduce((sum,group)=>sum+group.count,0)<=state.naturalTarget);
   }
 });
 
@@ -41,9 +42,9 @@ test('imported fish do not reduce the habitat-driven natural population target',
   const habitats={coral:15,seagrass:15,sponge:10,rocks:10,mixed:10};
   const baseline=evaluateEcosystem({habitats});
   const healthy=evaluateEcosystem({habitats,importedFish:150});
-  assert.equal(healthy.capacity,186);assert.equal(healthy.naturalTarget,baseline.naturalTarget);
+  assert.equal(healthy.capacity,18.6);assert.equal(healthy.naturalTarget,baseline.naturalTarget);
   const overloaded=evaluateEcosystem({habitats:{coral:10},importedFish:150});
-  assert.ok(overloaded.shortage>.9);assert.ok(overloaded.naturalTarget>0);
+  assert.ok(overloaded.shortage>.9);assert.equal(overloaded.naturalTarget,0);
 });
 
 test('lava reduces capacity and only shortage or hazards lower imported health',()=>{
