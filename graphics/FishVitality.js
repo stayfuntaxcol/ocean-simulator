@@ -47,6 +47,12 @@ export function buildFoodSectors(layers=[],{lavaVents=[],previous=new Map(),sect
       pressure:0,assessment
     });
   }
+  // Apply the world ceiling proportionally, so local food agrees with the dashboard.
+  const total=[...sectors.values()].reduce((sum,sector)=>sum+sector.capacity,0);
+  if(total>1000)for(const sector of sectors.values()){
+    const factor=1000/total;
+    sector.capacity*=factor;sector.maxFood*=factor;sector.stock*=factor;
+  }
   return sectors;
 }
 

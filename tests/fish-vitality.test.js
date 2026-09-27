@@ -11,7 +11,7 @@ for(const type of ['coral','seagrass','sponge','rocks','mixed'])for(let i=0;i<8;
 test('food sectors derive local capacity only from existing world layers',()=>{
   const sectors=buildFoodSectors(richLayers);
   const summary=summarizeFoodSectors(sectors);
-  assert.equal(summary.active,1);assert.ok(summary.capacity>50);assert.equal(summary.stockRatio,1);
+  assert.equal(summary.active,1);assert.ok(summary.capacity>5&&summary.capacity<20);assert.equal(summary.stockRatio,1);
   assert.equal(buildFoodSectors([]).size,0);
 });
 
