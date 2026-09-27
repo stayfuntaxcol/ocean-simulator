@@ -62,6 +62,10 @@
     }
     #ecosystemPanel{margin-top:10px;border:1px solid rgba(144,230,188,.28);border-radius:12px;background:rgba(5,45,43,.38);overflow:hidden}
     #ecosystemPanel summary{padding:10px 12px;cursor:pointer;font-size:13px;font-weight:800;color:#d9fff0}
+    .population-controls{display:grid;gap:8px;font-size:12px;line-height:1.5}
+    .population-controls label{display:block}.population-range{display:flex;align-items:center;gap:10px}
+    .population-range input{flex:1;min-width:0;accent-color:#7ee2f5}.population-range output{min-width:34px;text-align:right}
+    .population-controls select{padding:7px;border:1px solid #487179;border-radius:7px;background:#10313f;color:#e9fbff;width:100%}
     #ecosystemBody{padding:0 12px 12px;display:grid;gap:8px}
     #ecosystemHeadline{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
     #ecosystemHeadline strong{font-size:17px;color:#a8f0c8}#ecosystemHeadline span{font-size:11px;color:#b9d9d2;text-align:right}
@@ -185,6 +189,17 @@
           <span>Waterkwaliteit</span><b id="ecosystemQuality">0%</b>
         </div>
         <p id="ecosystemAdvice" class="ecosystem-warning">Begin met zeegras of koraal. Een lege oceaan kan geen vissen voeden.</p>
+        <details><summary>Populatiegroei en tijd</summary>
+          <div class="population-controls">
+          <label><input id="populationGrowth" type="checkbox"> Importvissen laten vermenigvuldigen</label>
+          <label for="reproductionFactor">Vermenigvuldigingsfactor</label>
+          <div class="population-range"><input id="reproductionFactor" type="range" min="0" max="10" step="0.25" value="1"><output id="reproductionValue" for="reproductionFactor">1×</output></div>
+          <label for="ecologySpeed">Ecologische tijd</label>
+          <select id="ecologySpeed"><option value="0">Pauze</option><option value="0.5">0,5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option></select>
+          <p class="ecosystem-warning">Bij factor 1: maximaal één jong per tien gezonde volwassen vissen per simulatieminuut. Jongeren groeien in tien simulatieminuten op. Tijd beïnvloedt groei, voedsel en health; zwemmen blijft op normale snelheid. Groei stopt bij voedseltekort of de populatiegrens.</p>
+          <p id="populationStatus" class="ecosystem-warning">Vermenigvuldiging uit · instellingen gelden lokaal.</p>
+          </div>
+        </details>
       </div>
     </details>
     <details id="graphicsOptionsPanel" class="graphics-panel">
@@ -408,7 +423,7 @@ import { installFishLibrary } from './library/FishLibrary.js';
 import { parseFish, createThumbnails, importFishFile, disposeFish } from './library/FishAssets.js';
 import { getFish } from './library/FishStore.js';
 import { clone as cloneFishModel } from 'three/addons/utils/SkeletonUtils.js';
-import { fixedHexMeta, neighborSide, closestInHex, apothem, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
+import { fixedHexMeta, neighborSide, closestInHex, containsHex, apothem, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
 import { mapBounds, mapPoint, worldPoint, mapHeading } from './worlds/MapNavigation.js';
 import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -424,6 +439,7 @@ import { createMicroLife } from './graphics/MicroLife.js';
 import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveFishContacts, fishExtent } from './graphics/FishInteractions.js';
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { evaluateEcosystem, naturalPopulationPlan, ecosystemAdvice } from './graphics/Ecosystem.js';
+import { growthBudget, juvenileScale, MATURITY_SECONDS, MAX_POPULATION } from './graphics/PopulationGrowth.js';
 import { FOOD_SECTOR_SIZE, advanceImportedVitality, buildFoodSectors, createImportedVitality, fishBiomass, foodAtPosition, foodSectorKey, healthMotionFactor, residenceDuration, summarizeFoodSectors, updateFoodSectors } from './graphics/FishVitality.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
@@ -496,6 +512,9 @@ const ecosystemSectors = document.getElementById('ecosystemSectors');
 const ecosystemOverloaded = document.getElementById('ecosystemOverloaded');
 const ecosystemQuality = document.getElementById('ecosystemQuality');
 const ecosystemAdviceText = document.getElementById('ecosystemAdvice');
+const populationGrowth=document.getElementById('populationGrowth'),reproductionFactor=document.getElementById('reproductionFactor'),ecologySpeed=document.getElementById('ecologySpeed');
+reproductionFactor.addEventListener('input',()=>document.getElementById('reproductionValue').textContent=`${reproductionFactor.value}×`);
+for(const control of [populationGrowth,ecologySpeed])control.addEventListener('change',()=>updatePopulationGrowth(0));
 
 const editModeBtn = document.getElementById('editModeBtn');
 const worldBrush = document.getElementById('worldBrush');
@@ -2239,6 +2258,7 @@ function worldData(){
     cellSize:CELL,
     worldHalf:WORLD_HALF,
     nextLayerId,
+    megafaunaDisabled:{...megafaunaDisabled},
     terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
     orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
@@ -2262,6 +2282,7 @@ function restoreWorld(data){
   const savedWhale=validateWhaleRecord(data?.whale);
   if(data?.whale && !savedWhale)throw new Error('Ongeldige walvispositie in dit wereldbestand.');
   clearOrca();clearWhale();
+  megafaunaDisabled={orca:data.megafaunaDisabled?.orca===true,whale:data.megafaunaDisabled?.whale===true};megafaunaAttempt=-Infinity;
   applyWorldHexMeta(data?.hexWorld);
   syncCurrentAtlasWorld();
   habitatRevision++;
@@ -2323,12 +2344,13 @@ function canEditCurrentWorld(){
 document.addEventListener('click',event=>{
   const button=event.target.closest?.('button');
   if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale'].includes(button.id))return;
+  if(!cloudBusy&&!communityOcean?.busy&&((button.id==='placeOrca'&&orca)||(button.id==='placeWhale'&&whale)))return;
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
   if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
   for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale']){
-    const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld();
+    const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
   cloudWorldName.readOnly=!canEditCurrentWorld();
   communityOcean?.refreshHUD();
@@ -2718,7 +2740,8 @@ const removeOrcaBtn=document.getElementById('removeOrca');
 const orcaStatus=document.getElementById('orcaStatus');
 
 function orcaPathClear(from,to){
-  const rocks=reef.children.filter(root=>root.userData.orcaRock).map(root=>new THREE.Box3().setFromObject(root));
+  if(!containsHex(to,HEX.radius-ORCA_CLEARANCE))return false;
+  const rocks=megafaunaRocks().slice();
   if(whale&&!whale.root.userData.dead){whale.root.updateMatrixWorld(true);rocks.push(new THREE.Box3().setFromObject(whale.root));}
   return orcaRouteClear(from,to,{rocks,terrain:terrainHeightAt,boundary:WORLD_HALF});
 }
@@ -2735,14 +2758,15 @@ function clearOrca(){
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
 function placeOrcaAt(record){
+  megafaunaDisabled.orca=false;
   orca=createOrca();const fish=orca.root;
   fish.position.fromArray(record.position);
   fish.userData.velocity.set(Math.cos(record.heading)*1.7,0,Math.sin(record.heading)*1.7);
-  fish.userData.health=record.health;fish.userData.dead=record.health<=0;
+  fish.userData.health=100;fish.userData.dead=false;
   const school=makeSchool('orca',{cruiseSpeed:1.7});registerFish(fish,'orca',school);
   orientFishForward(fish,fish.position.clone().add(fish.userData.velocity));
   scene.add(fish);fishes.push(fish);school.center.copy(fish.position);
-  orcaCruise=createOrcaCruise(fish,(from,to)=>to.distanceTo(camera.position)<ACTIVE_RADIUS-ORCA_CLEARANCE && orcaPathClear(from,to));
+  orcaCruise=createOrcaCruise(fish,orcaPathClear);
   placeOrcaBtn.textContent='Volg orka';removeOrcaBtn.hidden=false;
   fishCountEl.textContent=fishes.length;
   orcaStatus.textContent='Orka aanwezig · klik op zijn lichaam om de bek te openen.';
@@ -2750,6 +2774,7 @@ function placeOrcaAt(record){
 }
 placeOrcaBtn.addEventListener('click',()=>{
   if(editMode){orcaStatus.textContent='Sluit de landschapseditor om de orka te plaatsen of volgen.';return;}
+  if(!orca&&fishes.length>=MAX_POPULATION){orcaStatus.textContent='De populatiegrens is bereikt.';return;}
   if(orca?.root.userData.dead)clearOrca();
   if(!orca){
     refreshWorldStreaming(true);
@@ -2769,10 +2794,11 @@ placeOrcaBtn.addEventListener('click',()=>{
   }
   startFollowing(orca.root,'fish');followDistance=16;followHeight=2;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
 });
-removeOrcaBtn.addEventListener('click',clearOrca);
+removeOrcaBtn.addEventListener('click',()=>{megafaunaDisabled.orca=true;clearOrca();});
 const placeWhaleBtn=document.getElementById('placeWhale'),removeWhaleBtn=document.getElementById('removeWhale'),whaleStatus=document.getElementById('whaleStatus');
 function whalePathClear(from,to){
-  const rocks=reef.children.filter(root=>root.userData.orcaRock).map(root=>new THREE.Box3().setFromObject(root));
+  if(!containsHex(to,HEX.radius-WHALE_MARGIN))return false;
+  const rocks=megafaunaRocks().slice();
   if(orca&&!orca.root.userData.dead){orca.root.updateMatrixWorld(true);rocks.push(new THREE.Box3().setFromObject(orca.root));}
   return whaleRouteClear(from,to,{rocks,terrain:terrainHeightAt,boundary:WORLD_HALF});
 }
@@ -2787,19 +2813,21 @@ function clearWhale(){
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
 function placeWhaleAt(record){
+  megafaunaDisabled.whale=false;
   whale=createWhale();const fish=whale.root;fish.position.fromArray(record.position);
   fish.userData.velocity.set(Math.cos(record.heading)*1.15,0,Math.sin(record.heading)*1.15);
-  fish.userData.health=record.health;fish.userData.dead=record.health<=0;
+  fish.userData.health=100;fish.userData.dead=false;
   const school=makeSchool('whale',{cruiseSpeed:1.15});registerFish(fish,'whale',school);
   orientFishForward(fish,fish.position.clone().add(fish.userData.velocity));
   scene.add(fish);fishes.push(fish);school.center.copy(fish.position);
-  whaleCruise=createWhaleCruise(fish,(from,to)=>to.distanceTo(camera.position)<ACTIVE_RADIUS-WHALE_MARGIN&&whalePathClear(from,to));
+  whaleCruise=createWhaleCruise(fish,whalePathClear);
   placeWhaleBtn.textContent='Volg walvis';removeWhaleBtn.hidden=false;
   whaleStatus.textContent='Walvis aanwezig · circa 27 meter lang.';fishCountEl.textContent=fishes.length;
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
 placeWhaleBtn.addEventListener('click',()=>{
   if(editMode){whaleStatus.textContent='Sluit de landschapseditor om de walvis te plaatsen.';return;}
+  if(!whale&&fishes.length>=MAX_POPULATION){whaleStatus.textContent='De populatiegrens is bereikt.';return;}
   if(whale?.root.userData.dead)clearWhale();
   if(!whale){
     refreshWorldStreaming(true);let chosen=null;
@@ -2814,7 +2842,59 @@ placeWhaleBtn.addEventListener('click',()=>{
   }
   startFollowing(whale.root,'fish');followDistance=27;followHeight=3;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
 });
-removeWhaleBtn.addEventListener('click',clearWhale);
+removeWhaleBtn.addEventListener('click',()=>{megafaunaDisabled.whale=true;clearWhale();});
+
+let megafaunaDisabled={orca:false,whale:false},megafaunaAttempt=-Infinity;
+let megafaunaRockCache=[],megafaunaRockStamp='',megafaunaRockTime=-Infinity;
+function megafaunaRocks(){
+  const now=performance.now()/1000,stamp=`${habitatRevision}:${lastStreamingCell}:${currentAtlasWorldId()}`;
+  if(stamp===megafaunaRockStamp&&now-megafaunaRockTime<.5)return megafaunaRockCache;
+  megafaunaRockStamp=stamp;megafaunaRockTime=now;
+  megafaunaRockCache=reef.children.filter(root=>root.userData.orcaRock).map(root=>new THREE.Box3().setFromObject(root));
+  // Unloaded rock cells remain collision obstacles; no distant meshes are required.
+  for(const [key,layers] of worldCells){
+    if(activeWorldCells.has(key))continue;
+    for(const layer of layers)if(layer.type==='rocks'){
+      const p=layer.habitatPoint||fallbackLayerHabitatPoint(key,layer),half=CELL*.8;
+      megafaunaRockCache.push(new THREE.Box3(new THREE.Vector3(p.x-half,terrainHeightAt(p.x,p.z),p.z-half),new THREE.Vector3(p.x+half,Math.max(p.y,terrainHeightAt(p.x,p.z)+6),p.z+half)));
+    }
+  }
+  return megafaunaRockCache;
+}
+function updateMegafauna(dt,t){
+  if(orca){
+    const fish=orca.root,distance=fish.position.distanceTo(camera.position);
+    fish.visible=!editMode && !fish.userData.dead && distance<CULL_RADIUS;
+    if(!editMode && !referencePaused)orcaCruise.update(dt,t);
+    const school=schools.get(fish.userData.schoolId);
+    school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
+    if(fish.visible)orca.animate(dt,t,atmosphere.quality,distance);
+  }
+  if(whale){
+    const fish=whale.root,distance=fish.position.distanceTo(camera.position);
+    fish.visible=!editMode&&!fish.userData.dead&&distance<CULL_RADIUS;
+    if(!editMode&&!referencePaused)whaleCruise.update(dt,t);
+    const school=schools.get(fish.userData.schoolId);school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
+    if(fish.visible)whale.animate(dt,t,atmosphere.quality,distance);
+  }
+}
+function restoreResidentMegafauna(t){
+  if(referenceMode||editMode||cloudBusy||communityOcean?.busy||ecosystemState.capacity<60||t-megafaunaAttempt<15)return;
+  megafaunaAttempt=t;
+  for(const species of ['orca','whale']){
+    if(megafaunaDisabled[species]||(species==='orca'?orca:whale)||fishes.length>=MAX_POPULATION)continue;
+    const clear=species==='orca'?orcaPathClear:whalePathClear;
+    let record=null;
+    search:for(const radius of [25,45,70,95])for(let i=0;i<12;i++)for(const y of [6,10,0]){
+      const angle=i*Math.PI/6,p=new THREE.Vector3(camera.position.x+Math.cos(angle)*radius,y,camera.position.z+Math.sin(angle)*radius);
+      const ahead=p.clone().add(new THREE.Vector3(Math.cos(angle)*18,0,Math.sin(angle)*18));
+      if(clear(p,ahead)){record={position:p.toArray(),heading:angle,health:100};break search;}
+    }
+    if(record)(species==='orca'?placeOrcaAt:placeWhaleAt)(record);
+    else (species==='orca'?orcaStatus:whaleStatus).textContent='Geen veilige zwemruimte gevonden; maak een open doorgang vrij.';
+  }
+  refreshWorldPermissions();
+}
 
 let nextSchoolId=1;
 let habitatRevision=0;
@@ -2897,7 +2977,7 @@ function registerFish(fish,speciesId,school){
 }
 
 function spawnNaturalGroup(group){
-  const {species:speciesIndex,count}=group;
+  const {species:speciesIndex}=group;const count=Math.min(group.count,Math.max(0,MAX_POPULATION-fishes.length));
   if(!count)return null;
   const school=makeSchool(`reef_${speciesIndex}`,{exploration:.18});
   school.natural=true;
@@ -3064,6 +3144,7 @@ function updateLocalFood(dt){
   const consumers=[];
   for(const fish of fishes){
     if(!fish.parent||fish.userData.dead||fish.userData.vitalState==='burial'||fish.userData.vitalState==='sinking')continue;
+    if(fish===orca?.root||fish===whale?.root)continue;
     const biomass=fish.userData.biomass??fishBiomass({imported:fish.userData.imported,contactRadius:fish.userData.contactRadius,scale:fish.scale.x});
     fish.userData.biomass=biomass;consumers.push({x:fish.position.x,z:fish.position.z,biomass});
   }
@@ -3120,7 +3201,7 @@ function refreshEcosystemUi(){
   const natural=livingNaturalFish(),imported=livingImportedFish().length,total=natural+imported+(orca?1:0)+(whale?1:0);
   ecosystemScore.textContent=ecosystemState.score;ecosystemMeter.value=ecosystemState.score;
   ecosystemStage.textContent=`Fase ${ecosystemState.stageId} · ${ecosystemState.stage.name}`;
-  ecosystemCapacity.textContent=ecosystemState.capacity;ecosystemNatural.textContent=natural;
+  ecosystemCapacity.textContent=Math.floor(ecosystemState.capacity);ecosystemNatural.textContent=natural;
   ecosystemNaturalTarget.textContent=ecosystemState.naturalTarget;ecosystemImported.textContent=imported;
   ecosystemFood.textContent=`${Math.round(foodSectorSummary.stockRatio*100)}%`;
   ecosystemSectors.textContent=foodSectorSummary.active;ecosystemOverloaded.textContent=foodSectorSummary.overloaded;
@@ -3131,12 +3212,13 @@ function refreshEcosystemUi(){
       ? `${foodSectorSummary.overloaded} drukke voedselzone${foodSectorSummary.overloaded===1?' gebruikt':'s gebruiken'} tijdelijk de lokale voorraad. Verplaats habitat of voeg voedselbronnen toe.`
     : ecosystemAdvice(ecosystemState);
   ecosystemAdviceText.style.color=foodSectorSummary.overloaded||ecosystemState.shortage>.02?'#ffd3a8':'';
-  fishCountEl.textContent=total;naturalFishText.textContent=natural;importedFishText.textContent=imported;capacityText.textContent=ecosystemState.capacity;
+  fishCountEl.textContent=total;naturalFishText.textContent=natural;importedFishText.textContent=imported;capacityText.textContent=Math.floor(ecosystemState.capacity);
   schoolCountText.textContent=[...schools.values()].filter(s=>s.members.some(f=>f.parent&&!f.userData.dead)).length;
 }
 function updateEcosystem(t,force=false){
   if(force||habitatRevision!==ecosystemLastRevision||t-ecosystemLastAssessment>=1){
     ecosystemState=calculateEcosystem();ecosystemLastAssessment=t;ecosystemLastRevision=habitatRevision;
+    restoreResidentMegafauna(t);
     reconcileNaturalPopulation(t,force);
     // Population may have changed; report the actual load immediately.
     ecosystemState=calculateEcosystem();refreshEcosystemUi();
@@ -3449,8 +3531,10 @@ function normalizeImportedFish(root){
   const wrapper=new THREE.Group();wrapper.add(root);wrapper.scale.setScalar(3.4/maxDim);wrapper.updateMatrixWorld(true);return wrapper;
 }
 function spawnImportedSchool(source,fileName,count){
+  count=Math.min(Math.max(0,Math.floor(Number(count)||0)),Math.max(0,MAX_POPULATION-fishes.length));
   const speciesId=speciesFromName(fileName);
   const school=makeSchool(speciesId,{cohesion:.67,alignment:.58,separation:.82,habitatPull:.57,exploration:.20,cruiseSpeed:1.35});
+  school.importTemplate=source;school.sourceName=fileName;school.birthCredit=0;
   const forward=new THREE.Vector3(); camera.getWorldDirection(forward).normalize();
   const rightVec=new THREE.Vector3().crossVectors(forward,camera.up).normalize();
   const spawnCenter=camera.position.clone().addScaledVector(forward,13);
@@ -3473,6 +3557,63 @@ function spawnImportedSchool(source,fileName,count){
   return school;
 }
 
+function updateEcology(dt){
+  // Bounded substeps keep starvation accurate at accelerated ecological time.
+  let remaining=cloudBusy||communityOcean?.busy?0:dt*Number(ecologySpeed.value);
+  while(remaining>1e-8){
+    const step=Math.min(.25,remaining);remaining-=step;
+    updateLocalFood(step);updateImportedHealth(step);updatePopulationGrowth(step);
+  }
+}
+function updatePopulationGrowth(dt){
+  let juveniles=0,adults=0;
+  const imported=livingImportedFish();
+  for(const fish of imported){
+    if(fish.userData.growthAge!=null&&fish.userData.growthAge<MATURITY_SECONDS){
+      if(!['sinking','burial'].includes(fish.userData.vitalState)){
+        const nourishment=Math.min(1,Math.max(0,fish.userData.localFoodSupply??0));
+        fish.userData.growthAge=Math.min(MATURITY_SECONDS,fish.userData.growthAge+dt*nourishment*(fish.userData.health>20?1:0));
+        const scale=juvenileScale(fish.userData.growthAge);
+        fish.scale.copy(fish.userData.adultScale).multiplyScalar(scale);
+        fish.userData.contactRadius=fish.userData.adultRadius*scale;
+        fish.userData.biomass=fishBiomass({imported:true,contactRadius:fish.userData.contactRadius,scale:fish.scale.x});
+      }
+      juveniles++;
+    }else adults++;
+  }
+  let room=Math.min(MAX_POPULATION-fishes.length,Math.floor(foodSectorSummary.capacity)-fishes.length,Math.floor(foodSectorSummary.capacity-foodSectorSummary.demand));
+  for(const school of schools.values()){
+    if(!school.importTemplate)continue;
+    const parents=school.members.filter(f=>f.parent&&!f.userData.dead&&f.userData.health>=80&&
+      (f.userData.growthAge==null||f.userData.growthAge>=MATURITY_SECONDS)&&f.userData.foodReserve>f.userData.maxFoodReserve*.5&&
+      !['sinking','burial'].includes(f.userData.vitalState));
+    const parent=parents[0],food=parent?localFoodAt(parent.position.x,parent.position.z):null;
+    const localRoom=food?food.capacity-food.demand:0;
+    const adultBiomass=parent?.userData.biomass||1;
+    const budget=growthBudget({credit:school.birthCredit,adults:parents.length,dt,
+      enabled:populationGrowth.checked&&!cloudBusy&&!communityOcean?.busy,factor:Number(reproductionFactor.value),
+      room:Math.min(room/adultBiomass,localRoom/adultBiomass),
+      foodRatio:food&&food.stockRatio>.5?Math.min(food.supply,Math.max(0,localRoom/Math.max(1,food.capacity))):0});
+    school.birthCredit=budget.credit;
+    if(!budget.births)continue;
+    const fish=cloneFishModel(school.importTemplate);
+    fish.scale.copy(parent.userData.adultScale||parent.scale);
+    fish.position.copy(parent.position).add(new THREE.Vector3((oceanRandom()-.5)*2,.2,(oceanRandom()-.5)*2));
+    fish.userData.imported=true;fish.userData.health=100;fish.userData.sourceName=school.sourceName;
+    fish.userData.velocity=parent.userData.velocity.clone();fish.userData.tail=fish.getObjectByName('Tail')||null;
+    registerFish(fish,school.speciesId,school);
+    fish.userData.adultScale=fish.scale.clone();fish.userData.adultRadius=fish.userData.contactRadius;
+    fish.userData.growthAge=0;fish.scale.multiplyScalar(juvenileScale(0));
+    fish.userData.contactRadius*=juvenileScale(0);
+    fish.userData.biomass=fishBiomass({imported:true,contactRadius:fish.userData.contactRadius,scale:fish.scale.x});
+    fish.userData.localFoodSupply=food.supply;
+    orientFishForward(fish,fish.position.clone().add(fish.userData.velocity));scene.add(fish);fishes.push(fish);
+    // Offspring use the existing school steering, collision and sector migration.
+    room-=Math.max(1,adultBiomass);
+  }
+  document.getElementById('populationStatus').textContent=`${adults} volwassen · ${juveniles} jong · groei ${populationGrowth.checked?'aan':'uit'} · ecologische tijd ${ecologySpeed.value}×`;
+}
+
 function studioLink(editId){
   const url=new URL('./studio/',location.href);
   if(currentCloudWorldId)url.searchParams.set('world',currentCloudWorldId);
@@ -3482,6 +3623,8 @@ function studioLink(editId){
 const canPlaceLibraryFish=()=>canEditCurrentWorld()&&!cloudBusy&&!communityOcean?.busy&&!referenceMode;
 async function placeLibraryFish(record,count){
   if(!canPlaceLibraryFish())throw Error('Open eerst een eigen wereld om vissen toe te voegen.');
+  count=Math.min(Math.max(1,Math.floor(Number(count)||1)),MAX_POPULATION-fishes.length);
+  if(count<=0)throw Error('De populatiegrens van 1.000 vissen is bereikt. Verwijder eerst vissen.');
   const worldId=currentAtlasWorldId();
   const {root}=await parseFish(await record.blob.arrayBuffer());
   if(!canPlaceLibraryFish()||currentAtlasWorldId()!==worldId){disposeFish(root);throw Error('De wereld is veranderd. Probeer opnieuw in je eigen wereld.');}
@@ -4269,8 +4412,7 @@ function animate(){
     pufferLibrary.step(dt,orca?.root);
     updateLava(dt,t);
     updateFish(dt,t);
-    updateLocalFood(dt);
-    updateImportedHealth(dt);
+    updateEcology(dt);
     updateBurialEffects(dt);
     updateBubbles();
   }
@@ -4280,21 +4422,7 @@ function animate(){
   glow.position.z = Math.cos(t*.15)*35;
 
   atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
-  if(orca){
-    const fish=orca.root,distance=fish.position.distanceTo(camera.position);
-    fish.visible=!editMode && !fish.userData.dead && distance<CULL_RADIUS;
-    if(!editMode && !referencePaused && distance<ACTIVE_RADIUS-ORCA_CLEARANCE*2)orcaCruise.update(dt,t);
-    const school=schools.get(fish.userData.schoolId);
-    school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
-    if(fish.visible)orca.animate(dt,t,atmosphere.quality,distance);
-  }
-  if(whale){
-    const fish=whale.root,distance=fish.position.distanceTo(camera.position);
-    fish.visible=!editMode&&!fish.userData.dead&&distance<CULL_RADIUS;
-    if(!editMode&&!referencePaused&&distance<ACTIVE_RADIUS-WHALE_MARGIN)whaleCruise.update(dt,t);
-    const school=schools.get(fish.userData.schoolId);school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity).normalize();
-    if(fish.visible)whale.animate(dt,t,atmosphere.quality,distance);
-  }
+  updateMegafauna(dt,t);
   // Visstijl en waterstijl zijn onafhankelijk: ook in de oorspronkelijke
   // belichting moet Cartoon ↔ Realistisch direct kunnen wisselen.
   butterflyLibrary.update(t,camera,atmosphere.quality,fishDetail.checked,fishRenderStyle.value);
