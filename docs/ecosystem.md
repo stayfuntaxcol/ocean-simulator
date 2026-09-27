@@ -85,7 +85,46 @@ zichtbaar.
   natuurlijke populaties worden lokaal berekend.
 - Natuurlijke vissen worden niet afzonderlijk opgeslagen.
 - Individuele health, voedselreserve en migratiegeschiedenis worden niet opgeslagen.
-- Er zijn geen realtime listeners of extra databasevelden toegevoegd.
+- Er zijn geen realtime listeners toegevoegd. Alleen twee kleine vlaggen onder
+  `megafaunaDisabled` bewaren bij normaal opslaan of de eigenaar een orka of
+  walvis bewust heeft verwijderd.
 - Alleen de bestaande wereldlagen, terrein, lavabronnen, orka en walvis blijven
   onderdeel van het bestaande wereldrecord.
 - De lokale visbibliotheek blijft IndexedDB gebruiken en schrijft niet naar Firebase.
+
+## Populatiegroei en tijd (27 september 2026)
+
+Onder **Menu → Leefbaarheid → Populatiegroei en tijd** kan de gebruiker groei
+van importvissen inschakelen. Standaard staat deze uit. Instellingen gelden voor
+deze lokale sessie; er komen geen databasewrites voor dieren, health of groei bij.
+
+- Draagkracht per sector is de oude berekening gedeeld door tien. Bij een
+  gezamenlijk totaal boven 1.000 schalen alle zones proportioneel terug, inclusief
+  hun voedselvoorraad. De weergave rondt naar beneden af: 7.775 wordt circa 777.
+- Factor 1 geeft maximaal één jong per tien gezonde volwassen vissen per
+  simulatieminuut. Factor 0–10 past dit aan. Er zijn minimaal twee gezonde
+  volwassenen in dezelfde importschool nodig, met minstens halve voedselreserve.
+- Naarmate de lokale voedselruimte kleiner wordt, vertraagt de groei. Geen
+  voedselruimte of een halve/leeggelopen zonevoorraad betekent geen nieuwe vissen.
+- Een jong verschijnt op 35% van de volwassen schaal in de bestaande school en
+  groeit met voldoende voedsel in tien simulatieminuten op. Het deelt de gewone
+  schoolbesturing, botsingsafhandeling en migratie. Alleen volwassenen planten zich voort.
+- Ecologische tijd: pauze, 0,5×, 1×, 2×, 4× of 8×. Voedsel, reserves, health en
+  groei lopen samen; camera, zwemmen, animatie en netwerktimers blijven realtime.
+  De berekening gebruikt stappen van maximaal 0,25 seconde en haalt geen tijd in
+  na een inactief tabblad. Bouwen en wereldladen pauzeren deze berekeningen.
+- Zowel geboorte als handmatige import respecteert de grens van 1.000 gewone
+  visinstanties, inclusief grote dieren. Kleine instanced rifscholen en microleven
+  behouden hun eigen bestaande limieten. Zware geïmporteerde modellen kunnen ook
+  onder deze grens veel GPU/CPU vragen; dit is geen garantie voor een framerate.
+- Overbevolking verdwijnt niet direct: importvissen gebruiken eerst hun reserves,
+  verliezen vervolgens health en doorlopen het bestaande zinken/begraven.
+
+Orka en walvis blijven bewegen buiten het camerabereik. Hun routes controleren
+ook niet-gerenderde rotscellen via conservatieve volumes. Ontbrekende dieren
+verschijnen opnieuw wanneer de draagkracht minstens 60 is en er een veilige
+zwemroute is, maximaal één van elk. Bewust verwijderde dieren blijven weg.
+Ook bezoekers mogen bestaande dieren via **Volg orka / Volg walvis** terugvinden.
+Grote dieren gebruiken geen importvis-health; oude opgeslagen nul-health wordt
+bij het laden hersteld. Bewegings-, groeistatus en nieuwe nakomelingen worden niet
+permanent opgeslagen; importontwerpen blijven in de bestaande visbibliotheek.
