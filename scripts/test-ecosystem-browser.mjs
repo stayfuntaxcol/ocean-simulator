@@ -26,6 +26,21 @@ await context.route(origin+'/**',async route=>{
     assert.ok(html.includes(marker));
     html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
+        survivalCheck:()=>{
+          const school=[...schools.values()].find(s=>s.importTemplate),fish=school.members[0];
+          const sectors=[...foodSectors.values()];const destination=sectors.at(-1);
+          school.center.set(sectors[0].x,-8,sectors[0].z);school.currentFoodSector=sectors[0].key;
+          for(const sector of sectors){sector.demand=sector.capacity*2;sector.stock=0;}
+          destination.demand=0;destination.stock=destination.maxFood;destination.capacity=20;
+          let suitable=0;for(let i=0;i<100;i++){school.forceMigration=true;chooseSchoolTarget(school,2000+i);if(school.feedingSector===destination.key)suitable++;}
+          fish.userData.health=42;fish.userData.foodReserve=fish.userData.maxFoodReserve*.6;fish.userData.localFoodSupply=.8;
+          startFollowing(fish);refreshFollowMeters();refreshImportInventory();
+          const meters=[...document.querySelectorAll('#followMeters [role="meter"]')].map(n=>Number(n.getAttribute('aria-valuenow')));
+          const source=new THREE.Mesh(new THREE.SphereGeometry(.2,6,4),new THREE.MeshStandardMaterial());
+          const extinct=spawnImportedSchool(source,'Verdwenen testsoort',1);refreshImportInventory();removeBuriedFish(extinct.members[0]);refreshImportInventory();
+          const row=[...document.querySelectorAll('.import-species-row')].find(n=>n.textContent.includes('Verdwenen testsoort'));
+          return {suitable,meters,extinct:row?.textContent,disabled:row?.querySelector('button').disabled};
+        },
         clockCheck:()=>{
           const fish=livingImportedFish()[0];fish.position.set(135,-8,135);fish.userData.localFoodSupply=0;
           const result={};populationGrowth.checked=false;
@@ -180,8 +195,11 @@ const animals=await page.evaluate(()=>window.__ecosystemQA.animalCheck());
 assert.equal(animals.restored,true);assert.ok(animals.moved.orca>1);assert.ok(animals.moved.whale>1);assert.equal(animals.removalRespected,true);
 const clock=await page.evaluate(()=>window.__ecosystemQA.clockCheck());
 assert.equal(clock[0],0);assert.ok(Math.abs(clock[1]-4)<.01);assert.ok(Math.abs(clock[8]-32)<.01);
+const survival=await page.evaluate(()=>window.__ecosystemQA.survivalCheck());
+assert.ok(survival.suitable>=95);assert.deepEqual(survival.meters,[42,60,80]);assert.match(survival.extinct,/0 · uitgestorven/);assert.equal(survival.disabled,true);
+await page.screenshot({path:'/tmp/ocean-follow-meters.png'});
 assert.equal(await page.evaluate(()=>window.__firebaseWrites||0),0);assert.deepEqual(errors,[]);
-console.log(JSON.stringify({growth,animals,clock}));
+console.log(JSON.stringify({growth,animals,clock,survival}));
 await page.locator('#journeyMenu').click();
 await page.getByText('Populatiegroei en tijd',{exact:true}).click();
 assert.equal(await page.locator('#ecologySpeed').isVisible(),true);
