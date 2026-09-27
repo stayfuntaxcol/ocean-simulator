@@ -26,6 +26,53 @@ await context.route(origin+'/**',async route=>{
     assert.ok(html.includes(marker));
     html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
+        clockCheck:()=>{
+          const fish=livingImportedFish()[0];fish.position.set(135,-8,135);fish.userData.localFoodSupply=0;
+          const result={};populationGrowth.checked=false;
+          for(const speed of [0,1,8]){
+            ecologySpeed.value=String(speed);fish.userData.foodReserve=180;fish.userData.health=100;
+            for(let i=0;i<100;i++)updateEcology(.04);
+            result[speed]=180-fish.userData.foodReserve;
+          }
+          ecologySpeed.value='1';return result;
+        },
+        growthCheck:()=>{
+          for(const school of [...schools.values()])if(school.natural)removeNaturalSchool(school);
+          for(const fish of [...livingImportedFish()])removeBuriedFish(fish);
+          const source=new THREE.Mesh(new THREE.SphereGeometry(.3,8,6),new THREE.MeshStandardMaterial({color:0xffaa33}));
+          const school=spawnImportedSchool(source,'Test growth',2);
+          const sector=[...foodSectors.values()].sort((a,b)=>b.capacity-a.capacity)[0];
+          for(const fish of school.members){fish.position.set(sector.x,terrainHeightAt(sector.x,sector.z)+8,sector.z);fish.userData.localFoodSupply=1;}
+          updateLocalFood(.5);const before=livingImportedFish().length;
+          populationGrowth.checked=false;school.birthCredit=.999;updatePopulationGrowth(.25);
+          const disabled=livingImportedFish().length===before;
+          populationGrowth.checked=true;reproductionFactor.value='10';school.birthCredit=.999;
+          updatePopulationGrowth(.25);const child=school.members.find(f=>f.userData.growthAge===0);
+          if(!child)throw Error('Expected juvenile; sector '+JSON.stringify(localFoodAt(sector.x,sector.z)));
+          const initial=child.scale.x,initialRadius=child.userData.contactRadius;
+          populationGrowth.checked=false;
+          child.userData.localFoodSupply=0;updatePopulationGrowth(.25);
+          if(child.userData.growthAge!==0)throw Error('Juvenile grew without food');
+          child.userData.localFoodSupply=1;
+          for(let i=0;i<2400;i++)updatePopulationGrowth(.25);
+          const mature=child.userData.growthAge===MATURITY_SECONDS&&child.scale.x>initial&&child.userData.contactRadius>initialRadius;
+          populationGrowth.checked=true;foodSectorSummary.capacity=livingImportedFish().length;school.birthCredit=.999;
+          const full=livingImportedFish().length;updatePopulationGrowth(.25);
+          const capped=livingImportedFish().length===full;
+          populationGrowth.checked=false;foodSectorSummary=summarizeFoodSectors(foodSectors);
+          return {disabled,mature,capped,children:full-before,scaleRatio:child.scale.x/initial};
+        },
+        animalCheck:()=>{
+          clearOrca();clearWhale();megafaunaDisabled={orca:false,whale:false};megafaunaAttempt=-Infinity;
+          ecosystemState={...ecosystemState,capacity:100};restoreResidentMegafauna(1000);
+          const restored=Boolean(orca&&whale);if(!restored)throw Error('Resident animals not restored');
+          camera.position.set(-120,0,-100);orca.root.position.set(60,6,40);whale.root.position.set(60,6,-40);
+          const a=orca.root.position.clone(),b=whale.root.position.clone();
+          for(let i=0;i<100;i++)updateMegafauna(.04,1001+i*.04);
+          const moved={orca:orca.root.position.distanceTo(a),whale:whale.root.position.distanceTo(b)};
+          megafaunaDisabled.orca=true;clearOrca();restoreResidentMegafauna(1020);
+          const removalRespected=!orca;return {restored,moved,removalRespected};
+        },
         lateUnlock:()=>controls.dispatchEvent({type:'unlock'}),
         viewSmallSchool:(distance=6)=>{
           microLife.update(0,camera,{quality:'high',revision:habitatRevision,worldKey:currentAtlasWorldId()});
@@ -106,7 +153,7 @@ assert.ok(depleted.health.every(value=>value<100));
 const burial=await page.evaluate(()=>window.__ecosystemQA.buryOne());
 assert.deepEqual(burial,{began:'burial',remaining:2,stillInScene:false});
 const rich=await page.evaluate(()=>window.__ecosystemQA.buildRich());
-assert.ok(rich.capacity>100);assert.equal(rich.stage,5);assert.ok(rich.natural>0);assert.ok(rich.target>0);
+assert.ok(rich.capacity>10&&rich.capacity<30);assert.equal(rich.stage,5);assert.ok(rich.natural>0);assert.ok(rich.target>0);
 assert.ok(rich.sectors.active>0);
 const migration=await page.evaluate(()=>window.__ecosystemQA.migrate());
 assert.notEqual(migration.to,migration.from);assert.equal(migration.forced,false);
@@ -127,5 +174,17 @@ for(const distance of [6,1]){
   await page.screenshot({path:'/tmp/ocean-small-school-'+distance+'m.png'});
 }
 assert.deepEqual(errors,[]);
+const growth=await page.evaluate(()=>window.__ecosystemQA.growthCheck());
+assert.equal(growth.disabled,true);assert.equal(growth.mature,true);assert.equal(growth.capped,true);assert.equal(growth.children,1);
+const animals=await page.evaluate(()=>window.__ecosystemQA.animalCheck());
+assert.equal(animals.restored,true);assert.ok(animals.moved.orca>1);assert.ok(animals.moved.whale>1);assert.equal(animals.removalRespected,true);
+const clock=await page.evaluate(()=>window.__ecosystemQA.clockCheck());
+assert.equal(clock[0],0);assert.ok(Math.abs(clock[1]-4)<.01);assert.ok(Math.abs(clock[8]-32)<.01);
+assert.equal(await page.evaluate(()=>window.__firebaseWrites||0),0);assert.deepEqual(errors,[]);
+console.log(JSON.stringify({growth,animals,clock}));
+await page.locator('#journeyMenu').click();
+await page.getByText('Populatiegroei en tijd',{exact:true}).click();
+assert.equal(await page.locator('#ecologySpeed').isVisible(),true);
+await page.screenshot({path:'/tmp/ocean-population-controls.png'});
 console.log(JSON.stringify({ui,empty,starving:{capacity:starving.capacity,shortage:starving.shortage,health:starving.health,reserves:starving.reserves},depleted:{health:depleted.health},burial,rich:{score:rich.score,stage:rich.stage,capacity:rich.capacity,natural:rich.natural,target:rich.target,sectors:rich.sectors.active},migration,mobile,firebaseWrites:0,errors},null,2));
 await browser.close();
