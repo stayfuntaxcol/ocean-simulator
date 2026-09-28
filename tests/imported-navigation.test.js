@@ -60,3 +60,37 @@ test('a school can actually swim the selected waypoints and descend after the ro
   }
   assert.equal(blocked,0);assert.ok(peak<=maxY);assert.ok(position.y<6,'it descends toward food after the rock');
 });
+
+test('remembered individual route passes a wall without changing side or crossing stone',async()=>{
+  const {steerImportedFish}=await import('../graphics/ImportedNavigation.js');
+  const wall=new THREE.Box3(v(-2,-10,-3),v(2,25,3)),radius=.5;
+  const p=v(-9,5,0),goal=v(10,5,0),velocity=v(1,0,0),state={};
+  const bounds={minY:-12,maxY:9,terrain:()=>-12};let side=0,turns=0,contacts=0;
+  for(let i=0;i<3000&&p.distanceTo(goal)>.5;i++){
+    const desired=goal.clone().sub(p).normalize();
+    const steer=steerImportedFish(p,desired,goal,[wall],radius,state,.04,bounds);
+    if(state.side&&side&&state.side!==side)turns++;if(state.side)side=state.side;
+    velocity.lerp(steer.direction.normalize().multiplyScalar(1.5*steer.pace),.04*1.45);
+    const step=moveImportedFish(p,p.clone().addScaledVector(velocity,.04),[wall],radius,bounds);
+    if(step.normal&&velocity.dot(step.normal)<0)velocity.addScaledVector(step.normal,-velocity.dot(step.normal));
+    if(step.blocked)contacts++;p.copy(step.position);
+    assert.equal(wall.clone().expandByScalar(radius).containsPoint(p),false);
+    assert.ok(p.y<=9);
+  }
+  assert.ok(p.distanceTo(goal)<.6,'arrives beyond the rock');
+  assert.equal(turns,0,'no left-right indecision');
+  assert.ok(contacts<50,'does not keep pushing into the surface');
+});
+
+test('rock index preserves nearby thin rocks, passage and overhang clearance',async()=>{
+  const {createRockIndex}=await import('../graphics/ImportedNavigation.js');
+  const rocks=[new THREE.Box3(v(-.05,-5,-2),v(.05,5,2)),new THREE.Box3(v(-2,4,4),v(2,6,8)),
+    new THREE.Box3(v(-3,-5,10),v(-1,5,14)),new THREE.Box3(v(1,-5,10),v(3,5,14)),new THREE.Box3(v(500,0,0),v(501,1,1))];
+  const query=createRockIndex(rocks);
+  const hit=moveImportedFish(v(-4,0,0),v(4,0,0),query(v(-4,0,0),9),.3);
+  assert.equal(hit.blocked,true);assert.ok(hit.position.x<-.35,'sweep stops fast travel through a thin face');
+  assert.ok(hit.normal.x<0);
+  assert.equal(moveImportedFish(v(0,1,3),v(0,1,9),query(v(0,1,3),7),.3).blocked,false,'water under an overhang stays open');
+  assert.equal(moveImportedFish(v(0,0,9),v(0,0,15),query(v(0,0,9),7),.3).blocked,false,'gap between stones stays open');
+  assert.equal(query(v(0,0,0),20).includes(rocks[4]),false,'far geometry is not checked');
+});
