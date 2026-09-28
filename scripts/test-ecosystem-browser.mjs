@@ -26,6 +26,32 @@ await context.route(origin+'/**',async route=>{
     assert.ok(html.includes(marker));
     html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
+        surfaceRoute:()=>{
+          const source=new THREE.Mesh(new THREE.SphereGeometry(.25,8,6),new THREE.MeshStandardMaterial());
+          const school=spawnImportedSchool(source,'Rotsroute',2);
+          school.members.forEach((fish,i)=>fish.position.set(i*.25,6,0));
+          school.target.set(22,6,0);school.retargetAt=1e9;school.migrationAt=1e9;school.navRetryAt=0;
+          const previous={boxes:importBoxes,time:importBoxTime,stamp:importBoxStamp};
+          importBoxes=[new THREE.Box3(new THREE.Vector3(6,-12,-3),new THREE.Vector3(11,30,3))];
+          importBoxTime=performance.now()/1000;importBoxStamp=String(habitatRevision)+':'+lastStreamingCell;
+          try{
+            updateSchoolBrains(1000);
+            return {near:school.navWaypoint?.toArray(),far:school.navRemaining?.[0]?.toArray(),surface:Math.min(...school.members.map(waterLimit))};
+          }finally{importBoxes=previous.boxes;importBoxTime=previous.time;importBoxStamp=previous.stamp;}
+        },
+        splitSchool:()=>{
+          const source=new THREE.Mesh(new THREE.SphereGeometry(.3,8,6),new THREE.MeshStandardMaterial({color:0x77bbee}));
+          const original=spawnImportedSchool(source,'Deelbare school',16);
+          original.birthCredit=.6;const before=fishes.length;
+          splitImportedSchools(600);
+          const sibling=[...schools.values()].find(s=>s!==original&&s.importTemplate===original.importTemplate&&s.sourceName===original.sourceName);
+          if(!sibling)throw Error('School did not split at 16 fish');
+          const members=[...original.members,...sibling.members];
+          const result={count:[original.members.length,sibling.members.length],unchanged:fishes.length===before,
+            unique:new Set(members).size===16,ids:members.every(f=>f.userData.schoolId===(original.members.includes(f)?original.id:sibling.id)),
+            sector:[original.feedingSector,sibling.feedingSector],source:sibling.libraryId===original.libraryId,credit:original.birthCredit+sibling.birthCredit};
+          return result;
+        },
         survivalCheck:()=>{
           const school=[...schools.values()].find(s=>s.importTemplate),fish=school.members[0];
           const sectors=[...foodSectors.values()];const destination=sectors.at(-1);
@@ -112,7 +138,10 @@ await context.route(origin+'/**',async route=>{
 });
 
 await page.goto(origin+'/',{waitUntil:'networkidle'});
-await page.waitForFunction(()=>window.__ecosystemQA);
+await page.waitForFunction(()=>window.__ecosystemQA).catch(error=>{
+  console.error('Simulator startup errors:',errors);
+  throw error;
+});
 const ui=await page.evaluate(()=>{
   const panel=document.getElementById('graphicsOptionsPanel');
   const collapsedInitially=!panel.open;
@@ -191,6 +220,12 @@ for(const distance of [6,1]){
 assert.deepEqual(errors,[]);
 const growth=await page.evaluate(()=>window.__ecosystemQA.growthCheck());
 assert.equal(growth.disabled,true);assert.equal(growth.mature,true);assert.equal(growth.capped,true);assert.equal(growth.children,1);
+const split=await page.evaluate(()=>window.__ecosystemQA.splitSchool());
+assert.deepEqual(split.count,[8,8]);assert.equal(split.unchanged,true);assert.equal(split.unique,true);assert.equal(split.ids,true);
+assert.notEqual(split.sector[0],split.sector[1]);assert.equal(split.source,true);assert.ok(Math.abs(split.credit-.6)<1e-9);
+const surfaceRoute=await page.evaluate(()=>window.__ecosystemQA.surfaceRoute());
+assert.ok(surfaceRoute.near&&surfaceRoute.far,'emerged rock creates two waypoints');
+assert.ok(surfaceRoute.near[1]<surfaceRoute.surface&&surfaceRoute.far[1]<surfaceRoute.surface,'both waypoints remain submerged');
 const animals=await page.evaluate(()=>window.__ecosystemQA.animalCheck());
 assert.equal(animals.restored,true);assert.ok(animals.moved.orca>1);assert.ok(animals.moved.whale>1);assert.equal(animals.removalRespected,true);
 const clock=await page.evaluate(()=>window.__ecosystemQA.clockCheck());
@@ -199,7 +234,7 @@ const survival=await page.evaluate(()=>window.__ecosystemQA.survivalCheck());
 assert.ok(survival.suitable>=95);assert.deepEqual(survival.meters,[42,60,80]);assert.match(survival.extinct,/0 · uitgestorven/);assert.equal(survival.disabled,true);
 await page.screenshot({path:'/tmp/ocean-follow-meters.png'});
 assert.equal(await page.evaluate(()=>window.__firebaseWrites||0),0);assert.deepEqual(errors,[]);
-console.log(JSON.stringify({growth,animals,clock,survival}));
+console.log(JSON.stringify({growth,split,surfaceRoute,animals,clock,survival}));
 await page.locator('#journeyMenu').click();
 await page.getByText('Populatiegroei en tijd',{exact:true}).click();
 assert.equal(await page.locator('#ecologySpeed').isVisible(),true);
