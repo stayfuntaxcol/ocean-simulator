@@ -172,3 +172,24 @@ voedselgebied terugduiken. De gewone route over een lagere onderwaterrots blijft
 beschikbaar. Een geblokkeerde vis die bijna aan het oppervlak is, stopt met
 omhoog duwen en stuurt omlaag en zijwaarts; pas na herhaald vastlopen wordt een
 nieuwe voedselbestemming gekozen.
+
+## Rotscontact en lokaal passeren (28 september 2026)
+
+Ook de stenen in gemengde biodiversiteitslagen zijn vaste obstakels. De
+botsingsvolumes omvatten beide grafische stijlen en blijven onafhankelijk van
+zichtbaarheid en detailniveau. Een ruimtelijk rooster selecteert alleen rotsen
+vlak bij de importvis. Elke verplaatsing wordt over het hele traject gecontroleerd;
+contact haalt uitsluitend de snelheid richting steen weg. Er volgt geen losse,
+ongecontroleerde verticale animatieverplaatsing na deze controle.
+
+Importvissen kijken vijfmaal per seconde vooruit. Bij een obstakel onthouden zij
+hun eigen tussenpunten langs de rots, met voorrang boven schoolcohesie. De snelheid
+neemt tijdens passeren en dichtbij een voedselplek af; de gewone oriëntatie blijft
+vloeiend draaien. Bij enkele seconden zonder voortgang zoekt de school opnieuw.
+Lage onderwaterrotsen kunnen nog steeds bovenlangs worden gepasseerd. Openingen
+tussen afzonderlijke botsingsvolumes blijven bruikbaar. Dit is een eenvoudige,
+conservatieve benadering van de rotsvorm, geen routeberekening over alle driehoeken.
+
+Voedseldoelen liggen onder water en buiten steen. Als alleen onbereikbare habitat
+beschikbaar is, verkent de school vrije waterruimte. De voedselcapaciteit zelf is
+niet herberekend; er worden geen extra Firebase-gegevens opgeslagen.
