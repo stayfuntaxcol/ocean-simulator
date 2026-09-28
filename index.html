@@ -447,7 +447,7 @@ import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveF
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { evaluateEcosystem, naturalPopulationPlan, ecosystemAdvice } from './graphics/Ecosystem.js';
 import { growthBudget, juvenileScale, MATURITY_SECONDS, MAX_POPULATION } from './graphics/PopulationGrowth.js';
-import { moveImportedFish, planSurfaceRockDetour } from './graphics/ImportedNavigation.js';
+import { moveImportedFish, planSurfaceRockDetour, createRockIndex, steerImportedFish } from './graphics/ImportedNavigation.js';
 import { FOOD_SECTOR_SIZE, advanceImportedVitality, buildFoodSectors, createImportedVitality, fishBiomass, foodAtPosition, foodSectorKey, healthMotionFactor, residenceDuration, summarizeFoodSectors, updateFoodSectors } from './graphics/FishVitality.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
@@ -1566,8 +1566,8 @@ function markLayerRoots(before,key,layerId,type,supportRoots){
     root.userData.editorCell=key;
     root.userData.editorLayerId=layerId;
     root.userData.editorLayerType=type;
-    root.userData.isSolidRock = type==='rocks';
-    if(type==='rocks') rockCollisionRoots.add(root);
+    root.userData.isSolidRock = type==='rocks'||Boolean(root.userData.orcaRock);
+    if(root.userData.isSolidRock) rockCollisionRoots.add(root);
     roots.push(root);
   }
   placeRootsOnExistingSurface(roots,supportRoots);
@@ -3262,9 +3262,12 @@ function foodWeightForCell(cell){
 function chooseImportedFeedingTarget(school,t){
   const own=school.members.reduce((sum,f)=>sum+(f.parent&&!f.userData.dead?(f.userData.biomass||1):0),0)||1;
   const current=localFoodAt(school.center.x,school.center.z),options=[];
+  const radius=Math.max(FISH_RADIUS,...school.members.map(f=>f.userData.contactRadius||FISH_RADIUS));
+  const maxY=Math.min(...school.members.map(waterLimit))-.2;
+  const edible=h=>h.livingPoints.filter(p=>p.y+radius<maxY&&terrainHeightAt(p.x,p.z)+radius<maxY);
   for(const sector of foodSectors.values()){
     if(sector.capacity<=0)continue;
-    const habitat=habitatCells.filter(h=>h.hasLife&&foodSectorKey(h.x,h.z,FOOD_SECTOR_SIZE)===sector.key);
+    const habitat=habitatCells.filter(h=>h.hasLife&&foodSectorKey(h.x,h.z,FOOD_SECTOR_SIZE)===sector.key&&edible(h).length);
     if(!habitat.length)continue;
     let reserved=0;
     for(const other of schools.values())if(other!==school&&other.feedingSector===sector.key&&other.currentFoodSector!==sector.key)
@@ -3278,46 +3281,77 @@ function chooseImportedFeedingTarget(school,t){
   }
   const elsewhere=school.avoidSector&&options.some(item=>item.value.sector.key!==school.avoidSector&&item.value.sector.stock>item.value.sector.maxFood*.4);
   const choice=weightedRandom(elsewhere?options.filter(item=>item.value.sector.key!==school.avoidSector):options);if(!choice)return false;
-  const h=choice.habitat[Math.floor(oceanRandom()*choice.habitat.length)],point=h.livingPoints[Math.floor(oceanRandom()*h.livingPoints.length)];
-  const radius=Math.max(FISH_RADIUS,...school.members.map(f=>f.userData.contactRadius||FISH_RADIUS));
-  const p=new THREE.Vector3(point.x,Math.min(16-radius,Math.max(point.y+3,terrainHeightAt(point.x,point.z)+radius+2)),point.z);
-  const safe=moveImportedFish(p,p,importedRockBoxes(),radius,{minY:terrainHeightAt(p.x,p.z)+radius,maxY:16-radius}).position;
+  const h=choice.habitat[Math.floor(oceanRandom()*choice.habitat.length)],points=edible(h),point=points[Math.floor(oceanRandom()*points.length)];
+  const p=new THREE.Vector3(point.x,Math.min(maxY,Math.max(point.y+radius+.5,terrainHeightAt(point.x,point.z)+radius+.5)),point.z);
+  const boxes=importedRockBoxes();
+  const safe=moveImportedFish(p,p,boxes,radius,{minY:terrainHeightAt(p.x,p.z)+radius,maxY}).position;
+  if(moveImportedFish(safe,safe,boxes,radius,{minY:terrainHeightAt(safe.x,safe.z)+radius,maxY}).blocked)return false;
   school.target.copy(safe);school.targetCell=h.key;school.targetHabitat=point.score;school.feedingSector=choice.sector.key;
   school.mode='habitat';school.retargetAt=t+Math.max(35,school.center.distanceTo(safe)/Math.max(.4,school.cruiseSpeed)+20);school.forceMigration=false;school.navWaypoint=null;school.navRemaining=null;school.avoidSector=null;
   return true;
 }
 
-let importBoxes=[],importBoxTime=-Infinity,importBoxStamp='';
+let importBoxes=[],importBoxTime=-Infinity,importBoxStamp='',importIndexBoxes=null,importRockQuery=null;
 function importedRockBoxes(){
   const now=performance.now()/1000,stamp=`${habitatRevision}:${lastStreamingCell}`;
   if(stamp===importBoxStamp&&now-importBoxTime<.75)return importBoxes;
   importBoxStamp=stamp;importBoxTime=now;importBoxes=[];
-  for(const root of activeRockRoots())root.traverse(o=>{if(o.isMesh&&o.visible){o.updateWorldMatrix(true,false);importBoxes.push(new THREE.Box3().setFromObject(o));}});
-  for(const [key,layers] of worldCells)if(!activeWorldCells.has(key))for(const layer of layers)if(layer.type==='rocks'){
+  for(const root of activeRockRoots())root.traverse(o=>{if(o.isMesh){
+    o.updateWorldMatrix(true,false);
+    const box=new THREE.Box3().setFromObject(o),appearance=o.userData.rockAppearance;
+    // Enclose either appearance/LOD so a style switch cannot put a fish in stone.
+    if(appearance)for(const geometry of [appearance.original.geometry,appearance.shapes.near]){
+      if(!geometry.boundingBox)geometry.computeBoundingBox();
+      box.union(geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+    }
+    importBoxes.push(box);
+  }});
+  for(const [key,layers] of worldCells)if(!activeWorldCells.has(key))for(const layer of layers)if(layer.type==='rocks'||layer.type==='mixed'){
     const p=layer.habitatPoint||fallbackLayerHabitatPoint(key,layer),floor=terrainHeightAt(p.x,p.z);
     importBoxes.push(new THREE.Box3(new THREE.Vector3(p.x-CELL*.6,floor,p.z-CELL*.6),new THREE.Vector3(p.x+CELL*.6,Math.max(floor+5,p.y-1.1),p.z+CELL*.6)));
   }
   return importBoxes;
 }
+function nearbyImportRocks(position,reach){
+  const boxes=importedRockBoxes();
+  if(importIndexBoxes!==boxes){importIndexBoxes=boxes;importRockQuery=createRockIndex(boxes);}
+  return importRockQuery(position,reach);
+}
+function steerImport(fish,direction,school,dt){
+  const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS);
+  const state=fish.userData.rockRoute||(fish.userData.rockRoute={});
+  const result=steerImportedFish(fish.position,direction,school.navWaypoint||school.target,
+    nearbyImportRocks(fish.position,24+radius),radius,state,dt,
+    {minY:MIN_SWIM_Y,maxY:waterLimit(fish),terrain:terrainHeightAt});
+  if(state.stalled){school.forceMigration=true;school.retargetAt=0;state.stalled=false;}
+  direction.copy(result.direction);return result.pace;
+}
 function moveImportSafely(fish,next,dt,school){
   const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS);
-  const result=moveImportedFish(fish.position,next,importedRockBoxes(),radius,{minY:terrainHeightAt(next.x,next.z)+radius,maxY:waterLimit(fish)});
+  const ground=Math.max(...[0,.5,1].map(a=>terrainHeightAt(THREE.MathUtils.lerp(fish.position.x,next.x,a),THREE.MathUtils.lerp(fish.position.z,next.z,a))));
+  // A steep seabed blocks horizontal travel; never lift the start through a rock.
+  if(next.y<ground+radius){
+    if(ground+radius-fish.position.y>.25){next.x=fish.position.x;next.z=fish.position.z;}
+    else next.y=ground+radius;
+  }
+  const result=moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+radius+4),radius,
+    {minY:terrainHeightAt(fish.position.x,fish.position.z)+radius,maxY:waterLimit(fish)});
   const moved=fish.position.distanceTo(result.position);
   fish.position.copy(result.position);
+  if(result.normal){
+    const inward=fish.userData.velocity.dot(result.normal);
+    if(inward<0)fish.userData.velocity.addScaledVector(result.normal,-inward);
+  }
+  const state=fish.userData.rockRoute;
   fish.userData.blockedSeconds=result.blocked&&moved<dt*.15?(fish.userData.blockedSeconds||0)+dt:0;
-  if(result.blocked){
-    const atSurface=fish.position.y>=waterLimit(fish)-.8;
-    fish.userData.velocity.y=atSurface?Math.min(-.25,fish.userData.velocity.y):Math.max(.35,fish.userData.velocity.y);
-    if(fish.userData.blockedSeconds>1.5){
-      const now=simulationTime();
-      if(now>=(school.routeResetAt||0)){
-        school.routeResetAt=now+2;school.navWaypoint=null;school.navRemaining=null;school.navRetryAt=0;
-        school.detourAttempt=(school.detourAttempt||0)+1;
-        if(school.detourAttempt>=4){school.forceMigration=true;school.retargetAt=0;school.detourAttempt=0;}
-      }
-      fish.userData.velocity.applyAxisAngle(new THREE.Vector3(0,1,0),Math.PI*.6);
-      fish.userData.blockedSeconds=0;
+  if(fish.userData.blockedSeconds>3){
+    if(state){state.route=null;state.tangent=null;state.nextSense=0;}
+    const now=simulationTime();
+    if(now>=(school.routeResetAt||0)){
+      school.routeResetAt=now+4;school.forceMigration=true;school.retargetAt=0;
+      school.navWaypoint=null;school.navRemaining=null;school.navRetryAt=0;
     }
+    fish.userData.blockedSeconds=0;
   }
 }
 function migrationCells(candidates,school){
@@ -3330,7 +3364,26 @@ function migrationCells(candidates,school){
 function chooseSchoolTarget(school,t){
   rebuildHabitatMap();
   const c=school.center;
-  if(school.importTemplate&&chooseImportedFeedingTarget(school,t))return;
+  if(school.importTemplate){
+    if(chooseImportedFeedingTarget(school,t))return;
+    // No reachable underwater food: explore open water instead of selecting
+    // the same above-water habitat through the generic species fallback.
+    const radius=Math.max(FISH_RADIUS,...school.members.map(f=>f.userData.contactRadius||FISH_RADIUS));
+    const maxY=Math.min(...school.members.map(waterLimit))-.2;
+    school.target.copy(c);
+    for(let i=0;i<8;i++){
+      const angle=oceanRandom()*Math.PI*2;
+      const p=c.clone().add(new THREE.Vector3(Math.cos(angle)*8,-1,Math.sin(angle)*8));
+      const minY=terrainHeightAt(p.x,p.z)+radius+.2;
+      if(minY>=maxY)continue;
+      p.y=THREE.MathUtils.clamp(p.y,minY,maxY);
+      if(moveImportedFish(c,p,nearbyImportRocks(c,12+radius),radius,{minY:MIN_SWIM_Y,maxY}).blocked)continue;
+      school.target.copy(p);break;
+    }
+    school.mode='explore';school.retargetAt=t+8;school.forceMigration=false;
+    school.navWaypoint=null;school.navRemaining=null;school.feedingSector=null;
+    return;
+  }
   const policy=SPECIES_POLICY[school.speciesId];
   if(policy){
     const candidates=habitatCells.filter(h=>h.hasLife);
@@ -3920,7 +3973,8 @@ function updateFish(dt,t){
       if(!visible){
         if(policy)continue;
         targetV.copy(school.navWaypoint||school.target).sub(p); if(targetV.lengthSq()>1) targetV.normalize();
-        fish.userData.velocity.lerp(targetV.multiplyScalar(school.cruiseSpeed*vitalityPace),Math.min(1,dt*.16));
+        const importPace=fish.userData.imported?steerImport(fish,targetV,school,dt):1;
+        fish.userData.velocity.lerp(targetV.multiplyScalar(school.cruiseSpeed*vitalityPace*importPace),Math.min(1,dt*(fish.userData.imported?1.45:.16)));
         collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
         if(fish.userData.imported){
           moveImportSafely(fish,collisionTmp2,dt,school);
@@ -3992,7 +4046,7 @@ function updateFish(dt,t){
 
       // Lokale veiligheid: alleen een kleine zijwaartse correctie vlak voor een rots.
       // De grote route komt uitsluitend van het school-waypoint.
-      if(fish.userData.velocity.lengthSq()>.001){
+      if(!fish.userData.imported&&fish.userData.velocity.lengthSq()>.001){
         collisionTmp.copy(fish.userData.velocity).normalize();
         collisionTmp2.copy(p).addScaledVector(collisionTmp,2.8);
         const rockAhead=segmentRockHit(p,collisionTmp2,contactRadius);
@@ -4012,6 +4066,7 @@ function updateFish(dt,t){
         }
       }
       desiredV.add(avoidFish(fish,neighborhood.neighbors(fish),avoidV));
+      const importPace=fish.userData.imported?steerImport(fish,desiredV,school,dt):1;
       if(fish.userData.restState==='settling')desiredV.set(0,0,0);
       if(desiredV.lengthSq()){
         const panicSpeed=1+panic*.95;
@@ -4024,7 +4079,7 @@ function updateFish(dt,t){
           }
         }
         const reefPace=policy?.reefHeight?reefMotionPace(school.speciesId,school.navWaypoint?Math.max(2,destinationDistance):destinationDistance,panic,fish.userData.pufferInflation||0):1;
-        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed*(policy?rhythm:1)*pairPace*reefPace*vitalityPace);
+        desiredV.normalize().multiplyScalar(school.cruiseSpeed*fish.userData.personality*panicSpeed*(policy?rhythm:1)*pairPace*reefPace*vitalityPace*importPace);
         if(policy?.verticalSpeed)desiredV.y=THREE.MathUtils.clamp(desiredV.y,-policy.verticalSpeed,policy.verticalSpeed);
       }
       const turnCross=fish.userData.velocity.x*desiredV.z-fish.userData.velocity.z*desiredV.x;
@@ -4058,7 +4113,7 @@ function updateFish(dt,t){
       }else{
         p.copy(collisionTmp2);
       }
-      if(policy?.kind!=='bottom'&&!policy?.reefHeight)p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.06;
+      if(!fish.userData.imported&&policy?.kind!=='bottom'&&!policy?.reefHeight)p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.06;
       if(editMode || distSq<=FISH_ANIMATION_RADIUS*FISH_ANIMATION_RADIUS){
         if(fish.userData.tail)fish.userData.tail.rotation.y=Math.sin(t*7.5*fish.userData.speed*Math.max(.12,vitalityPace)+fish.userData.phase)*.42*Math.sqrt(vitalityPace);
         if(fish.userData.velocity.lengthSq()>.001){
@@ -4072,7 +4127,7 @@ function updateFish(dt,t){
   resolveFishContacts(frameFish.filter(f=>f.visible&&!['sinking','burial'].includes(f.userData.vitalState)),previous,(fish,next)=>{
     const clearance=fish.userData.speciesId==='reef_6'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:Math.max(.45,(SPECIES_POLICY[fish.userData.speciesId]?.bodyClearance||0)*fish.scale.x);
     return next.y<=waterLimit(fish)&&next.y>=terrainHeightAt(next.x,next.z)+clearance
-      && (fish.userData.imported?!moveImportedFish(fish.position,next,importedRockBoxes(),fish.userData.contactRadius||FISH_RADIUS,{minY:terrainHeightAt(next.x,next.z)+clearance,maxY:waterLimit(fish)}).blocked:!segmentRockHit(fish.position,next,FISH_RADIUS));
+      && (fish.userData.imported?!moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+(fish.userData.contactRadius||FISH_RADIUS)+4),Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS),{minY:terrainHeightAt(next.x,next.z)+clearance,maxY:waterLimit(fish)}).blocked:!segmentRockHit(fish.position,next,FISH_RADIUS));
   });
   for(const f of frameFish){
     if(f.userData.burialComplete){removeBuriedFish(f);continue;}
