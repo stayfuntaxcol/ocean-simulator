@@ -155,3 +155,20 @@ vissen en kritieke vissen, met een Volg-knop. Soorten op nul blijven deze sessie
 zichtbaar als uitgestorven. Gelijknamige ontwerpen tellen samen. Het volgvenster
 toont gezondheid, reserve en voedsel in drie gekleurde LED-balkjes, inclusief
 percentages en toegankelijke meterwaarden. Geen extra Firebase-verkeer.
+
+## Importscholen en uitstekende rotsen
+
+Zodra een importschool 16 zwemmende vissen telt, splitst ze in twee scholen van
+acht. Bestaande grotere scholen delen zich in volgende simulatiestappen verder
+op. Ouders en jongen blijven bestaan, met dezelfde health en voedselreserve.
+Elke helft krijgt een eigen school-ID en een eigen voedselroute. Als elders een
+voedselrijke sector beschikbaar is, vermijdt de nieuwe helft de bestemming
+van de eerste helft. Ontwerpen en schoolleden worden niet extra naar Firebase
+geschreven.
+
+Bij een rots die boven het water uitsteekt, kiest de school twee waypoints
+langs één zijde van de rots, onder het wateroppervlak. Daarna kan ze naar het
+voedselgebied terugduiken. De gewone route over een lagere onderwaterrots blijft
+beschikbaar. Een geblokkeerde vis die bijna aan het oppervlak is, stopt met
+omhoog duwen en stuurt omlaag en zijwaarts; pas na herhaald vastlopen wordt een
+nieuwe voedselbestemming gekozen.
