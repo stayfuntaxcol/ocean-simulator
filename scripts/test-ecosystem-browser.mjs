@@ -26,6 +26,49 @@ await context.route(origin+'/**',async route=>{
     assert.ok(html.includes(marker));
     html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
+        rockInteraction:()=>{
+          const previouslyActive=new Set(activeWorldCells);
+          for(const [key,layers] of worldCells)if(layers.some(l=>l.type==='mixed'))instantiateCell(key);
+          const mixed=reef.children.filter(r=>r.userData.editorLayerType==='mixed'&&r.userData.orcaRock);
+          const coverage=mixed.length>0&&mixed.every(r=>r.userData.isSolidRock&&rockCollisionRoots.has(r));
+          const renderedBoxes=importedRockBoxes();
+          const enclosed=mixed.every(r=>r.children.filter(o=>o.isMesh).every(o=>{
+            const b=new THREE.Box3().setFromObject(o);
+            return renderedBoxes.some(box=>box.containsBox(b));
+          }));
+          const source=new THREE.Mesh(new THREE.SphereGeometry(.2,8,6),new THREE.MeshStandardMaterial());
+          const sample=spawnImportedSchool(source,'Rotscontacttest',1),fish=sample.members[0];
+          const saved={schools:[...schools],roots:[...rockCollisionRoots],camera:camera.position.clone(),boxes:importBoxes,time:importBoxTime,stamp:importBoxStamp,think:schoolThinkAccumulator,habitats:habitatCells,food:foodSectors};
+          const wall=new THREE.Box3(new THREE.Vector3(-2,-30,-3),new THREE.Vector3(2,30,3));
+          let overlaps=0,arrived=false,maxY=-Infinity;
+          try{
+            schools.clear();schools.set(sample.id,sample);rockCollisionRoots.clear();
+            camera.position.set(0,6,20);fish.position.set(-10,6,0);fish.userData.velocity.set(1,0,0);
+            sample.target.set(10,6,0);sample.retargetAt=1e9;sample.migrationAt=1e9;sample.forceMigration=false;sample.cruiseSpeed=1.8;
+            for(let i=0;i<2400;i++){
+              importBoxes=[wall];importBoxTime=performance.now()/1000;importBoxStamp=String(habitatRevision)+':'+lastStreamingCell;
+              updateFish(.04,1100+i*.04);
+              if(wall.clone().expandByScalar(fish.userData.contactRadius).containsPoint(fish.position))overlaps++;
+              maxY=Math.max(maxY,fish.position.y);
+              if(fish.position.x>7){arrived=true;break;}
+            }
+            const key=foodSectorKey(10,0,FOOD_SECTOR_SIZE);
+            foodSectors=new Map([[key,{key,x:10,z:0,capacity:10,demand:0,stock:10,maxFood:10}]]);
+            habitatCells=[{key:'test-food',x:10,z:0,hasLife:true,livingPoints:[{x:10,y:35,z:0,score:4}]}];
+            const rejectsDryFood=!chooseImportedFeedingTarget(sample,2000);
+            habitatCells[0].livingPoints[0].y=6;
+            const acceptsWetFood=chooseImportedFeedingTarget(sample,2001)&&sample.target.y<waterLimit(fish);
+            return {coverage,enclosed,overlaps,arrived,maxY,ceiling:waterLimit(fish),end:fish.position.toArray(),rejectsDryFood,acceptsWetFood};
+          }finally{
+            schools.clear();for(const [id,s] of saved.schools)if(s!==sample)schools.set(id,s);
+            rockCollisionRoots.clear();for(const r of saved.roots)rockCollisionRoots.add(r);
+            camera.position.copy(saved.camera);importBoxes=saved.boxes;importBoxTime=saved.time;importBoxStamp=saved.stamp;schoolThinkAccumulator=saved.think;
+            habitatCells=saved.habitats;foodSectors=saved.food;
+            scene.remove(fish);const index=fishes.indexOf(fish);if(index>=0)fishes.splice(index,1);
+            for(const key of [...activeWorldCells])if(!previouslyActive.has(key))unloadCellVisuals(key);
+            importBoxTime=-Infinity;megafaunaRockTime=-Infinity;
+          }
+        },
         surfaceRoute:()=>{
           const source=new THREE.Mesh(new THREE.SphereGeometry(.25,8,6),new THREE.MeshStandardMaterial());
           const school=spawnImportedSchool(source,'Rotsroute',2);
@@ -220,6 +263,14 @@ for(const distance of [6,1]){
 assert.deepEqual(errors,[]);
 const growth=await page.evaluate(()=>window.__ecosystemQA.growthCheck());
 assert.equal(growth.disabled,true);assert.equal(growth.mature,true);assert.equal(growth.capped,true);assert.equal(growth.children,1);
+const rockInteraction=await page.evaluate(()=>window.__ecosystemQA.rockInteraction());
+console.log(JSON.stringify({rockInteraction}));
+assert.equal(rockInteraction.coverage,true,'mixed habitat stones are solid');
+assert.equal(rockInteraction.enclosed,true,'collision volumes enclose rendered mixed stones');
+assert.equal(rockInteraction.overlaps,0,'actual fish update never enters stone');
+assert.equal(rockInteraction.arrived,true,'fish actually passes the emerged rock');
+assert.ok(rockInteraction.maxY<=rockInteraction.ceiling);
+assert.equal(rockInteraction.rejectsDryFood,true);assert.equal(rockInteraction.acceptsWetFood,true);
 const split=await page.evaluate(()=>window.__ecosystemQA.splitSchool());
 assert.deepEqual(split.count,[8,8]);assert.equal(split.unchanged,true);assert.equal(split.unique,true);assert.equal(split.ids,true);
 assert.notEqual(split.sector[0],split.sector[1]);assert.equal(split.source,true);assert.ok(Math.abs(split.credit-.6)<1e-9);
