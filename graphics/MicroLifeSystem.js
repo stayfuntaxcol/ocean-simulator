@@ -3,6 +3,7 @@ import { createMicroGeometry, MICRO_TYPES } from './MicroLifeGeometry.js';
 import { createMicroMaterial, createMicroContactMesh } from './MicroLifeMaterials.js';
 import { seededRandom } from './UnderwaterAtmosphere.js';
 import { createMicroBehavior } from './MicroLifeBehavior.js';
+import { moveImportedFish, steerImportedFish, createRockIndex } from './ImportedNavigation.js';
 export { createMicroMaterial } from './MicroLifeMaterials.js';
 
 export const MICRO_QUALITY=Object.freeze({
@@ -18,6 +19,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
   const clock={value:0},dummy=new THREE.Object3D(),up=new THREE.Vector3(0,1,0),color=new THREE.Color(),probe=new THREE.Vector3();
   const assets=new Map();let disposed=false,records=[],schools=[],boxes=[],lastKey='',sinceRefresh=3;
   let schoolWorldKey=null;
+  let nearbyRocks=()=>[];
   const schoolCenter=new THREE.Vector3(),schoolAway=new THREE.Vector3(),schoolFlee=new THREE.Vector3(),schoolOffset=new THREE.Vector3();
   let settings=MICRO_QUALITY.medium,quality='medium',visibleSchools=0;
   for(const type of [...MICRO_TYPES,'minnow']) {
@@ -163,9 +165,20 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
         pose=poseSchool(s,s.angle-delta*.10,time,schoolOffset,Math.min(SURFACE-1.8,y+delta*.35),patrol);
         if(pose.safe){s.angle-=delta*.20;poseY=Math.min(SURFACE-1.8,y+delta*.35);}
       }
-      if(!pose.safe){for(const f of s.members){f.velocity.set(0,0,0);f.gait=0;}continue;}
       s.angle+=delta*.10;s.time=time;s.y=poseY;s.offset.copy(schoolOffset);s.patrol.copy(patrol);
       for(const f of s.members){
+        // A single obstructed member must not freeze the entire school. Each
+        // fish can slide/pass locally and return to its moving formation.
+        const local=nearbyRocks(f.position,18),bounds={minY:terrain(f.position.x,f.position.z)+.7,maxY:SURFACE-.45,terrain};
+        const distance=f.position.distanceTo(f.next);
+        let next=f.next.clone();
+        if(!pose.safe||f.rockRoute?.route?.length){
+          const goal=next.clone(),desired=goal.clone().sub(f.position).normalize();
+          const steer=steerImportedFish(f.position,desired,goal,local,.45,f.rockRoute||(f.rockRoute={}),delta,bounds);
+          next.copy(f.position).addScaledVector(steer.direction.normalize(),Math.min(distance,delta*.8));
+        }
+        const move=moveImportedFish(f.position,next,local,.45,bounds);
+        f.next.copy(move.position);
         f.velocity.copy(f.next).sub(f.position).divideScalar(delta);
         if(f.velocity.lengthSq()>.000001)f.yaw=-Math.atan2(f.velocity.z,f.velocity.x);
         f.gait=Math.min(1,f.velocity.length()/.25);f.position.copy(f.next);
@@ -174,6 +187,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
   }
   function refresh(camera,revision) {
     boxes=getObstacles().filter(b=>b&&!b.isEmpty()).map(b=>b.clone());
+    nearbyRocks=createRockIndex(boxes);
     const allHabitats=getHabitats().filter(h=>Number.isFinite(h.x)&&Number.isFinite(h.z)&&Math.abs(h.x)<boundary-2&&Math.abs(h.z)<boundary-2);
     behavior.sync(allHabitats,boxes,getShelters().filter(b=>b&&!b.isEmpty()));
     const habitats=allHabitats
