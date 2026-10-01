@@ -84,8 +84,8 @@ export function daylightState(hour = 12) {
   // Direct daylight dies away decisively after sunset so midnight can become truly dark.
   const daylight = smoothstep(-.055, .165, elevation);
   const twilight = smoothstep(-.22, .025, elevation) * (1 - smoothstep(.04, .42, elevation));
-  const sunriseWarmth = bell(time, 6.15, 1.18) * smoothstep(-.18, .16, elevation);
-  const sunsetWarmth = bell(time, 18.10, 1.32) * smoothstep(-.18, .16, elevation);
+  const sunriseWarmth = bell(time, 6.15, 1.18) * smoothstep(-.22, .08, elevation);
+  const sunsetWarmth = bell(time, 18.10, 1.32) * smoothstep(-.22, .08, elevation);
   const horizonGlow = clamp(Math.max(sunriseWarmth, sunsetWarmth) + twilight * .42);
   const nightFactor = 1 - daylight;
 
