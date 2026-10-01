@@ -8,6 +8,11 @@ test('daylight follows sunrise, noon, sunset and night', () => {
   assert.ok(daylightState(12).daylight > .99);
   assert.ok(daylightState(18).sunsetWarmth > .4);
   assert.ok(daylightState(0).moonlight > 0);
+  assert.ok(daylightState(0).moonlight < .03);
+  assert.ok(daylightState(0).nightFactor > .95);
+  assert.ok(daylightState(6.2).sunriseWarmth > .7);
+  assert.ok(daylightState(18.1).sunsetWarmth > .7);
+  assert.ok(daylightState(12).nightFactor < .01);
 });
 
 test('the sun travels from east at sunrise to west at sunset', () => {
@@ -39,4 +44,29 @@ test('only thunder weather creates a short lightning flash', () => {
   assert.ok(weather.update(.1).lightningFlash < 1);
   weather.setWeather('sunny');
   assert.equal(weather.update(30).lightningFlash, 0);
+});
+
+
+test('weather model exposes choppiness and cloud density for the atmosphere', () => {
+  const calm = weatherPreset('calm');
+  const storm = weatherPreset('storm');
+  assert.ok(calm.waveChoppiness < .1);
+  assert.ok(storm.waveChoppiness > .8);
+  assert.ok(storm.cloudDensity > calm.cloudDensity);
+});
+
+test('manual weather changes interpolate and dynamic settings serialize', () => {
+  const weather = createOceanWeather({ weather: 'sunny', transitionSeconds: 10 });
+  weather.setWeather('storm');
+  const start = weather.snapshot();
+  assert.ok(start.transitionProgress < .01);
+  const half = weather.update(5);
+  assert.ok(half.transitionProgress > .45 && half.transitionProgress < .55);
+  assert.ok(half.waveHeight > weatherPreset('sunny').waveHeight);
+  assert.ok(half.waveHeight < weatherPreset('storm').waveHeight);
+  weather.setDynamicWeather(true);
+  weather.setWeatherDurationMinutes(5);
+  const saved = weather.serialize();
+  assert.equal(saved.dynamicWeather, true);
+  assert.equal(saved.weatherDurationMinutes, 5);
 });
