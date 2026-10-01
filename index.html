@@ -84,6 +84,11 @@
     }
     #worldTools button.active{background:#7fe2ff;color:#062231}
     #worldTools select option{color:#111}
+    #precisionBuildTools{padding:9px;border:1px solid rgba(127,226,255,.24);border-radius:10px;background:rgba(4,42,55,.34)}
+    #precisionBuildTools[hidden]{display:none}
+    #precisionBuildTools .toolrow+ .toolrow{margin-top:7px}
+    #precisionSelection{width:100%;font-size:11px;color:#bfe5f3;line-height:1.35}
+    #precisionSelection strong{color:#fff}
     #editorInfo{font-size:12px;color:#bfe5f3;line-height:1.35}
     #editBadge{
       display:none;position:absolute;left:50%;top:16px;transform:translateX(-50%);
@@ -298,6 +303,31 @@
           <option value="clear">🧹 Vak helemaal leegmaken</option>
         </select>
       </div>
+      <div class="toolrow" id="editorViewTools" hidden>
+        <button id="editorOverviewBtn" type="button" class="active">🗺 Bovenaanzicht</button>
+        <button id="editorDetailBtn" type="button">🫧 Detailvlucht</button>
+      </div>
+      <div id="precisionBuildTools" hidden>
+        <div class="toolrow">
+          <select id="precisionTool" aria-label="Nauwkeurig bouwgereedschap">
+            <option value="select">↖ Object selecteren</option>
+            <option value="rocks">🪨 Rots plaatsen</option>
+            <option value="coral">🪸 Koraal plaatsen</option>
+            <option value="anemone">🌸 Anemoon plaatsen</option>
+            <option value="sponge">🧽 Spons plaatsen</option>
+            <option value="seagrass">🌿 Zeegras plaatsen</option>
+            <option value="shell">🐚 Schelp plaatsen</option>
+          </select>
+        </div>
+        <div class="toolrow">
+          <button id="precisionSmaller" type="button" title="Verklein geselecteerd object">− Kleiner</button>
+          <button id="precisionLarger" type="button" title="Vergroot geselecteerd object">+ Groter</button>
+          <button id="precisionRotateLeft" type="button" title="Draai linksom">↶</button>
+          <button id="precisionRotateRight" type="button" title="Draai rechtsom">↷</button>
+          <button id="precisionDelete" type="button" title="Verwijder geselecteerd object">🗑</button>
+        </div>
+        <div id="precisionSelection">Klik op <strong>Detailvlucht</strong>, richt het vizier en klik om nauwkeurig te bouwen.</div>
+      </div>
       <div class="toolrow" id="autoLandscapeTools">
         <select id="landscapeDensity" aria-label="Dichtheid automatisch landschap">
           <option value="light">Light</option>
@@ -325,6 +355,11 @@
         <button id="exportWorldBtn" type="button">⬇ JSON</button>
         <button id="importWorldBtn" type="button">⬆ JSON</button>
         <input id="worldFile" type="file" accept=".json,application/json" hidden>
+      </div>
+      <div class="toolrow">
+        <button id="importBlueprintBtn" type="button">✨ AI-wereldplan</button>
+        <input id="blueprintFile" type="file" accept=".json,application/json" hidden>
+        <span style="font-size:11px;color:#9cc9d8;align-self:center">Importeer een bouwplan dat ChatGPT uit referentiebeelden heeft gemaakt.</span>
       </div>
       <div class="toolrow">
         <button id="worldAtlasBtn" type="button">🗺 Wereldatlas</button>
@@ -448,6 +483,7 @@ import { clone as cloneFishModel } from 'three/addons/utils/SkeletonUtils.js';
 import { fixedHexMeta, neighborSide, closestInHex, containsHex, apothem, HEX, SIDES, axialPosition } from './worlds/HexWorld.js';
 import { mapBounds, mapPoint, worldPoint, mapHeading } from './worlds/MapNavigation.js';
 import { validateWorldRecord } from './worlds/WorldTravel.js';
+import { normalizeWorldBlueprint } from './worlds/WorldBlueprint.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
 import { REFERENCE } from './graphics/reference-scene.js';
@@ -561,6 +597,19 @@ const shareWorldBtn = document.getElementById('shareWorldBtn');
 const cloudStatus = document.getElementById('cloudStatus');
 const editorInfo = document.getElementById('editorInfo');
 const editBadge = document.getElementById('editBadge');
+const editorViewTools = document.getElementById('editorViewTools');
+const editorOverviewBtn = document.getElementById('editorOverviewBtn');
+const editorDetailBtn = document.getElementById('editorDetailBtn');
+const precisionBuildTools = document.getElementById('precisionBuildTools');
+const precisionTool = document.getElementById('precisionTool');
+const precisionSelection = document.getElementById('precisionSelection');
+const precisionSmaller = document.getElementById('precisionSmaller');
+const precisionLarger = document.getElementById('precisionLarger');
+const precisionRotateLeft = document.getElementById('precisionRotateLeft');
+const precisionRotateRight = document.getElementById('precisionRotateRight');
+const precisionDelete = document.getElementById('precisionDelete');
+const importBlueprintBtn = document.getElementById('importBlueprintBtn');
+const blueprintFile = document.getElementById('blueprintFile');
 const minimapWrap = document.getElementById('minimapWrap');
 const minimap = document.getElementById('minimap');
 const mapZoomOut = document.getElementById('mapZoomOut');
@@ -577,8 +626,14 @@ let currentCloudOwnerId = null;
 
 
 let editMode = false;
+let editorView = 'overview';
 let savedCamPos = null;
 let savedCamQuat = null;
+let savedOverviewPos = null;
+let savedDetailPos = null;
+let savedDetailQuat = null;
+let selectedEditorRoot = null;
+let selectedEditorHelper = null;
 
 
 const scene = new THREE.Scene();
@@ -615,15 +670,24 @@ controls.addEventListener('lock', () => {
   document.getElementById('hud').classList.add('swimming');
   document.getElementById('hud').classList.remove('settings-open');
   journeyMenu.setAttribute('aria-expanded','false');
-  startBtn.textContent = 'Verkennen actief';
-  hint.textContent = 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: menu';
+  startBtn.textContent = editMode ? 'Detailbouw actief' : 'Verkennen actief';
+  hint.textContent = editMode
+    ? 'DETAILBOUW · richt het vizier en klik · WASD bewegen · Q/E hoogte · Shift versnellen · Esc: gereedschap'
+    : 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: menu';
 });
 controls.addEventListener('unlock', () => {
-  startBtn.textContent = 'Verder verkennen';
+  startBtn.textContent = editMode ? 'Detailbouw hervatten' : 'Verder verkennen';
   // Escape frees the cursor; the world panel and its Menu button stay available.
   // An asynchronous unlock must leave an already opened menu alone.
   Object.keys(keys).forEach(key=>keys[key]=false);
-  hint.textContent = 'Muis vrij · klik op Menu of druk O. Klik op het water om verder te verkennen.';
+  if(editMode){
+    document.getElementById('hud').classList.remove('swimming');
+    document.getElementById('hud').classList.add('settings-open');
+    journeyMenu.setAttribute('aria-expanded','true');
+  }
+  hint.textContent = editMode
+    ? 'Muis vrij · kies gereedschap of pas het geselecteerde object aan · klik op de wereld om verder te bouwen.'
+    : 'Muis vrij · klik op Menu of druk O. Klik op het water om verder te verkennen.';
 });
 function openMainMenu(){
   if(followMode)stopFollowing(false);
@@ -845,6 +909,11 @@ function orientEditorCamera(){
 }
 
 function teleportEditorTo(x,z){
+  if(editorView==='detail'){
+    const floorY=terrainHeightAt(x,z);
+    camera.position.set(THREE.MathUtils.clamp(x,-WORLD_HALF+1,WORLD_HALF-1),THREE.MathUtils.clamp(camera.position.y,floorY+1,18.6),THREE.MathUtils.clamp(z,-WORLD_HALF+1,WORLD_HALF-1));
+    drawMinimap();return;
+  }
   const height=THREE.MathUtils.clamp(camera.position.y,45,230);
   camera.position.set(
     THREE.MathUtils.clamp(x,-WORLD_HALF+1,WORLD_HALF-1),
@@ -910,7 +979,7 @@ function styleReef(root,type,color){
 const rockCollisionRoots = new Set();
 let rockCollisionRevision=0;
 const rockCellVolumes=new Map();
-function removeReefRoot(root){ reefLife.release(root); rockLibrary.release(root); if(rockCollisionRoots.delete(root))rockCollisionRevision++; reef.remove(root); }
+function removeReefRoot(root){ if(root===selectedEditorRoot)clearEditorSelection();reefLife.release(root); rockLibrary.release(root); if(rockCollisionRoots.delete(root))rockCollisionRevision++; reef.remove(root); }
 const reefMobile = matchMedia('(max-width: 800px)').matches;
 const reefScale = reefMobile ? .55 : 1;
 const coralColors = [0xff6f61,0xf3a6c8,0xd96aa7,0xffb347,0xf5d76e,0x8f79c6,0x58b7a7,0x77c46b,0xe67e50];
@@ -941,7 +1010,7 @@ function addRockCluster(x,z,scale=1,layerSeed=0){
     rockLibrary.decorate(m,r,stoneSeed);
     g.add(m);
   }
-  g.position.set(x,-17.7,z); reef.add(g);
+  g.position.set(x,-17.7,z); g.userData.editorKind='rots'; reef.add(g); return g;
 }
 function addBranchCoral(x,z,scale=1,color=0xff7f6e){
   const g=new THREE.Group(), mat=reefMat(color,.82);
@@ -959,8 +1028,9 @@ function addBranchCoral(x,z,scale=1,color=0xff7f6e){
     const tip=new THREE.Mesh(new THREE.SphereGeometry(.18*scale,8,6),reefMat(0xffc0b0,.75));
     tip.position.set(b.position.x,b.position.y+h*.42,b.position.z); g.add(tip);
   }
-  g.position.set(x,-17.5,z); g.rotation.y=oceanRandom()*Math.PI*2; reef.add(g);
+  g.position.set(x,-17.5,z); g.rotation.y=oceanRandom()*Math.PI*2; g.userData.editorKind='koraal'; reef.add(g);
   styleReef(g,'branch',color);
+  return g;
 }
 function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
   const g=new THREE.Group(), mat=reefMat(color,.86);
@@ -974,8 +1044,9 @@ function addPlateCoral(x,z,scale=1,color=0xf1a0bd){
     const stem=new THREE.Mesh(new THREE.CylinderGeometry(.14*scale,.22*scale,.7*scale,7),mat);
     stem.position.y=(.25+i*.72)*scale; g.add(stem);
   }
-  g.position.set(x,-17.5,z); reef.add(g);
+  g.position.set(x,-17.5,z); g.userData.editorKind='koraal'; reef.add(g);
   styleReef(g,'plate',color);
+  return g;
 }
 function addSponge(x,z,scale=1,color=0xffb347){
   const g=new THREE.Group(), mat=reefMat(color,.92);
@@ -988,8 +1059,9 @@ function addSponge(x,z,scale=1,color=0xffb347){
     const rim=new THREE.Mesh(new THREE.TorusGeometry((.16+.17*oceanRandom())*scale,.055*scale,6,12),reefMat(0xffd18a,.78));
     rim.rotation.x=Math.PI/2; rim.position.set(tube.position.x,h,tube.position.z); g.add(rim);
   }
-  g.position.set(x,-17.55,z); reef.add(g);
+  g.position.set(x,-17.55,z); g.userData.editorKind='spons'; reef.add(g);
   styleReef(g,'sponge',color);
+  return g;
 }
 function addAnemone(x,z,scale=1,color=0xd96aa7){
   const g=new THREE.Group();
@@ -1003,8 +1075,9 @@ function addAnemone(x,z,scale=1,color=0xd96aa7){
     t.position.set(Math.cos(a)*r,.55*scale+h/2,Math.sin(a)*r);
     t.rotation.z=(oceanRandom()-.5)*.55; t.rotation.x=(oceanRandom()-.5)*.4; g.add(t);
   }
-  g.position.set(x,-17.55,z); reef.add(g);
+  g.position.set(x,-17.55,z); g.userData.editorKind='anemoon'; reef.add(g);
   if(organicReef) styleReef(g,'anemone',color);
+  return g;
 }
 function addStarfish(x,z,scale=1,color=0xf28f5b){
   const shape=new THREE.Shape();
@@ -1016,8 +1089,16 @@ function addStarfish(x,z,scale=1,color=0xf28f5b){
   shape.closePath();
   const geo=new THREE.ExtrudeGeometry(shape,{depth:.12*scale,bevelEnabled:true,bevelSize:.06*scale,bevelThickness:.04*scale,bevelSegments:1});
   const m=new THREE.Mesh(geo,reefMat(color,.95)); m.rotation.x=-Math.PI/2; m.rotation.z=oceanRandom()*Math.PI;
-  m.position.set(x,-17.25,z); reef.add(m);
+  m.position.set(x,-17.25,z); m.userData.editorKind='zeester'; reef.add(m); return m;
 }
+const detailShellGeometry=createMicroGeometry('shell',false);
+const detailShellMaterial=installCaustics(new THREE.MeshStandardMaterial({vertexColors:true,roughness:.92,metalness:0}),atmosphere.uniforms);
+function addShell(x,z,scale=1){
+  const m=new THREE.Mesh(detailShellGeometry,detailShellMaterial);
+  m.position.set(x,-17.55,z);m.scale.setScalar(scale*1.7);m.rotation.y=oceanRandom()*Math.PI*2;
+  m.userData.editorKind='schelp';reef.add(m);return m;
+}
+addEventListener('pagehide',()=>{detailShellGeometry.dispose();detailShellMaterial.dispose();},{once:true});
 function addSeaweed(x,z,scale=1){
   const g=new THREE.Group(), colors=[0x317a64,0x3f8d72,0x597f55,0x6c9058];
   const blades=3+Math.floor(oceanRandom()*6);
@@ -1027,8 +1108,11 @@ function addSeaweed(x,z,scale=1){
     weed.position.set((oceanRandom()-.5)*.8*scale,h/2,(oceanRandom()-.5)*.8*scale);
     weed.rotation.z=(oceanRandom()-.5)*.4; g.add(weed);
   }
-  g.position.set(x,-17.7,z); reef.add(g);
+  g.position.set(x,-17.7,z); g.rotation.y=oceanRandom()*Math.PI*2;
+  g.scale.set(.78+oceanRandom()*.46,.88+oceanRandom()*.28,.78+oceanRandom()*.46);
+  g.userData.editorKind='zeegras'; reef.add(g);
   styleReef(g,'grass',0x689653);
+  return g;
 }
 
 // -------- WORLD EDITOR: persistente, gelaagde biodiversiteit --------
@@ -1509,7 +1593,7 @@ function drawMinimap(){
 
   // Kijkrichting en speler.
   const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);
-  const ang=editMode?0:mapHeading(fwd);
+  const ang=editMode&&editorView==='overview'?0:mapHeading(fwd);
   ctx.save();ctx.translate(px,py);ctx.rotate(ang);
   ctx.fillStyle='#ffffff';ctx.strokeStyle='rgba(0,0,0,.65)';ctx.lineWidth=3;
   ctx.beginPath();ctx.moveTo(0,-13);ctx.lineTo(8,9);ctx.lineTo(0,5);ctx.lineTo(-8,9);ctx.closePath();ctx.stroke();ctx.fill();ctx.restore();
@@ -1668,6 +1752,25 @@ function placeRootsOnExistingSurface(newRoots,supportRoots){
     root.updateMatrixWorld(true);
   }
 }
+function layerRecord(key,layerId){
+  return (worldCells.get(key)||[]).find(layer=>String(layer.id)===String(layerId))||null;
+}
+function refreshLayerHabitat(key,layerId,type){
+  const roots=rootsForCell(key).filter(root=>String(root.userData.editorLayerId)===String(layerId));
+  const layer=layerRecord(key,layerId);
+  if(!layer)return;
+  if(!roots.length){layer.habitatPoint=null;habitatRevision++;return;}
+  const box=new THREE.Box3();let hasBox=false;
+  for(const root of roots){
+    root.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(root);
+    if(!b.isEmpty()){if(!hasBox){box.copy(b);hasBox=true;}else box.union(b);}
+  }
+  if(!hasBox)return;
+  const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
+  const habitatY=type==='rocks'?box.max.y+1.1:box.min.y+size.y*.58;
+  layer.habitatPoint={x:Number(center.x.toFixed(3)),y:Number(habitatY.toFixed(3)),z:Number(center.z.toFixed(3))};
+  habitatRevision++;
+}
 function markLayerRoots(before,key,layerId,type,supportRoots){
   const roots=[];
   for(let i=before;i<reef.children.length;i++){
@@ -1675,52 +1778,27 @@ function markLayerRoots(before,key,layerId,type,supportRoots){
     root.userData.editorCell=key;
     root.userData.editorLayerId=layerId;
     root.userData.editorLayerType=type;
+    root.userData.editorObjectIndex=roots.length;
     root.userData.isSolidRock = type==='rocks'||Boolean(root.userData.orcaRock);
     if(root.userData.isSolidRock){rockCollisionRoots.add(root);rockCollisionRevision++;}
     roots.push(root);
   }
   placeRootsOnExistingSurface(roots,supportRoots);
-
-  // Sla de WERKELIJKE 3D-positie van deze geplaatste laag op.
-  // Daardoor bepaalt de gebruiker zelf de hoogte/diepte door waar de begroeiing wordt geplaatst.
-  if(roots.length){
-    const box=new THREE.Box3();
-    let hasBox=false;
-    for(const root of roots){
-      root.updateMatrixWorld(true);
-      const b=new THREE.Box3().setFromObject(root);
-      if(!b.isEmpty()){
-        if(!hasBox){box.copy(b);hasBox=true;} else box.union(b);
-      }
+  const layer=layerRecord(key,layerId),survivors=[];
+  for(const root of roots){
+    if(layer?.precision&&Number.isFinite(layer.placement?.y)){
+      root.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(root);
+      if(!box.isEmpty())root.position.y+=layer.placement.y-box.min.y;
     }
-    if(hasBox){
-      const center=box.getCenter(new THREE.Vector3());
-      const size=box.getSize(new THREE.Vector3());
-      let habitatY;
-      if(type==='rocks'){
-        // Kale rots is een verkenningspunt: doel boven/naast de formatie, nooit midden in steen.
-        habitatY=box.max.y+1.1;
-      }else{
-        // Levende habitat: richt op de werkelijk gebouwde verticale zone.
-        habitatY=box.min.y+size.y*.58;
-      }
-      const layers=worldCells.get(key)||[];
-      const layer=layers.find(l=>String(l.id)===String(layerId));
-      if(layer){
-        const nextPoint={
-          x:Number(center.x.toFixed(3)),
-          y:Number(habitatY.toFixed(3)),
-          z:Number(center.z.toFixed(3))
-        };
-        const oldPoint=layer.habitatPoint;
-        if(!oldPoint || Math.abs(oldPoint.x-nextPoint.x)>.01 || Math.abs(oldPoint.y-nextPoint.y)>.01 || Math.abs(oldPoint.z-nextPoint.z)>.01){
-          layer.habitatPoint=nextPoint;
-          habitatRevision++;
-        }
-      }
-    }
+    const edit=layer?.objectEdits?.[root.userData.editorObjectIndex];
+    if(edit?.deleted){removeReefRoot(root);continue;}
+    if(Array.isArray(edit?.position)&&edit.position.length===3)root.position.fromArray(edit.position);
+    if(Array.isArray(edit?.rotation)&&edit.rotation.length===3)root.rotation.fromArray(edit.rotation);
+    if(Array.isArray(edit?.scale)&&edit.scale.length===3)root.scale.fromArray(edit.scale);
+    root.updateMatrixWorld(true);survivors.push(root);
   }
-  return roots;
+  refreshLayerHabitat(key,layerId,type);
+  return survivors;
 }
 
 
@@ -1865,17 +1943,31 @@ function chooseRockDetour(from,preferred,hit,radius=CAMERA_RADIUS){
   return best;
 }
 
-function instantiateLayerVisual(ix,iz,layerId,type){
+function instantiateLayerVisual(ix,iz,layer){
+  const layerId=layer.id,type=layer.type;
   const key=cellKey(ix,iz);
   // Alleen reeds gerenderde eerdere lagen in dit vak zijn dragend.
   const supportRoots=rootsForCell(key).slice();
   const layerSeed=Number(layerId)||1;
   const cx=ix*CELL+CELL/2, cz=iz*CELL+CELL/2;
-  const px=(n)=>cx+(seededJitter(ix,iz,n,layerSeed)-.5)*CELL*.72;
-  const pz=(n)=>cz+(seededJitter(ix,iz,n+20,layerSeed)-.5)*CELL*.72;
+  const organicPoint=(n)=>{
+    const angle=(n*2.399963+seededJitter(ix,iz,71,layerSeed)*Math.PI*2)%(Math.PI*2);
+    const radius=Math.sqrt(seededJitter(ix,iz,n+37,layerSeed))*CELL*.52;
+    return {x:cx+Math.cos(angle)*radius,z:cz+Math.sin(angle)*radius};
+  };
+  const px=(n)=>organicPoint(n).x;
+  const pz=(n)=>organicPoint(n).z;
   const before=reef.children.length;
 
-  if(type==='rocks'){
+  if(layer.precision&&layer.placement){
+    const x=layer.placement.x,z=layer.placement.z;
+    if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
+    else if(type==='coral')addBranchCoral(x,z,.85,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
+    else if(type==='anemone')addAnemone(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
+    else if(type==='sponge')addSponge(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,5,layerSeed)*coralColors.length)]);
+    else if(type==='seagrass')addSeaweed(x,z,.8);
+    else if(type==='shell')addShell(x,z,.75);
+  }else if(type==='rocks'){
     addRockCluster(cx,cz,1.15+seededJitter(ix,iz,1,layerSeed)*1.15,layerSeed);
     if(seededJitter(ix,iz,2,layerSeed)>.35) addRockCluster(px(2),pz(2),.55+.55*seededJitter(ix,iz,3,layerSeed),layerSeed);
   }else if(type==='coral'){
@@ -1883,7 +1975,8 @@ function instantiateLayerVisual(ix,iz,layerId,type){
     addPlateCoral(px(4),pz(4),.7+seededJitter(ix,iz,5,layerSeed)*.8,coralColors[Math.floor(seededJitter(ix,iz,6,layerSeed)*coralColors.length)]);
     if(seededJitter(ix,iz,7,layerSeed)>.35) addAnemone(px(7),pz(7),.65,coralColors[Math.floor(seededJitter(ix,iz,8,layerSeed)*coralColors.length)]);
   }else if(type==='seagrass'){
-    for(let n=0;n<5;n++) addSeaweed(px(n),pz(n),.65+seededJitter(ix,iz,n+8,layerSeed)*.75);
+    const count=3+Math.floor(seededJitter(ix,iz,84,layerSeed)*6);
+    for(let n=0;n<count;n++) addSeaweed(px(n),pz(n),.52+seededJitter(ix,iz,n+8,layerSeed)*.95);
   }else if(type==='sponge'){
     addSponge(px(1),pz(1),.85+seededJitter(ix,iz,2,layerSeed)*.7,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
     addAnemone(px(4),pz(4),.7+seededJitter(ix,iz,5,layerSeed)*.55,coralColors[Math.floor(seededJitter(ix,iz,6,layerSeed)*coralColors.length)]);
@@ -1893,7 +1986,8 @@ function instantiateLayerVisual(ix,iz,layerId,type){
     addBranchCoral(px(2),pz(2),.6+seededJitter(ix,iz,3,layerSeed)*.65,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
     addPlateCoral(px(5),pz(5),.55+seededJitter(ix,iz,6,layerSeed)*.6,coralColors[Math.floor(seededJitter(ix,iz,7,layerSeed)*coralColors.length)]);
     addSponge(px(8),pz(8),.55+.45*seededJitter(ix,iz,9,layerSeed),coralColors[Math.floor(seededJitter(ix,iz,10,layerSeed)*coralColors.length)]);
-    for(let n=0;n<3;n++) addSeaweed(px(11+n),pz(11+n),.55+.5*seededJitter(ix,iz,14+n,layerSeed));
+    const grassCount=1+Math.floor(seededJitter(ix,iz,91,layerSeed)*5);
+    for(let n=0;n<grassCount;n++) addSeaweed(px(11+n),pz(11+n),.45+.7*seededJitter(ix,iz,14+n,layerSeed));
   }
   markLayerRoots(before,key,layerId,type,supportRoots);
 }
@@ -1905,7 +1999,7 @@ function instantiateCell(key){
   const [ix,iz]=key.split(',').map(Number);
   activeWorldCells.add(key);
   // Volgorde is belangrijk: latere lagen worden op eerdere lagen gestapeld.
-  for(const layer of layers) instantiateLayerVisual(ix,iz,layer.id,layer.type);
+  for(const layer of layers) instantiateLayerVisual(ix,iz,layer);
 }
 
 function unloadCellVisuals(key){
@@ -1962,7 +2056,7 @@ function refreshWorldStreaming(force=false){
   activeCellsText.textContent=activeWorldCells.size;
 }
 
-function addLayerToCell(ix,iz,type,restoredId=null){
+function addLayerToCell(ix,iz,type,restoredId=null,properties={}){
   habitatRevision++;
   const key=cellKey(ix,iz);
   if(type==='clear'){ clearCell(key); activeWorldCells.delete(key); return; }
@@ -1971,14 +2065,15 @@ function addLayerToCell(ix,iz,type,restoredId=null){
   const layers=layersForCell(key);
   const layerId=restoredId ?? nextLayerId++;
   nextLayerId=Math.max(nextLayerId,Number(layerId)+1);
-  const layer={id:layerId,type,habitatPoint:null};
+  const layer={id:layerId,type,habitatPoint:null,...properties};
   layers.push(layer);
 
   // In bouwmodus is de volledige wereld zichtbaar. Tijdens zwemmen alleen actieve chunks.
   if(editMode || activeWorldCells.has(key)){
     if(editMode && !activeWorldCells.has(key)) activeWorldCells.add(key);
-    instantiateLayerVisual(ix,iz,layerId,type);
+    instantiateLayerVisual(ix,iz,layer);
   }
+  return layer;
 }
 
 function pointerGround(e){
@@ -2285,6 +2380,115 @@ function fillSelection(a,b){
   else if(type==='clear') editorInfo.textContent=`${count} vakken volledig leeggemaakt. Over: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
   else editorInfo.textContent=`${count} vakken kregen een extra laag ${worldBrush.options[worldBrush.selectedIndex].text}. Wereld: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
 }
+function editorRootFromObject(object){
+  let root=object;
+  while(root&&root.parent!==reef)root=root.parent;
+  return root?.parent===reef&&root.userData.editorCell?root:null;
+}
+function clearEditorSelection(){
+  selectedEditorRoot=null;
+  if(selectedEditorHelper){scene.remove(selectedEditorHelper);selectedEditorHelper.geometry?.dispose?.();selectedEditorHelper.material?.dispose?.();selectedEditorHelper=null;}
+  precisionSelection.innerHTML='Geen object geselecteerd. Richt het vizier en klik op een object.';
+}
+function selectEditorObject(root){
+  clearEditorSelection();
+  if(!root)return;
+  selectedEditorRoot=root;
+  selectedEditorHelper=new THREE.BoxHelper(root,0x7fe2ff);scene.add(selectedEditorHelper);
+  const kind=root.userData.editorKind||root.userData.editorLayerType||'object';
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong> · muiswiel of knoppen wijzigen de grootte.`;
+}
+function saveSelectedObjectEdit({deleted=false}={}){
+  const root=selectedEditorRoot;if(!root)return false;
+  const key=root.userData.editorCell,layerId=root.userData.editorLayerId,index=root.userData.editorObjectIndex;
+  const layer=layerRecord(key,layerId);if(!layer)return false;
+  layer.objectEdits=layer.objectEdits||{};
+  layer.objectEdits[index]={
+    position:root.position.toArray().map(v=>Number(v.toFixed(4))),
+    rotation:[root.rotation.x,root.rotation.y,root.rotation.z].map(v=>Number(v.toFixed(5))),
+    scale:root.scale.toArray().map(v=>Number(v.toFixed(4))),
+    ...(deleted?{deleted:true}:{})
+  };
+  habitatRevision++;rockCollisionRevision++;
+  refreshLayerHabitat(key,layerId,layer.type);
+  return true;
+}
+function scaleSelectedEditorObject(factor){
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  const current=Math.max(root.scale.x,root.scale.y,root.scale.z),target=THREE.MathUtils.clamp(current*factor,.16,6),ratio=target/current;
+  root.scale.multiplyScalar(ratio);root.updateMatrixWorld(true);selectedEditorHelper?.update();saveSelectedObjectEdit();
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'object'}</strong> · schaal ${target.toFixed(2)}×`;
+}
+function rotateSelectedEditorObject(angle){
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  root.rotation.y+=angle;root.updateMatrixWorld(true);selectedEditorHelper?.update();saveSelectedObjectEdit();
+}
+function deleteSelectedEditorObject(){
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  const key=root.userData.editorCell,layerId=root.userData.editorLayerId,type=root.userData.editorLayerType;
+  saveSelectedObjectEdit({deleted:true});removeReefRoot(root);clearEditorSelection();refreshLayerHabitat(key,layerId,type);
+  editorInfo.textContent='Object verwijderd. Deze precieze verwijdering wordt met de wereld opgeslagen.';
+}
+function addPrecisionObject(type,point,{scale=1,rotation=0}={}){
+  if(!isPointInsideBuildHex(point.x,point.z)){editorInfo.textContent='Kies een plek binnen het bouwgebied.';return null;}
+  const {ix,iz}=groundToCell(point);
+  const layer=addLayerToCell(ix,iz,type,null,{
+    precision:true,
+    placement:{x:Number(point.x.toFixed(4)),y:Number(point.y.toFixed(4)),z:Number(point.z.toFixed(4))},
+    objectEdits:{0:{rotation:[0,rotation,0],scale:[scale,scale,scale]}}
+  });
+  habitatRevision++;
+  const root=rootsForCell(cellKey(ix,iz)).find(item=>String(item.userData.editorLayerId)===String(layer.id));
+  editorInfo.textContent=`${root?.userData.editorKind||type} nauwkeurig geplaatst op x ${point.x.toFixed(1)}, z ${point.z.toFixed(1)}.`;
+  return root||null;
+}
+function detailEditorHit(event){
+  if(controls.isLocked)pointer.set(0,0);
+  else{
+    const rect=renderer.domElement.getBoundingClientRect();
+    pointer.set(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1);
+  }
+  raycaster.setFromCamera(pointer,camera);
+  const hits=raycaster.intersectObjects([...reef.children,floor],true);
+  return hits.find(hit=>isPointInsideBuildHex(hit.point.x,hit.point.z))||null;
+}
+function useDetailEditor(event){
+  const hit=detailEditorHit(event);
+  if(!hit){editorInfo.textContent='Geen bouwoppervlak binnen bereik gevonden.';return;}
+  if(precisionTool.value==='select'){
+    const root=editorRootFromObject(hit.object);selectEditorObject(root);
+    if(root)controls.unlock();
+    else editorInfo.textContent='Hier staat geen afzonderlijk bouwobject om te selecteren.';
+    return;
+  }
+  const root=addPrecisionObject(precisionTool.value,hit.point);
+  if(root)selectEditorObject(root);
+}
+function setEditorView(view){
+  if(!editMode)return;
+  if(view==='detail'){
+    if(editorView==='overview')savedOverviewPos=camera.position.clone();
+    editorView='detail';camera.up.set(0,1,0);
+    if(savedDetailPos){camera.position.copy(savedDetailPos);camera.quaternion.copy(savedDetailQuat);}
+    else{
+      const source=savedCamPos||camera.position,floorY=terrainHeightAt(source.x,source.z);
+      camera.position.set(source.x,THREE.MathUtils.clamp(source.y,floorY+2,16),source.z);
+      camera.quaternion.copy(savedCamQuat||new THREE.Quaternion());
+    }
+    editorOverviewBtn.classList.remove('active');editorDetailBtn.classList.add('active');precisionBuildTools.hidden=false;
+    document.getElementById('crosshair').style.display='';editBadge.textContent='DETAILBOUW · richt het vizier en klik';
+    hint.textContent='Klik op de wereld om de detailvlucht te activeren.';
+  }else{
+    if(editorView==='detail'){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
+    controls.unlock();editorView='overview';camera.up.set(0,0,-1);
+    const overview=savedOverviewPos||new THREE.Vector3(camera.position.x,Math.max(95,camera.position.y),camera.position.z);
+    camera.position.copy(overview);camera.position.y=THREE.MathUtils.clamp(camera.position.y,45,260);orientEditorCamera();
+    editorDetailBtn.classList.remove('active');editorOverviewBtn.classList.add('active');precisionBuildTools.hidden=true;
+    document.getElementById('crosshair').style.display='none';editBadge.textContent='BOUWMODUS · sleep over de zeebodem om een groot gebied te vullen';
+    hint.textContent='BOVENAANZICHT · A/D links/rechts · W/S noord/zuid · Q/E hoogte · sleep om gebieden te vullen';
+  }
+  drawMinimap();
+}
 function setEditMode(on){
   if(on && (!canEditCurrentWorld() || communityOcean?.busy || (cloudBusy&&!referenceMode)))return;
   if(on && followMode)stopFollowing(false);
@@ -2292,20 +2496,23 @@ function setEditMode(on){
   if(on){
     controls.unlock();
     savedCamPos=camera.position.clone(); savedCamQuat=camera.quaternion.clone();
+    editorView='overview';savedOverviewPos=null;savedDetailPos=null;savedDetailQuat=null;
     camera.position.set(0,210,0);orientEditorCamera();
     // Tijdens bouwen tonen we bewust alle ontworpen vakken. Bij terugkeer naar zwemmen wordt weer gestreamd.
     renderAllWorldCellsForEditor();
     grid.visible=false; hexBoundaryGroup.visible=true; editBadge.classList.add('on'); editModeBtn.classList.add('active');
     editModeBtn.textContent='🌊 Terug naar zwemmen';
+    editorViewTools.hidden=false;precisionBuildTools.hidden=true;editorOverviewBtn.classList.add('active');editorDetailBtn.classList.remove('active');
     document.getElementById('crosshair').style.display='none';
     hint.textContent='LANDSCHAPSEDITOR · noord boven · A links / D rechts · W noord / S zuid · Q/E hoogte · klik op kaart om te reizen';
     setTerrainInspectMode(terrainInspectToggle.checked);
     setLandscapeEditorMode(true);
   }else{
-    setLandscapeEditorMode(false);
+    clearEditorSelection();controls.unlock();setLandscapeEditorMode(false);
     setTerrainInspectMode(false);
     grid.visible=false; hexBoundaryGroup.visible=false; selection.visible=false; editBadge.classList.remove('on'); editModeBtn.classList.remove('active');
     editModeBtn.textContent='🧱 Wereld bouwen';
+    editorViewTools.hidden=true;precisionBuildTools.hidden=true;
     document.getElementById('crosshair').style.display='';
     camera.up.set(0,1,0);
     if(savedCamPos){camera.position.copy(savedCamPos);camera.quaternion.copy(savedCamQuat);}
@@ -2317,6 +2524,13 @@ function setEditMode(on){
   }
 }
 editModeBtn.addEventListener('click',()=>setEditMode(!editMode));
+editorOverviewBtn.addEventListener('click',()=>setEditorView('overview'));
+editorDetailBtn.addEventListener('click',()=>setEditorView('detail'));
+precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
+precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
+precisionRotateLeft.addEventListener('click',()=>rotateSelectedEditorObject(-Math.PI/12));
+precisionRotateRight.addEventListener('click',()=>rotateSelectedEditorObject(Math.PI/12));
+precisionDelete.addEventListener('click',deleteSelectedEditorObject);
 terrainInspectToggle.addEventListener('change',()=>{
   if(editMode) setTerrainInspectMode(terrainInspectToggle.checked);
 });
@@ -2353,15 +2567,20 @@ worldBrush.dispatchEvent(new Event('change'));
 
 renderer.domElement.addEventListener('pointerdown',e=>{
   if(!editMode || e.button!==0) return;
+  if(editorView==='detail'){
+    if(!controls.isLocked){controls.lock();return;}
+    useDetailEditor(e);
+    return;
+  }
   dragStart=pointerGround(e); dragEnd=dragStart;
   if(dragStart){ updateSelection(dragStart,dragEnd); renderer.domElement.setPointerCapture(e.pointerId); }
 });
 renderer.domElement.addEventListener('pointermove',e=>{
-  if(!editMode || !dragStart) return;
+  if(!editMode || editorView!=='overview' || !dragStart) return;
   const p=pointerGround(e); if(p){dragEnd=p;updateSelection(dragStart,dragEnd);}
 });
 renderer.domElement.addEventListener('pointerup',e=>{
-  if(!editMode || !dragStart) return;
+  if(!editMode || editorView!=='overview' || !dragStart) return;
   const p=pointerGround(e)||dragEnd;
   if(p) fillSelection(dragStart,p);
   dragStart=null;dragEnd=null;selection.visible=false;
@@ -2369,6 +2588,10 @@ renderer.domElement.addEventListener('pointerup',e=>{
 renderer.domElement.addEventListener('wheel',e=>{
   if(!editMode)return;
   e.preventDefault();
+  if(editorView==='detail'){
+    if(selectedEditorRoot)scaleSelectedEditorObject(e.deltaY>0?.92:1.08);
+    return;
+  }
   camera.position.y=THREE.MathUtils.clamp(camera.position.y+Math.sign(e.deltaY)*18,70,380);
 },{passive:false});
 
@@ -2392,7 +2615,8 @@ function worldData(){
       layers:layers.map(l=>({
         id:l.id,
         type:l.type,
-        habitatPoint:l.habitatPoint ? {x:l.habitatPoint.x,y:l.habitatPoint.y,z:l.habitatPoint.z} : null
+        habitatPoint:l.habitatPoint ? {x:l.habitatPoint.x,y:l.habitatPoint.y,z:l.habitatPoint.z} : null,
+        ...(l.precision?{precision:true,placement:{...l.placement},objectEdits:structuredClone(l.objectEdits||{})}:l.objectEdits?{objectEdits:structuredClone(l.objectEdits)}:{})
       }))
     }))
   };
@@ -2432,13 +2656,32 @@ function restoreWorld(data){
       if(!layer.type || layer.type==='clear' || layer.type==='removeTop') continue;
       const id=layer.id ?? nextLayerId++;
       nextLayerId=Math.max(nextLayerId,Number(id)+1);
-      clean.push({
+      const cleanLayer={
         id,
         type:layer.type,
         habitatPoint:layer.habitatPoint && Number.isFinite(layer.habitatPoint.x) && Number.isFinite(layer.habitatPoint.y) && Number.isFinite(layer.habitatPoint.z)
           ? {x:layer.habitatPoint.x,y:layer.habitatPoint.y,z:layer.habitatPoint.z}
           : null
-      });
+      };
+      const placement=layer.placement;
+      if(layer.precision===true&&placement&&Number.isFinite(placement.x)&&Number.isFinite(placement.y)&&Number.isFinite(placement.z)){
+        cleanLayer.precision=true;
+        cleanLayer.placement={x:THREE.MathUtils.clamp(placement.x,-WORLD_HALF,WORLD_HALF),y:THREE.MathUtils.clamp(placement.y,-40,40),z:THREE.MathUtils.clamp(placement.z,-WORLD_HALF,WORLD_HALF)};
+      }
+      if(layer.objectEdits&&typeof layer.objectEdits==='object'){
+        const edits={};
+        for(const [editIndex,edit] of Object.entries(layer.objectEdits).slice(0,64)){
+          if(!/^\d+$/.test(editIndex)||!edit||typeof edit!=='object')continue;
+          const vector=(value,min,max)=>{
+            const items=Array.isArray(value)?value:[value?.[0],value?.[1],value?.[2]];
+            return items.length>=3&&items.slice(0,3).every(Number.isFinite)?items.slice(0,3).map(v=>THREE.MathUtils.clamp(v,min,max)):null;
+          };
+          const position=vector(edit.position,-400,400),rotation=vector(edit.rotation,-100,100),scale=vector(edit.scale,.12,8);
+          edits[editIndex]={...(position?{position}:{}),...(rotation?{rotation}:{}),...(scale?{scale}:{}),...(edit.deleted===true?{deleted:true}:{})};
+        }
+        if(Object.keys(edits).length)cleanLayer.objectEdits=edits;
+      }
+      clean.push(cleanLayer);
     }
     if(clean.length) worldCells.set(key,clean);
   }
@@ -2474,13 +2717,13 @@ function canEditCurrentWorld(){
 // Visitor controls are read-only; Firebase remains the authority for writes.
 document.addEventListener('click',event=>{
   const button=event.target.closest?.('button');
-  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle'].includes(button.id))return;
+  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle'].includes(button.id))return;
   if(!cloudBusy&&!communityOcean?.busy&&((button.id==='placeOrca'&&orca)||(button.id==='placeWhale'&&whale)))return;
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
   if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
-  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle']){
+  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle']){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
   cloudWorldName.readOnly=!canEditCurrentWorld();
@@ -2614,6 +2857,22 @@ worldFile.addEventListener('change',async()=>{
   try{restoreWorld(JSON.parse(await f.text()));}
   catch(err){editorInfo.textContent='Dit JSON-bestand kon niet als wereld worden gelezen.';}
   worldFile.value='';
+});
+importBlueprintBtn.addEventListener('click',()=>blueprintFile.click());
+blueprintFile.addEventListener('change',async()=>{
+  const file=blueprintFile.files?.[0];if(!file)return;
+  try{
+    const plan=normalizeWorldBlueprint(JSON.parse(await file.text()),{worldHalf:WORLD_HALF});
+    if(!editMode)setEditMode(true);
+    if(!editMode)throw Error('Deze wereld kan alleen worden bekeken.');
+    for(const item of plan.terrain)terrainOffsets.set(cellKey(item.ix,item.iz),item.offset);
+    if(plan.terrain.length)rebuildWorldAfterTerrainEdit(plan.terrain.map(item=>cellKey(item.ix,item.iz)),false);
+    let placed=0;
+    for(const item of plan.objects)if(addPrecisionObject(item.type,{x:item.x,y:terrainHeightAt(item.x,item.z),z:item.z},{scale:item.scale,rotation:item.rotation}))placed++;
+    clearEditorSelection();
+    editorInfo.textContent=`✨ ${plan.name}: ${placed} nauwkeurige objecten en ${plan.terrain.length} terreinpunten geïmporteerd. Controleer het resultaat in Detailvlucht.`;
+  }catch(error){editorInfo.textContent=`AI-wereldplan niet geïmporteerd: ${error.message}`;}
+  blueprintFile.value='';
 });
 
 
@@ -3284,6 +3543,7 @@ function settleSpeciesHomes(){
 
 function habitatWeight(type){
   if(type==='coral') return 3.2;
+  if(type==='anemone') return 2.6;
   if(type==='seagrass') return 2.0;
   if(type==='sponge') return 2.3;
   if(type==='mixed') return 4.0;
@@ -3291,7 +3551,7 @@ function habitatWeight(type){
   return .4;
 }
 function isLivingHabitat(type){
-  return type==='coral' || type==='seagrass' || type==='sponge' || type==='mixed';
+  return type==='coral' || type==='anemone' || type==='seagrass' || type==='sponge' || type==='mixed';
 }
 function fallbackLayerHabitatPoint(key,layer){
   const [ix,iz]=key.split(',').map(Number);
@@ -3349,15 +3609,15 @@ function habitatScoreNear(x,z,radius=24){
 }
 function ecosystemHabitatCounts(){
   const counts={rocks:0,coral:0,seagrass:0,sponge:0,mixed:0};
-  for(const layers of worldCells.values())for(const layer of layers||[])if(Object.hasOwn(counts,layer.type))counts[layer.type]++;
+  for(const layers of worldCells.values())for(const layer of layers||[]){const type=layer.type==='anemone'?'coral':layer.type;if(Object.hasOwn(counts,type))counts[type]++;}
   return counts;
 }
 function ecosystemLayerSamples(){
   const samples=[];
   for(const [key,layers] of worldCells)for(const layer of layers||[]){
-    if(!['rocks','coral','seagrass','sponge','mixed'].includes(layer.type))continue;
+    if(!['rocks','coral','anemone','seagrass','sponge','mixed'].includes(layer.type))continue;
     const point=layer.habitatPoint||fallbackLayerHabitatPoint(key,layer);
-    samples.push({x:point.x,z:point.z,type:layer.type});
+    samples.push({x:point.x,z:point.z,type:layer.type==='anemone'?'coral':layer.type});
   }
   return samples;
 }
@@ -4791,6 +5051,9 @@ function updateFollowCamera(dt){
 const keys = {};
 addEventListener('keydown',e=>{
   if(document.getElementById('fishLibraryDialog')?.open || e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
+  if(editMode&&editorView==='detail'&&selectedEditorRoot&&(e.code==='Delete'||e.code==='Backspace')){
+    e.preventDefault();deleteSelectedEditorObject();return;
+  }
   if(e.code==='Space'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     e.preventDefault();setPressureOverlay(!pressureOverlayVisible);return;
   }
@@ -4812,6 +5075,24 @@ function updateMovement(dt){
   if(followMode){ updateFollowCamera(dt); return; }
 
   if(editMode){
+    if(editorView==='detail'){
+      if(!controls.isLocked){speedText.textContent='0';return;}
+      const editorMove=new THREE.Vector3();camera.getWorldDirection(tempDir);right.crossVectors(tempDir,camera.up).normalize();
+      if(keys['KeyW'])editorMove.add(tempDir);
+      if(keys['KeyS'])editorMove.sub(tempDir);
+      if(keys['KeyD'])editorMove.add(right);
+      if(keys['KeyA'])editorMove.sub(right);
+      if(keys['KeyQ'])editorMove.y+=1;
+      if(keys['KeyE'])editorMove.y-=1;
+      const boost=keys['ShiftLeft']||keys['ShiftRight'],speed=boost?24:8;
+      if(editorMove.lengthSq()>0){camera.position.addScaledVector(editorMove.normalize(),speed*dt);speedText.textContent=speed.toFixed(0);}else speedText.textContent='0';
+      const inside=closestInHex({x:camera.position.x,y:camera.position.y,z:camera.position.z},HEX.radius-1);
+      camera.position.x=inside.x;camera.position.z=inside.z;
+      camera.position.y=THREE.MathUtils.clamp(camera.position.y,terrainHeightAt(camera.position.x,camera.position.z)+.65,18.7);
+      savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();
+      depthText.textContent=`bouw ${Math.max(0,Math.round(20-camera.position.y))}m`;
+      return;
+    }
     const editorMove=new THREE.Vector3();
     // Bovenaanzicht: W/S = noord/zuid, A/D = west/oost.
     if(keys['KeyW']) editorMove.z-=1;
