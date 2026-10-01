@@ -6,7 +6,7 @@ export const SPECIES_POLICY={
   reef_2:{kind:'coral-pair',cruiseSpeed:.62,cohesion:.68,alignment:.52,separation:.68,habitatPull:1.16,exploration:.035,depthMin:2,depthMax:35,reefHeight:.9,verticalSpeed:.35,finRate:7},
   reef_3:{kind:'tang',cruiseSpeed:.82,cohesion:.44,alignment:.60,separation:.72,habitatPull:1.05,exploration:.09,depthMin:2,depthMax:40,reefHeight:1.2,verticalSpeed:.30,finRate:7,swimRate:4.3,bodyClearance:1.3},
   reef_4:{kind:'puffer',cruiseSpeed:.30,cohesion:.16,alignment:.18,separation:1.12,habitatPull:1.05,exploration:.025,depthMin:3,depthMax:40,reefHeight:.55,verticalSpeed:.18,finRate:9},
-  reef_5:{kind:'cardinal',cruiseSpeed:.32,cohesion:.72,alignment:.22,separation:.48,habitatPull:1.3,exploration:.018,depthMin:1,depthMax:20,reefHeight:.70,verticalSpeed:.15,finRate:9,swimRate:6,bodyClearance:1.3},
+  reef_5:{kind:'cardinal',cruiseSpeed:.55,cohesion:.62,alignment:.22,separation:.48,habitatPull:1.3,exploration:.04,depthMin:1,depthMax:20,reefHeight:.70,verticalSpeed:.22,finRate:9,swimRate:6,bodyClearance:1.3},
   reef_6:{kind:'bottom',cruiseSpeed:.48,cohesion:.25,alignment:.24,separation:.85,habitatPull:1.05,exploration:.04,finRate:3},
   reef_7:{kind:'chromis',cruiseSpeed:.72,cohesion:.82,alignment:.78,separation:.50,habitatPull:1.1,exploration:.055,depthMin:1,depthMax:35,reefHeight:1.8,verticalSpeed:.36,finRate:11,swimRate:8,bodyClearance:.9},
 };
@@ -49,7 +49,7 @@ export function swimRhythm(species,time,phase=0){
   if(species==='reef_2')return .70+Math.pow(.5+.5*Math.sin(time*1.15+phase),5)*.46;
   if(species==='reef_3')return .70+Math.pow(.5+.5*Math.sin(time*.60+phase),3)*.40;
   // Long hover intervals, then a brief relocation; pectorals remain active.
-  if(species==='reef_5')return .03+Math.pow(.5+.5*Math.sin(time*.47+phase),10)*1.30;
+  if(species==='reef_5')return .55+Math.pow(.5+.5*Math.sin(time*.47+phase),6)*.75;
   if(species==='reef_7')return .50+Math.pow(.5+.5*Math.sin(time*1.9+phase),5)*1.10;
   return .72+burst*.52;
 }
@@ -69,7 +69,7 @@ export function reefTargetHeight(species,floor,habitatY=floor,variation=0,ceilin
 export function reefMotionPace(species,distance,panic=0,inflation=0){
   if(!SPECIES_POLICY[species]?.reefHeight)return 1;
   // Ease into inspection/hover; do not keep circling a reached point at full cruise speed.
-  const arrival=Math.max(.08,Math.min(1,distance/2));
+  const arrival=Math.max(species==='reef_5'?.25:.08,Math.min(1,distance/2));
   return Math.max(arrival,Math.min(1,panic))*(species==='reef_4'?1-Math.max(0,Math.min(1,inflation))*.65:1);
 }
 
