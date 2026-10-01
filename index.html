@@ -248,6 +248,14 @@
       <button id="removeWhale" type="button" hidden>Verwijder walvis</button>
       <p id="whaleStatus">Grote walvis · heeft ruim open water nodig.</p>
       <p id="orcaStatus">Eén orka · klik op de orka om zijn bek te openen.</p>
+      <button id="placeStingray" type="button" style="margin-top:9px">Plaats rog</button>
+      <button id="followStingray" type="button" hidden>Volg rog</button>
+      <button id="removeStingray" type="button" hidden>Verwijder rog</button>
+      <p id="stingrayStatus">Pijlstaartrog · glijdt langs de bodem en onder ruime overhangen.</p>
+      <button id="placeTurtle" type="button" style="margin-top:9px">Plaats reuzenschildpad</button>
+      <button id="followTurtle" type="button" hidden>Volg reuzenschildpad</button>
+      <button id="removeTurtle" type="button" hidden>Verwijder reuzenschildpad</button>
+      <p id="turtleStatus">Reuzenschildpad · rustige flipperslagen en lange glijbewegingen.</p>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
         <p>Demo · vaste scène · eigen lokale opslag</p>
@@ -453,6 +461,8 @@ import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
 import { createPufferLibrary } from './graphics/PufferFish.js';
 import { createWhaleCruise, whaleRouteClear, validateWhaleRecord } from './graphics/WhaleNavigation.js';
+import {createStingray,createSeaTurtle,VISITOR_SPECIES} from './graphics/ReefVisitors.js';
+import {visitorPathClear,createVisitorCruise,validateVisitorRecords} from './graphics/ReefVisitorNavigation.js';
 import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
 import { createOrcaCruise, orcaRouteClear, validateOrcaRecord } from './graphics/OrcaNavigation.js';
 const visualParams = new URLSearchParams(location.search);
@@ -2274,6 +2284,7 @@ function worldData(){
     worldHalf:WORLD_HALF,
     nextLayerId,
     megafaunaDisabled:{...megafaunaDisabled},
+    reefVisitors:Object.fromEntries([...reefVisitors].map(([kind,a])=>[kind,{position:a.root.position.toArray(),heading:-a.root.rotation.y}])),
     terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
     orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
@@ -2296,7 +2307,8 @@ function restoreWorld(data){
   if(data?.orca && !savedOrca)throw new Error('Ongeldige orkapositie in dit wereldbestand.');
   const savedWhale=validateWhaleRecord(data?.whale);
   if(data?.whale && !savedWhale)throw new Error('Ongeldige walvispositie in dit wereldbestand.');
-  clearOrca();clearWhale();
+  const savedVisitors=validateVisitorRecords(data.reefVisitors);
+  clearOrca();clearWhale();for(const kind of [...reefVisitors.keys()])clearReefVisitor(kind);
   megafaunaDisabled={orca:data.megafaunaDisabled?.orca===true,whale:data.megafaunaDisabled?.whale===true};megafaunaAttempt=-Infinity;
   applyWorldHexMeta(data?.hexWorld);
   syncCurrentAtlasWorld();
@@ -2342,6 +2354,7 @@ function restoreWorld(data){
   if(editMode) renderAllWorldCellsForEditor(); else { lastStreamingCell=''; refreshWorldStreaming(true); }
   if(savedOrca)placeOrcaAt(savedOrca);
   if(savedWhale)placeWhaleAt(savedWhale);
+  for(const [kind,record] of Object.entries(savedVisitors))placeReefVisitorAt(kind,record);
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
@@ -2358,13 +2371,13 @@ function canEditCurrentWorld(){
 // Visitor controls are read-only; Firebase remains the authority for writes.
 document.addEventListener('click',event=>{
   const button=event.target.closest?.('button');
-  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale'].includes(button.id))return;
+  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle'].includes(button.id))return;
   if(!cloudBusy&&!communityOcean?.busy&&((button.id==='placeOrca'&&orca)||(button.id==='placeWhale'&&whale)))return;
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
   if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
-  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale']){
+  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle']){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
   cloudWorldName.readOnly=!canEditCurrentWorld();
@@ -2386,6 +2399,7 @@ async function loadCloudWorld(worldId){
     const record=validateWorldRecord(snapshot.val());
     if(record.world.orca&&!validateOrcaRecord(record.world.orca))throw Error('Ongeldige orkapositie');
     if(record.world.whale&&!validateWhaleRecord(record.world.whale))throw Error('Ongeldige walvispositie');
+    validateVisitorRecords(record.world.reefVisitors);
     if(typeof record.ownerId!=='string'||!record.ownerId)throw Error('Eigenaar ontbreekt');
     cloudWorldLoaded=true;
     currentCloudVisibility=record.visibility||'link';
@@ -2750,6 +2764,66 @@ const fishes = [];
 const schools = new Map();
 let orca=null,orcaCruise=null;
 let whale=null,whaleCruise=null;
+const reefVisitors=new Map();
+const visitorIds={stingray:'Stingray',turtle:'Turtle'};
+function visitorClear(kind,from,to,heading){
+  const rocks=nearbyImportRocks(from,from.distanceTo(to)+5).slice();
+  for(const animal of [orca,whale,...reefVisitors.values()])if(animal&&animal!==reefVisitors.get(kind)){
+    animal.root.updateMatrixWorld(true);rocks.push(new THREE.Box3().setFromObject(animal.root));
+  }
+  return visitorPathClear(kind,from,to,heading,{rocks,terrain:terrainHeightAt,inside:p=>containsHex(p,HEX.radius-1)});
+}
+function clearReefVisitor(kind){
+  const animal=reefVisitors.get(kind);if(!animal)return;
+  if(selectedFish===animal.root)stopFollowing(false);
+  scene.remove(animal.root);const i=fishes.indexOf(animal.root);if(i>=0)fishes.splice(i,1);
+  schools.delete(animal.root.userData.schoolId);animal.dispose();reefVisitors.delete(kind);
+  const suffix=visitorIds[kind];document.getElementById('place'+suffix).hidden=false;
+  document.getElementById('follow'+suffix).hidden=true;document.getElementById('remove'+suffix).hidden=true;
+  document.getElementById(kind+'Status').textContent=VISITOR_SPECIES[kind].name+' verwijderd.';
+  fishCountEl.textContent=fishes.length;schoolCountText.textContent=schools.size;
+}
+function placeReefVisitorAt(kind,record){
+  clearReefVisitor(kind);
+  const animal=kind==='stingray'?createStingray():createSeaTurtle(),fish=animal.root;
+  fish.position.fromArray(record.position);fish.rotation.y=-record.heading;
+  fish.userData.velocity.set(Math.cos(record.heading),0,Math.sin(record.heading)).multiplyScalar(VISITOR_SPECIES[kind].speed);
+  const school=makeSchool(kind,{cruiseSpeed:VISITOR_SPECIES[kind].speed});registerFish(fish,kind,school);
+  animal.setStyle(fishRenderStyle.value);animal.cruise=createVisitorCruise(fish,kind,(a,b,h)=>visitorClear(kind,a,b,h),terrainHeightAt);
+  scene.add(fish);fishes.push(fish);reefVisitors.set(kind,animal);school.center.copy(fish.position);
+  const suffix=visitorIds[kind];document.getElementById('place'+suffix).hidden=true;
+  document.getElementById('follow'+suffix).hidden=false;document.getElementById('remove'+suffix).hidden=false;
+  document.getElementById(kind+'Status').textContent=VISITOR_SPECIES[kind].name+' aanwezig · klik op het dier of kies Volg.';
+  fishCountEl.textContent=fishes.length;return animal;
+}
+for(const [kind,suffix] of Object.entries(visitorIds)){
+  document.getElementById('place'+suffix).addEventListener('click',()=>{
+    const status=document.getElementById(kind+'Status');
+    if(editMode){status.textContent='Sluit de landschapseditor om het dier te plaatsen.';return;}
+    if(reefVisitors.has(kind))return;
+    if(fishes.length>=MAX_POPULATION){status.textContent='De populatiegrens is bereikt.';return;}
+    refreshWorldStreaming(true);
+    const forward=new THREE.Vector3();camera.getWorldDirection(forward);const heading=Math.atan2(forward.z,forward.x);
+    let chosen=null;
+    search:for(const distance of [5,8,12,16])for(const turn of [0,.6,-.6,1.2,-1.2,Math.PI]){
+      const p=camera.position.clone().add(new THREE.Vector3(Math.cos(heading+turn)*distance,0,Math.sin(heading+turn)*distance));
+      const floor=terrainHeightAt(p.x,p.z);
+      for(const y of [floor+(kind==='stingray'?1.1:2),camera.position.y,floor+4]){
+        p.y=Math.min(18.5,y);const ahead=p.clone().add(new THREE.Vector3(Math.cos(heading)*2,0,Math.sin(heading)*2));
+        if(visitorClear(kind,p,ahead,heading)){chosen={position:p.toArray(),heading};break search;}
+      }
+    }
+    if(!chosen){status.textContent='Hier is te weinig zwemruimte. Probeer een nabije open plek.';return;}
+    placeReefVisitorAt(kind,chosen);document.getElementById('follow'+suffix).click();
+  });
+  document.getElementById('follow'+suffix).addEventListener('click',()=>{
+    const a=reefVisitors.get(kind);if(!a||editMode)return;
+    startFollowing(a.root,'fish');followDistance=6;followHeight=1;followOrbitAngle=Math.PI/2;followOrbitInitialized=true;
+  });
+  document.getElementById('remove'+suffix).addEventListener('click',()=>clearReefVisitor(kind));
+}
+fishRenderStyle.addEventListener('change',()=>{for(const a of reefVisitors.values())a.setStyle(fishRenderStyle.value);});
+addEventListener('pagehide',()=>{for(const a of reefVisitors.values())a.dispose();},{once:true});
 const placeOrcaBtn=document.getElementById('placeOrca');
 const removeOrcaBtn=document.getElementById('removeOrca');
 const orcaStatus=document.getElementById('orcaStatus');
@@ -2877,6 +2951,12 @@ function megafaunaRocks(){
   return megafaunaRockCache;
 }
 function updateMegafauna(dt,t){
+  for(const animal of reefVisitors.values()){
+    const fish=animal.root,distance=fish.position.distanceTo(camera.position);
+    fish.visible=!editMode&&distance<CULL_RADIUS;
+    if(!editMode&&!referencePaused){animal.cruise.update(dt);animal.animate(dt,t,atmosphere.quality,distance);}
+    const school=schools.get(fish.userData.schoolId);school.center.copy(fish.position);school.avgVelocity.copy(fish.userData.velocity);
+  }
   if(orca){
     const fish=orca.root,distance=fish.position.distanceTo(camera.position);
     fish.visible=!editMode && !fish.userData.dead && distance<CULL_RADIUS;
@@ -3136,7 +3216,7 @@ function ecosystemLayerSamples(){
 }
 function livingNaturalFish(){return fishes.filter(f=>f.parent&&!f.userData.dead&&f.userData.natural).length;}
 function livingImportedFish(){return fishes.filter(f=>f.parent&&!f.userData.dead&&f.userData.imported);}
-function megafaunaBioload(){return (orca&&!orca.root.userData.dead?18:0)+(whale&&!whale.root.userData.dead?30:0);}
+function megafaunaBioload(){return (orca&&!orca.root.userData.dead?18:0)+(whale&&!whale.root.userData.dead?30:0)+fishes.filter(f=>f.userData.isReefVisitor&&!f.userData.dead).reduce((n,f)=>n+f.userData.biomass,0);}
 let ecosystemState=evaluateEcosystem({maxNaturalFish:MAX_NATURAL_FISH});
 let ecosystemLastAssessment=-Infinity,ecosystemLastPopulationChange=-Infinity,ecosystemLastRevision=-1;
 let foodSectors=new Map(),foodSectorRevision=-1,foodSectorLavaCount=-1,foodUpdateAccumulator=0;
@@ -3214,7 +3294,7 @@ function reconcileNaturalPopulation(t,force=false){
 }
 function refreshEcosystemUi(){
   refreshImportInventory();
-  const natural=livingNaturalFish(),imported=livingImportedFish().length,total=natural+imported+(orca?1:0)+(whale?1:0);
+  const natural=livingNaturalFish(),imported=livingImportedFish().length,total=natural+imported+(orca?1:0)+(whale?1:0)+reefVisitors.size;
   ecosystemScore.textContent=ecosystemState.score;ecosystemMeter.value=ecosystemState.score;
   ecosystemStage.textContent=`Fase ${ecosystemState.stageId} · ${ecosystemState.stage.name}`;
   ecosystemCapacity.textContent=Math.floor(ecosystemState.capacity);ecosystemNatural.textContent=natural;
@@ -3657,7 +3737,7 @@ function splitImportedSchools(t){
 function updateSchoolBrains(t){
   splitImportedSchools(t);
   for(const school of schools.values()){
-    if(school.speciesId==='orca'||school.speciesId==='whale')continue;
+    if(school.speciesId==='orca'||school.speciesId==='whale'||school.members[0]?.userData.isReefVisitor)continue;
     const members=school.members.filter(f=>f.parent&&!f.userData.dead&&!['sinking','burial'].includes(f.userData.vitalState));
     if(!members.length)continue;
 
@@ -3974,12 +4054,13 @@ function updateFish(dt,t){
   const neighborhood=createFishNeighborhood(frameFish.filter(f=>!['sinking','burial'].includes(f.userData.vitalState)&&f.position.distanceToSquared(camera.position)<=CULL_RADIUS*CULL_RADIUS));
   const avoidV=new THREE.Vector3();
   let visibleCount=(orca?.root.visible && !orca.root.userData.dead ? 1 : 0)+(whale?.root.visible&&!whale.root.userData.dead?1:0);
+  visibleCount+=frameFish.filter(f=>f.userData.isReefVisitor&&f.visible).length;
   schoolThinkAccumulator+=dt;
   if(schoolThinkAccumulator>.35){updateSchoolBrains(t);schoolThinkAccumulator=0;}
   const camX=camera.position.x,camY=camera.position.y,camZ=camera.position.z;
 
   for(const school of schools.values()){
-    if(school.speciesId==='orca'||school.speciesId==='whale')continue;
+    if(school.speciesId==='orca'||school.speciesId==='whale'||school.members[0]?.userData.isReefVisitor)continue;
     const members=school.members;
     const policy=SPECIES_POLICY[school.speciesId];
     const rhythm=swimRhythm(school.speciesId,t,school.behaviorPhase);
@@ -4377,7 +4458,7 @@ renderer.domElement.addEventListener('click',e=>{
   if(disturbClickTimer)clearTimeout(disturbClickTimer);
   if(fish.userData.isOrca){orca?.openMouth();return;}
   if(fish.userData.isPuffer){pufferLibrary.trigger(fish);return;}
-  if(fish.userData.isWhale)return;
+  if(fish.userData.isWhale||fish.userData.isReefVisitor)return;
   disturbClickTimer=setTimeout(()=>{
     disturbSchool(fish,false);
     disturbClickTimer=null;
@@ -4393,7 +4474,7 @@ renderer.domElement.addEventListener('dblclick',e=>{
   if(disturbClickTimer){clearTimeout(disturbClickTimer);disturbClickTimer=null;}
   if(fish.userData.isOrca){orca?.openMouth();return;}
   if(fish.userData.isPuffer){pufferLibrary.trigger(fish);return;}
-  if(fish.userData.isWhale)return;
+  if(fish.userData.isWhale||fish.userData.isReefVisitor)return;
   disturbSchool(fish,true);
 },true);
 
