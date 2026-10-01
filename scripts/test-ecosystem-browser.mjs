@@ -26,6 +26,36 @@ await context.route(origin+'/**',async route=>{
     assert.ok(html.includes(marker));
     html=html.replace(marker,`const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
       window.__ecosystemQA={
+        visitors:()=>{
+          restoreWorld({version:4,cellSize:12,worldHalf:144,cells:[],terrain:[],orca:null,whale:null,megafaunaDisabled:{orca:true,whale:true}});
+          editMode=false;referencePaused=false;camera.position.set(0,-10,15);camera.lookAt(0,-15,0);
+          const result={};
+          for(const [kind,suffix] of Object.entries(visitorIds)){
+            document.getElementById('place'+suffix).click();
+            const a=reefVisitors.get(kind);if(!a)throw Error(kind+' placement failed: '+document.getElementById(kind+'Status').textContent);
+            result[kind]={followed:selectedFish===a.root,buttons:document.getElementById('place'+suffix).hidden&&!document.getElementById('follow'+suffix).hidden&&!document.getElementById('remove'+suffix).hidden};
+          }
+          stopFollowing(false);
+          const before=Object.fromEntries([...reefVisitors].map(([k,a])=>[k,a.root.position.clone()]));
+          for(let i=0;i<700;i++){updateMegafauna(.04,500+i*.04);updateFish(.04,500+i*.04);}
+          for(const [kind,a] of reefVisitors)result[kind].travel=a.root.position.distanceTo(before[kind]);
+          const saved=worldData();restoreWorld(saved);result.restored=reefVisitors.size===2;
+          const owner=currentCloudOwnerId,id=currentCloudWorldId,loaded=cloudWorldLoaded;
+          currentCloudOwnerId='different-owner';currentCloudWorldId='test-visit';cloudWorldLoaded=true;refreshWorldPermissions();
+          result.readOnly=document.getElementById('removeStingray').disabled&&document.getElementById('placeTurtle').disabled&&!document.getElementById('followStingray').disabled;
+          document.getElementById('removeStingray').click();result.protected=reefVisitors.has('stingray');
+          document.getElementById('followStingray').click();result.guestFollow=selectedFish===reefVisitors.get('stingray').root;
+          currentCloudOwnerId=owner;currentCloudWorldId=id;cloudWorldLoaded=loaded;refreshWorldPermissions();
+          document.getElementById('removeStingray').click();document.getElementById('removeTurtle').click();
+          result.removed=reefVisitors.size===0&&!document.getElementById('placeStingray').hidden;
+          result.saved=Object.keys(saved.reefVisitors);restoreWorld(saved);return result;
+        },
+        viewVisitor:(kind,style)=>{
+          stopFollowing(false);fishRenderStyle.value=style;fishRenderStyle.dispatchEvent(new Event('change'));
+          const a=reefVisitors.get(kind);for(const [k,b] of reefVisitors)b.root.visible=k===kind;
+          a.root.position.set(0,-9,0);a.root.rotation.set(0,.35,0);a.animate(.04,3);
+          camera.position.set(4,-5,6);camera.lookAt(0,-9,0);renderer.render(scene,camera);
+        },
         streamingRocks:()=>{
           const result=[];
           for(const type of ['rocks','mixed','seagrass']){
@@ -340,4 +370,13 @@ await page.getByText('Populatiegroei en tijd',{exact:true}).click();
 assert.equal(await page.locator('#ecologySpeed').isVisible(),true);
 await page.screenshot({path:'/tmp/ocean-population-controls.png'});
 console.log(JSON.stringify({ui,empty,starving:{capacity:starving.capacity,shortage:starving.shortage,health:starving.health,reserves:starving.reserves},depleted:{health:depleted.health},burial,rich:{score:rich.score,stage:rich.stage,capacity:rich.capacity,natural:rich.natural,target:rich.target,sectors:rich.sectors.active},migration,mobile,firebaseWrites:0,errors},null,2));
+const visitors=await page.evaluate(()=>window.__ecosystemQA.visitors());
+for(const kind of ['stingray','turtle']){assert.equal(visitors[kind].followed,true);assert.equal(visitors[kind].buttons,true);assert.ok(visitors[kind].travel>2,kind+' swims');}
+for(const key of ['restored','readOnly','protected','guestFollow','removed'])assert.equal(visitors[key],true,key);
+assert.deepEqual(visitors.saved,['stingray','turtle']);
+for(const kind of ['stingray','turtle'])for(const style of ['cartoon','realistic']){
+  await page.evaluate(([kind,style])=>window.__ecosystemQA.viewVisitor(kind,style),[kind,style]);
+  await page.screenshot({path:'/tmp/ocean-'+kind+'-'+style+'.png'});
+}
+assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>window.__firebaseWrites||0),0);console.log(JSON.stringify({visitors}));
 await browser.close();
