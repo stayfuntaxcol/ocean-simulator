@@ -157,6 +157,23 @@ test('world changes replace only the destination shoals and require no stored an
   life.dispose();
 });
 
+test('one obstructed minnow cannot freeze the whole school',()=>{
+  let obstacles=[];
+  const {life,camera}=fixture({getObstacles:()=>obstacles});camera.position.set(100,5,100);
+  life.update(0,camera);const before=life.schoolSnapshot()[0];
+  const front=before.members.reduce((a,b)=>a.position[0]>b.position[0]?a:b);
+  const [x,y,z]=front.position;
+  const wall=new THREE.Box3(new THREE.Vector3(x+.6,-25,z-.5),new THREE.Vector3(x+.85,18,z+.5));
+  obstacles=[wall];
+  for(let i=0;i<800;i++)life.update(.04,camera,{revision:1});
+  const after=life.schoolSnapshot().find(s=>s.id===before.id);
+  assert.ok(after,'the original school stays present');
+  const moved=after.members.filter((f,i)=>new THREE.Vector3(...f.position).distanceTo(new THREE.Vector3(...before.members[i].position))>1);
+  assert.ok(moved.length>after.members.length/2,'unblocked members continue their journey');
+  assert.ok(after.members.every(f=>!wall.containsPoint(new THREE.Vector3(...f.position))));
+  life.dispose();
+});
+
 test('resident reef schools patrol beyond their original small orbit without respawning',()=>{
   const {life,camera}=fixture();camera.position.set(110,5,110);life.update(0,camera);
   const initial=life.schoolSnapshot();let excursion=0;
