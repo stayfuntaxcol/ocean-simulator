@@ -184,8 +184,9 @@ ongecontroleerde verticale animatieverplaatsing na deze controle.
 
 Importvissen kijken vijfmaal per seconde vooruit. Bij een obstakel onthouden zij
 hun eigen tussenpunten langs de rots, met voorrang boven schoolcohesie. De snelheid
-neemt tijdens passeren en dichtbij een voedselplek af; de gewone oriëntatie blijft
-vloeiend draaien. Bij enkele seconden zonder voortgang zoekt de school opnieuw.
+blijft tijdens passeren behouden en neemt dichtbij een voedselplek licht af; de
+oriëntatie blijft vloeiend draaien. Alleen wanneer minstens de helft van de school
+vastloopt, wordt de gezamenlijke bestemming opnieuw gekozen.
 Lage onderwaterrotsen kunnen nog steeds bovenlangs worden gepasseerd. Openingen
 tussen afzonderlijke botsingsvolumes blijven bruikbaar. Dit is een eenvoudige,
 conservatieve benadering van de rotsvorm, geen routeberekening over alle driehoeken.
@@ -193,3 +194,46 @@ conservatieve benadering van de rotsvorm, geen routeberekening over alle driehoe
 Voedseldoelen liggen onder water en buiten steen. Als alleen onbereikbare habitat
 beschikbaar is, verkent de school vrije waterruimte. De voedselcapaciteit zelf is
 niet herberekend; er worden geen extra Firebase-gegevens opgeslagen.
+
+## Doorlopende beweging en rotsen buiten beeld
+
+Rotsclusters gebruiken een vaste vorm per positie en laag. Hun afzonderlijke
+botsingsvolumes blijven tijdens de sessie bewaard wanneer een landschapvak uit
+beeld verdwijnt. Laden en verwijderen vernieuwen de botsingsindex meteen. Bij
+herstel van een ingesloten vis wordt waar mogelijk de vorige veilige kant gebruikt.
+Nieuwe importvissen en jongen krijgen direct een botsingscontrole. Gras wordt niet
+als steen geregistreerd.
+
+Kardinaalvissen leggen hun route met een zichtbare minimumsnelheid af, houden een
+verder doel langer vast en gebruiken dezelfde lokale rotsomwegen als importvissen.
+Hun gezondheid blijft onder de bestaande regels voor natuurlijke vissen vallen.
+Kleine rifscholen laten een geblokkeerd lid zelfstandig uitwijken; dat lid zet de
+overige vissen niet meer stil. De obstakels bestaan uit afzonderlijke stenen,
+zodat openingen binnen een rotscluster toegankelijk blijven.
+
+## Basiszwemmen en voedselreserve (1 oktober 2026)
+
+Importscholen gebruiken dezelfde verhouding tussen samenhang, uitlijning en
+doelgerichtheid als de blauwe rifschool. De school kiest een voedselbestemming;
+ieder lid ontwijkt lokaal steen. Een tweede schoolomweg wordt niet meer bovenop
+de individuele route toegepast. Vooruitkijken naar de bodem laat vissen tijdig
+stijgen; botsingscontrole en de watergrens blijven gelden. De bestaande
+conservatieve lichaamsmarge blijft behouden: zeer smalle spleten kunnen nog
+worden vermeden ook als het vismodel er visueel door zou passen.
+
+80% lokaal voedselaanbod dekt onderhoud. Daarboven groeit reserve geleidelijk
+tot 0,85 reserveseconde per seconde bij volledig aanbod; bij 90% is dit 0,425.
+Onder 80% bedraagt het verbruik `(1 - aanbod / 0,8)^1,5` per seconde: bij 60%
+slechts 0,125, zonder voedsel nog steeds 1. Healthgrenzen blijven ongewijzigd.
+Dit zijn spelparameters, geen biologische meetwaarden.
+
+Zodra een levend schoollid onder 75% reserve zit, kiest de school gericht op
+voorraad, duurzame capaciteit inclusief aankomende scholen en reisafstand.
+De trekkracht naar het voedseldoel neemt dan toe. Een goede bestemming tijdens
+de reis blijft behouden; bij voldoende aanbod wordt niet elke twaalf seconden
+opnieuw vertrokken alleen omdat reserves nog laag zijn. Berekeningen gebeuren
+lokaal; er zijn geen nieuwe Firebase-velden, listeners of schrijfacties.
+
+Verificatie: unit-tests voor 0/60/80/90% aanbod en een browsertest met acht
+importvissen die een boven water uitstekende rots passeren, plus controles van
+hongerprioriteit, gras, rotsstreaming, schooldeling en bestaande dierfuncties.
