@@ -140,7 +140,7 @@ export function healthMotionFactor(health){
   return 1;
 }
 
-export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0,metabolism=1}={}){
+export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0,metabolism=1,resting=false}={}){
   const next={...createImportedVitality(),...vitality};
   const delta=clamp(clean(dt),0,.25),supply=clamp(clean(foodSupply),0,1),heat=clamp(clean(hazard),0,1),energyUse=clamp(clean(metabolism,1),.75,1.25);
   next.health=clamp(clean(next.health,100),0,100);
@@ -154,7 +154,11 @@ export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0,metab
   const deficit=Math.pow(Math.max(0,1-supply/.8),1.5);
   const recovery=Math.max(0,(supply-.8)/.2);
   if(next.state!=='sinking'&&next.state!=='burial'&&next.state!=='dead'){
-    if(deficit>0){
+    if(resting){
+      // Night rest is metabolically neutral: no eating, no reserve drain and no starvation.
+      // Environmental hazards can still damage a sleeping fish below.
+      next.starvationSeconds=Math.max(0,next.starvationSeconds-delta*.25);
+    }else if(deficit>0){
       next.foodReserve=Math.max(0,next.foodReserve-delta*deficit*energyUse);
       if(next.foodReserve<=0)next.starvationSeconds+=delta*deficit*energyUse;
     }else{
