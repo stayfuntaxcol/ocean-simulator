@@ -62,6 +62,20 @@ test('critical fish slow at twenty percent and stop at five percent',()=>{
   assert.equal(sinking.state,'sinking');
 });
 
+test('partial feeding supports maintenance and gradual reserve recovery',()=>{
+  const simulate=supply=>{
+    let fish={...createImportedVitality(),foodReserve:120};
+    for(let t=0;t<60;t+=.25)fish=advanceImportedVitality(fish,.25,{foodSupply:supply});
+    return fish;
+  };
+  assert.ok(Math.abs(simulate(.9).foodReserve-145.5)<1e-6);
+  assert.equal(simulate(.8).foodReserve,120);
+  assert.ok(Math.abs(simulate(.6).foodReserve-112.5)<1e-6);
+  assert.equal(simulate(0).foodReserve,60);
+  const recovering=advanceImportedVitality({...createImportedVitality(),health:60,foodReserve:0,starvationSeconds:60},.25,{foodSupply:.8});
+  assert.equal(recovering.health,60,'maintenance stops starvation damage');
+});
+
 test('every fish profile receives a finite migration interval of a few minutes',()=>{
   for(const species of ['reef_0','reef_1','reef_2','reef_3','reef_4','reef_5','reef_6','reef_7','custom-import']){
     const early=residenceDuration(species,0),late=residenceDuration(species,1);

@@ -447,7 +447,7 @@ import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveF
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { evaluateEcosystem, naturalPopulationPlan, ecosystemAdvice } from './graphics/Ecosystem.js';
 import { growthBudget, juvenileScale, MATURITY_SECONDS, MAX_POPULATION } from './graphics/PopulationGrowth.js';
-import { moveImportedFish, planSurfaceRockDetour, createRockIndex, steerImportedFish } from './graphics/ImportedNavigation.js';
+import { moveImportedFish, createRockIndex, steerImportedFish } from './graphics/ImportedNavigation.js';
 import { FOOD_SECTOR_SIZE, advanceImportedVitality, buildFoodSectors, createImportedVitality, fishBiomass, foodAtPosition, foodSectorKey, healthMotionFactor, residenceDuration, summarizeFoodSectors, updateFoodSectors } from './graphics/FishVitality.js';
 import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
@@ -866,7 +866,9 @@ function styleReef(root,type,color){
 
 // Massieve natuurwet: rotslagen zijn ondoordringbaar voor camera en vissen.
 const rockCollisionRoots = new Set();
-function removeReefRoot(root){ reefLife.release(root); rockLibrary.release(root); rockCollisionRoots.delete(root); reef.remove(root); }
+let rockCollisionRevision=0;
+const rockCellVolumes=new Map();
+function removeReefRoot(root){ reefLife.release(root); rockLibrary.release(root); if(rockCollisionRoots.delete(root))rockCollisionRevision++; reef.remove(root); }
 const reefMobile = matchMedia('(max-width: 800px)').matches;
 const reefScale = reefMobile ? .55 : 1;
 const coralColors = [0xff6f61,0xf3a6c8,0xd96aa7,0xffb347,0xf5d76e,0x8f79c6,0x58b7a7,0x77c46b,0xe67e50];
@@ -881,16 +883,17 @@ function randXZ(radius=250){
   const a=oceanRandom()*Math.PI*2, r=12+Math.pow(oceanRandom(),.72)*radius;
   return [Math.cos(a)*r,Math.sin(a)*r];
 }
-function addRockCluster(x,z,scale=1){
+function addRockCluster(x,z,scale=1,layerSeed=0){
+  const random=seededRandom((Math.round(x*73856093)^Math.round(z*19349663)^Math.imul(Number(layerSeed)||0,83492791))>>>0);
   const g=new THREE.Group();
   g.userData.orcaRock=true;
-  const n=2+Math.floor(oceanRandom()*5);
+  const n=2+Math.floor(random()*5);
   for(let i=0;i<n;i++){
-    const r=(1.2+oceanRandom()*4.8)*scale;
-    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),reefMat(rockColors[Math.floor(oceanRandom()*rockColors.length)]));
-    m.scale.set(1+.8*oceanRandom(),.55+oceanRandom()*.8,.8+oceanRandom()*.9);
-    m.position.set((oceanRandom()-.5)*5*scale,(r*.35)-.5,(oceanRandom()-.5)*5*scale);
-    m.rotation.set(oceanRandom(),oceanRandom()*Math.PI,oceanRandom()*.35);
+    const r=(1.2+random()*4.8)*scale;
+    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),reefMat(rockColors[Math.floor(random()*rockColors.length)]));
+    m.scale.set(1+.8*random(),.55+random()*.8,.8+random()*.9);
+    m.position.set((random()-.5)*5*scale,(r*.35)-.5,(random()-.5)*5*scale);
+    m.rotation.set(random(),random()*Math.PI,random()*.35);
     // Position-derived appearance survives streaming without consuming the scene RNG.
     const stoneSeed = Math.abs(Math.round(x*73856093 + z*19349663 + i*83492791)) >>> 0;
     rockLibrary.decorate(m,r,stoneSeed);
@@ -1567,7 +1570,7 @@ function markLayerRoots(before,key,layerId,type,supportRoots){
     root.userData.editorLayerId=layerId;
     root.userData.editorLayerType=type;
     root.userData.isSolidRock = type==='rocks'||Boolean(root.userData.orcaRock);
-    if(root.userData.isSolidRock) rockCollisionRoots.add(root);
+    if(root.userData.isSolidRock){rockCollisionRoots.add(root);rockCollisionRevision++;}
     roots.push(root);
   }
   placeRootsOnExistingSurface(roots,supportRoots);
@@ -1767,8 +1770,8 @@ function instantiateLayerVisual(ix,iz,layerId,type){
   const before=reef.children.length;
 
   if(type==='rocks'){
-    addRockCluster(cx,cz,1.15+seededJitter(ix,iz,1,layerSeed)*1.15);
-    if(seededJitter(ix,iz,2,layerSeed)>.35) addRockCluster(px(2),pz(2),.55+.55*seededJitter(ix,iz,3,layerSeed));
+    addRockCluster(cx,cz,1.15+seededJitter(ix,iz,1,layerSeed)*1.15,layerSeed);
+    if(seededJitter(ix,iz,2,layerSeed)>.35) addRockCluster(px(2),pz(2),.55+.55*seededJitter(ix,iz,3,layerSeed),layerSeed);
   }else if(type==='coral'){
     addBranchCoral(px(1),pz(1),.8+seededJitter(ix,iz,2,layerSeed)*.75,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
     addPlateCoral(px(4),pz(4),.7+seededJitter(ix,iz,5,layerSeed)*.8,coralColors[Math.floor(seededJitter(ix,iz,6,layerSeed)*coralColors.length)]);
@@ -1780,7 +1783,7 @@ function instantiateLayerVisual(ix,iz,layerId,type){
     addAnemone(px(4),pz(4),.7+seededJitter(ix,iz,5,layerSeed)*.55,coralColors[Math.floor(seededJitter(ix,iz,6,layerSeed)*coralColors.length)]);
     addStarfish(px(7),pz(7),.45+.3*seededJitter(ix,iz,8,layerSeed),coralColors[Math.floor(seededJitter(ix,iz,9,layerSeed)*coralColors.length)]);
   }else{
-    addRockCluster(cx,cz,.75+seededJitter(ix,iz,1,layerSeed)*.9);
+    addRockCluster(cx,cz,.75+seededJitter(ix,iz,1,layerSeed)*.9,layerSeed);
     addBranchCoral(px(2),pz(2),.6+seededJitter(ix,iz,3,layerSeed)*.65,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
     addPlateCoral(px(5),pz(5),.55+seededJitter(ix,iz,6,layerSeed)*.6,coralColors[Math.floor(seededJitter(ix,iz,7,layerSeed)*coralColors.length)]);
     addSponge(px(8),pz(8),.55+.45*seededJitter(ix,iz,9,layerSeed),coralColors[Math.floor(seededJitter(ix,iz,10,layerSeed)*coralColors.length)]);
@@ -1800,6 +1803,9 @@ function instantiateCell(key){
 }
 
 function unloadCellVisuals(key){
+  const volumes=[];
+  for(const root of activeRockRoots())if(root.userData.editorCell===key)volumes.push(...rockVolumesForRoot(root));
+  rockCellVolumes.set(key,{signature:JSON.stringify(worldCells.get(key)),volumes});
   for(let i=reef.children.length-1;i>=0;i--){
     if(reef.children[i].userData.editorCell===key) removeReefRoot(reef.children[i]);
   }
@@ -1807,6 +1813,7 @@ function unloadCellVisuals(key){
 }
 
 function clearAllWorldVisuals(){
+  rockCellVolumes.clear();rockCollisionRevision++;
   for(let i=reef.children.length-1;i>=0;i--){
     if(reef.children[i].userData.editorCell) removeReefRoot(reef.children[i]);
   }
@@ -3262,6 +3269,7 @@ function foodWeightForCell(cell){
 function chooseImportedFeedingTarget(school,t){
   const own=school.members.reduce((sum,f)=>sum+(f.parent&&!f.userData.dead?(f.userData.biomass||1):0),0)||1;
   const current=localFoodAt(school.center.x,school.center.z),options=[];
+  const hungry=school.members.some(f=>f.parent&&!f.userData.dead&&f.userData.foodReserve/f.userData.maxFoodReserve<.75);
   const radius=Math.max(FISH_RADIUS,...school.members.map(f=>f.userData.contactRadius||FISH_RADIUS));
   const maxY=Math.min(...school.members.map(waterLimit))-.2;
   const edible=h=>h.livingPoints.filter(p=>p.y+radius<maxY&&terrainHeightAt(p.x,p.z)+radius<maxY);
@@ -3275,12 +3283,17 @@ function chooseImportedFeedingTarget(school,t){
     const demand=Math.max(0,sector.demand-(current.key===sector.key?own:0))+reserved;
     const space=Math.max(.02,(sector.capacity-demand)/Math.max(own,1));
     const stock=sector.maxFood?sector.stock/sector.maxFood:0;
-    const same=(school.forceMigration&&sector.key===school.currentFoodSector?.02:1)*(sector.key===school.avoidSector?.005:1);
+    const same=(!hungry&&school.forceMigration&&sector.key===school.currentFoodSector?.02:1)*(sector.key===school.avoidSector?.005:1);
     const distance=Math.hypot(sector.x-school.center.x,sector.z-school.center.z);
-    options.push({value:{sector,habitat},weight:same*space*space*(.05+stock*stock)/(1+distance/180)});
+    // Include our arriving school and other schools already en route. Cap
+    // surplus capacity so a huge distant reef cannot overwhelm a nearby meal.
+    const sustainable=Math.min(1,sector.capacity/Math.max(1,demand+own));
+    const foodScore=same*(.15+.85*stock)*sustainable*sustainable/(1+distance/60);
+    options.push({value:{sector,habitat},weight:same*Math.min(4,space)**2*(.05+stock*stock)/(1+distance/180),foodScore});
   }
   const elsewhere=school.avoidSector&&options.some(item=>item.value.sector.key!==school.avoidSector&&item.value.sector.stock>item.value.sector.maxFood*.4);
-  const choice=weightedRandom(elsewhere?options.filter(item=>item.value.sector.key!==school.avoidSector):options);if(!choice)return false;
+  const candidates=elsewhere?options.filter(item=>item.value.sector.key!==school.avoidSector):options;
+  const choice=hungry?candidates.sort((a,b)=>b.foodScore-a.foodScore)[0]?.value:weightedRandom(candidates);if(!choice)return false;
   const h=choice.habitat[Math.floor(oceanRandom()*choice.habitat.length)],points=edible(h),point=points[Math.floor(oceanRandom()*points.length)];
   const p=new THREE.Vector3(point.x,Math.min(maxY,Math.max(point.y+radius+.5,terrainHeightAt(point.x,point.z)+radius+.5)),point.z);
   const boxes=importedRockBoxes();
@@ -3292,11 +3305,9 @@ function chooseImportedFeedingTarget(school,t){
 }
 
 let importBoxes=[],importBoxTime=-Infinity,importBoxStamp='',importIndexBoxes=null,importRockQuery=null;
-function importedRockBoxes(){
-  const now=performance.now()/1000,stamp=`${habitatRevision}:${lastStreamingCell}`;
-  if(stamp===importBoxStamp&&now-importBoxTime<.75)return importBoxes;
-  importBoxStamp=stamp;importBoxTime=now;importBoxes=[];
-  for(const root of activeRockRoots())root.traverse(o=>{if(o.isMesh){
+function rockVolumesForRoot(root){
+  const volumes=[];
+  root.traverse(o=>{if(o.isMesh){
     o.updateWorldMatrix(true,false);
     const box=new THREE.Box3().setFromObject(o),appearance=o.userData.rockAppearance;
     // Enclose either appearance/LOD so a style switch cannot put a fish in stone.
@@ -3304,11 +3315,22 @@ function importedRockBoxes(){
       if(!geometry.boundingBox)geometry.computeBoundingBox();
       box.union(geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
     }
-    importBoxes.push(box);
+    volumes.push(box);
   }});
-  for(const [key,layers] of worldCells)if(!activeWorldCells.has(key))for(const layer of layers)if(layer.type==='rocks'||layer.type==='mixed'){
+  return volumes;
+}
+function importedRockBoxes(){
+  const now=performance.now()/1000,stamp=`${habitatRevision}:${lastStreamingCell}:${rockCollisionRevision}`;
+  if(stamp===importBoxStamp&&now-importBoxTime<.75)return importBoxes;
+  importBoxStamp=stamp;importBoxTime=now;importBoxes=[];
+  for(const root of activeRockRoots())importBoxes.push(...rockVolumesForRoot(root));
+  for(const [key,layers] of worldCells)if(!activeWorldCells.has(key)){
+    const saved=rockCellVolumes.get(key);
+    if(saved?.signature===JSON.stringify(layers)){importBoxes.push(...saved.volumes);continue;}
+    for(const layer of layers)if(layer.type==='rocks'||layer.type==='mixed'){
     const p=layer.habitatPoint||fallbackLayerHabitatPoint(key,layer),floor=terrainHeightAt(p.x,p.z);
     importBoxes.push(new THREE.Box3(new THREE.Vector3(p.x-CELL*.6,floor,p.z-CELL*.6),new THREE.Vector3(p.x+CELL*.6,Math.max(floor+5,p.y-1.1),p.z+CELL*.6)));
+    }
   }
   return importBoxes;
 }
@@ -3318,26 +3340,40 @@ function nearbyImportRocks(position,reach){
   return importRockQuery(position,reach);
 }
 function steerImport(fish,direction,school,dt){
-  const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS);
+  const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||fishExtent(fish).length());
   const state=fish.userData.rockRoute||(fish.userData.rockRoute={});
   const result=steerImportedFish(fish.position,direction,school.navWaypoint||school.target,
     nearbyImportRocks(fish.position,24+radius),radius,state,dt,
     {minY:MIN_SWIM_Y,maxY:waterLimit(fish),terrain:terrainHeightAt});
-  if(state.stalled){school.forceMigration=true;school.retargetAt=0;state.stalled=false;}
-  direction.copy(result.direction);return result.pace;
+  // A single fish negotiating a corner must not reset every school member.
+  if(state.stalled)state.stalled=false;
+  direction.copy(result.direction);
+  const ahead=fish.position.clone().addScaledVector(direction.clone().normalize(),2);
+  const floor=terrainHeightAt(ahead.x,ahead.z)+radius+.2;
+  if(floor>fish.position.y&&floor<waterLimit(fish))direction.y=Math.max(direction.y,Math.min(1,(floor-fish.position.y)*.7));
+  return result.pace;
 }
 function moveImportSafely(fish,next,dt,school){
-  const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS);
+  const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||fishExtent(fish).length());
   const ground=Math.max(...[0,.5,1].map(a=>terrainHeightAt(THREE.MathUtils.lerp(fish.position.x,next.x,a),THREE.MathUtils.lerp(fish.position.z,next.z,a))));
   // A steep seabed blocks horizontal travel; never lift the start through a rock.
   if(next.y<ground+radius){
-    if(ground+radius-fish.position.y>.25){next.x=fish.position.x;next.z=fish.position.z;}
+    if(ground+radius-fish.position.y>.25){next.x=fish.position.x;next.z=fish.position.z;next.y=Math.max(next.y,fish.position.y+Math.min(.6,school.cruiseSpeed)*dt);}
     else next.y=ground+radius;
   }
   const result=moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+radius+4),radius,
     {minY:terrainHeightAt(fish.position.x,fish.position.z)+radius,maxY:waterLimit(fish)});
+  // Streaming, growth or a new import can enclose the start. Return to the last
+  // safe side instead of jumping through to the opposite face of the stone.
+  if(result.recovered&&fish.userData.lastRockSafe){
+    const previous=fish.userData.lastRockSafe;
+    const safe=moveImportedFish(previous,previous,nearbyImportRocks(previous,radius+4),radius,
+      {minY:terrainHeightAt(previous.x,previous.z)+radius,maxY:waterLimit(fish)});
+    if(!safe.blocked)result.position.copy(previous);
+  }
   const moved=fish.position.distanceTo(result.position);
   fish.position.copy(result.position);
+  if(!result.trapped)fish.userData.lastRockSafe=fish.position.clone();
   if(result.normal){
     const inward=fish.userData.velocity.dot(result.normal);
     if(inward<0)fish.userData.velocity.addScaledVector(result.normal,-inward);
@@ -3347,8 +3383,9 @@ function moveImportSafely(fish,next,dt,school){
   if(fish.userData.blockedSeconds>3){
     if(state){state.route=null;state.tangent=null;state.nextSense=0;}
     const now=simulationTime();
-    if(now>=(school.routeResetAt||0)){
-      school.routeResetAt=now+4;school.forceMigration=true;school.retargetAt=0;
+    const stuck=school.members.filter(f=>f.parent&&!f.userData.dead&&(f.userData.blockedSeconds||0)>2).length;
+    if(stuck>=Math.max(1,Math.ceil(school.members.length/2))&&now>=(school.routeResetAt||0)){
+      school.routeResetAt=now+12;school.forceMigration=true;school.retargetAt=0;
       school.navWaypoint=null;school.navRemaining=null;school.navRetryAt=0;
     }
     fish.userData.blockedSeconds=0;
@@ -3399,7 +3436,7 @@ function chooseSchoolTarget(school,t){
     }
     const preferred=cell?.livingPoints.filter(p=>school.speciesId==='reef_0'?['coral','mixed','anemone'].includes(p.type):school.speciesId==='reef_1'?['seagrass','mixed'].includes(p.type):school.speciesId==='reef_2'?['coral','mixed'].includes(p.type):school.speciesId==='reef_4'?['coral','mixed','seagrass'].includes(p.type):school.speciesId==='reef_3'?['mixed','seagrass','coral'].includes(p.type):school.speciesId==='reef_5'?['anemone','coral','mixed'].includes(p.type):school.speciesId==='reef_7'?['coral','mixed'].includes(p.type):true);
     const point=preferred?.length?preferred[0]:cell?.livingPoints[0];
-    const radius=policy.kind==='family'?2.2:policy.kind==='bottom'?4:policy.kind==='puffer'?3.2:policy.kind==='coral-pair'?3.8:policy.kind==='cardinal'?1.5:policy.kind==='chromis'?3:policy.kind==='tang'?5.5:7;
+    const radius=policy.kind==='family'?2.2:policy.kind==='bottom'?4:policy.kind==='puffer'?3.2:policy.kind==='coral-pair'?3.8:policy.kind==='cardinal'?3.5:policy.kind==='chromis'?3:policy.kind==='tang'?5.5:7;
     const angle=oceanRandom()*Math.PI*2;
     const x=THREE.MathUtils.clamp((point?.x??c.x)+Math.cos(angle)*radius,-WORLD_HALF+4,WORLD_HALF-4);
     const z=THREE.MathUtils.clamp((point?.z??c.z)+Math.sin(angle)*radius,-WORLD_HALF+4,WORLD_HALF-4);
@@ -3408,6 +3445,7 @@ function chooseSchoolTarget(school,t){
     school.target.set(x,Math.min(policy.reefHeight?18:12,y),z);
     school.targetCell=cell?.key??null;school.targetLayer=point?.layerId??null;school.targetHabitat=point?.score??0;
     school.mode=policy.kind;school.retargetAt=t+(policy.kind==='family'?3:policy.kind==='bottom'?9:policy.kind==='puffer'?14:policy.kind==='coral-pair'?6:policy.kind==='cardinal'?18:policy.kind==='chromis'?5:8)+oceanRandom()*5;
+    if(policy.kind==='cardinal')school.retargetAt=t+Math.max(9,c.distanceTo(school.target)/.3+4);
     school.forceMigration=false;
     return;
   }
@@ -3645,6 +3683,9 @@ function updateSchoolBrains(t){
     if(school.navWaypoint)school.navWaypoint.y=Math.min(school.navWaypoint.y,16);
     if(school.forceMigration||t>=school.retargetAt || (!school.importTemplate&&!SPECIES_POLICY[school.speciesId] && school.center.distanceTo(school.target)<10))chooseSchoolTarget(school,t);
 
+    // Imported fish share a destination, not an additional competing obstacle
+    // route. Each member follows the same local steering and swept safety pass.
+    if(school.importTemplate){school.navWaypoint=null;school.navRemaining=null;continue;}
     markSchoolRouteProgress(school,t);
 
     if(school.navWaypoint){
@@ -3659,19 +3700,6 @@ function updateSchoolBrains(t){
     }
 
     if(!school.navWaypoint && t>=school.navRetryAt){
-      if(school.importTemplate){
-        const radius=Math.max(FISH_RADIUS,...members.map(f=>f.userData.contactRadius||FISH_RADIUS));
-        const maxY=Math.min(...members.map(waterLimit));
-        const route=planSurfaceRockDetour(school.center,school.target,importedRockBoxes(),radius,
-          {maxY,minY:MIN_SWIM_Y,terrain:terrainHeightAt,preferredSide:(school.detourAttempt||0)%2?-1:1});
-        if(route){
-          school.navWaypoint=route.waypoints[0];school.navRemaining=[route.waypoints[1]];
-          school.navHoldUntil=t+2.6;school.navRetryAt=t+.7;
-          school.navLastProgressAt=t;school.navLastCenter.copy(school.center);
-          school.navLastProgressDist=school.center.distanceTo(school.navWaypoint);
-          continue;
-        }
-      }
       const directHit=segmentRockHit(school.center,school.target,FISH_RADIUS+.08);
       if(!directHit){
         school.navRetryAt=t+.7;
@@ -3727,7 +3755,7 @@ function spawnImportedSchool(source,fileName,count){
   rememberImport(fileName);
   count=Math.min(Math.max(0,Math.floor(Number(count)||0)),Math.max(0,MAX_POPULATION-fishes.length));
   const speciesId=speciesFromName(fileName);
-  const school=makeSchool(speciesId,{cohesion:.67,alignment:.58,separation:.82,habitatPull:.57,exploration:.20,cruiseSpeed:1.35});
+  const school=makeSchool(speciesId,{cohesion:.62,alignment:.72,separation:.82,habitatPull:.85,exploration:.20,cruiseSpeed:1.35});
   school.importTemplate=source;school.sourceName=fileName;school.birthCredit=0;
   const forward=new THREE.Vector3(); camera.getWorldDirection(forward).normalize();
   const rightVec=new THREE.Vector3().crossVectors(forward,camera.up).normalize();
@@ -3744,6 +3772,7 @@ function spawnImportedSchool(source,fileName,count){
     fish.userData.speed=fish.userData.velocity.length(); fish.userData.tail=fish.getObjectByName('Tail')||null;
     fish.userData.imported=true;fish.userData.health=100;fish.userData.sourceName=fileName;
     registerFish(fish,speciesId,school);
+    moveImportSafely(fish,fish.position.clone(),0,school);
     orientFishForward(fish,fish.position.clone().add(dir)); scene.add(fish); fishes.push(fish);
   }
   school.center.copy(spawnCenter); chooseSchoolTarget(school,simulationTime());
@@ -3762,10 +3791,14 @@ function updateEcology(dt){
       if(school.foodCheck<12)continue;school.foodCheck=0;
       const members=school.members.filter(f=>f.parent&&!f.userData.dead);if(!members.length)continue;
       const food=localFoodAt(school.center.x,school.center.z);
-      const reserves=members.reduce((sum,f)=>sum+f.userData.foodReserve/f.userData.maxFoodReserve,0)/members.length;
+      const reserves=Math.min(...members.map(f=>f.userData.foodReserve/f.userData.maxFoodReserve));
       const destination=foodSectors.get(school.feedingSector);
       if(destination&&school.currentFoodSector!==school.feedingSector&&school.center.distanceTo(school.target)>8&&destination.stock>destination.maxFood*.5&&destination.demand<destination.capacity)continue;
-      if(food.stockRatio<.4||food.supply<.85||reserves<.65){school.forceMigration=true;school.retargetAt=0;school.navWaypoint=null;}
+      // Stay long enough to refill at a good feeding ground. Low reserve alone
+      // used to restart migration every twelve seconds, even while recovering.
+      if(food.supply<.8||(food.stockRatio<.4&&food.demand>food.capacity)||(reserves<.75&&food.supply<.95)){
+        school.forceMigration=true;school.retargetAt=0;school.navWaypoint=null;
+      }
     }
   }
 }
@@ -3813,6 +3846,7 @@ function updatePopulationGrowth(dt){
     fish.userData.contactRadius*=juvenileScale(0);
     fish.userData.biomass=fishBiomass({imported:true,contactRadius:fish.userData.contactRadius,scale:fish.scale.x});
     fish.userData.localFoodSupply=food.supply;
+    moveImportSafely(fish,fish.position.clone(),0,school);
     orientFishForward(fish,fish.position.clone().add(fish.userData.velocity));scene.add(fish);fishes.push(fish);
     // Offspring use the existing school steering, collision and sector migration.
     room-=Math.max(1,adultBiomass);
@@ -3963,6 +3997,7 @@ function updateFish(dt,t){
         updateDyingFish(fish,dt,t);continue;
       }
       const vitalityPace=fish.userData.imported?healthMotionFactor(fish.userData.health):1;
+      const useRockNavigator=fish.userData.imported||policy?.kind==='cardinal';
       const contactRadius=fish.userData.imported?Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS):fish.userData.isPuffer?Math.max(FISH_RADIUS,(.98+(fish.userData.pufferInflation||0)*.8)*fish.scale.x):Math.max(FISH_RADIUS,(policy?.bodyClearance||0)*fish.scale.x);
       if(fish.userData.isPuffer){p.y=Math.max(p.y,terrainHeightAt(p.x,p.z)+(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x);constrainWater(fish);}
       const dx=p.x-camX,dy=p.y-camY,dz=p.z-camZ,distSq=dx*dx+dy*dy+dz*dz;
@@ -3971,12 +4006,12 @@ function updateFish(dt,t){
 
       // Ver weg: alleen goedkope schoolsimulatie. Dichtbij: volledige boids.
       if(!visible){
-        if(policy)continue;
+        if(policy&&!useRockNavigator)continue;
         targetV.copy(school.navWaypoint||school.target).sub(p); if(targetV.lengthSq()>1) targetV.normalize();
-        const importPace=fish.userData.imported?steerImport(fish,targetV,school,dt):1;
+        const importPace=useRockNavigator?steerImport(fish,targetV,school,dt):1;
         fish.userData.velocity.lerp(targetV.multiplyScalar(school.cruiseSpeed*vitalityPace*importPace),Math.min(1,dt*(fish.userData.imported?1.45:.16)));
         collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
-        if(fish.userData.imported){
+        if(useRockNavigator){
           moveImportSafely(fish,collisionTmp2,dt,school);
         }else if(cellHasRockAt(collisionTmp2.x,collisionTmp2.z)){
           // Buiten beeld vermijden we de cel conservatief zonder automatisch omhoog te sturen.
@@ -4030,7 +4065,8 @@ function updateFish(dt,t){
       }
       const destinationDistance=targetV.distanceTo(p);
       targetV.sub(p); if(targetV.lengthSq())targetV.normalize();
-      desiredV.addScaledVector(targetV,school.habitatPull*(1-panic*.72));
+      const feedingPull=fish.userData.imported&&fish.userData.foodReserve/fish.userData.maxFoodReserve<.75?1.45:1;
+      desiredV.addScaledVector(targetV,school.habitatPull*feedingPull*(1-panic*.72));
       // Organische individuele variatie voorkomt een mechanische zwerm.
       wanderV.set(Math.sin(t*.73+fish.userData.wanderPhase),Math.sin(t*.49+fish.userData.phase)*.22,Math.cos(t*.67+fish.userData.wanderPhase));
       desiredV.addScaledVector(wanderV,(policy?.kind==='bottom'?.06:policy?.kind==='family'?.09:policy?.kind==='puffer'?.045:policy?.kind==='coral-pair'?.11:policy?.kind==='cardinal'?.025:policy?.kind==='tang'?.075:policy?.kind==='chromis'?.10:.19)*fish.userData.personality);
@@ -4046,7 +4082,7 @@ function updateFish(dt,t){
 
       // Lokale veiligheid: alleen een kleine zijwaartse correctie vlak voor een rots.
       // De grote route komt uitsluitend van het school-waypoint.
-      if(!fish.userData.imported&&fish.userData.velocity.lengthSq()>.001){
+      if(!useRockNavigator&&fish.userData.velocity.lengthSq()>.001){
         collisionTmp.copy(fish.userData.velocity).normalize();
         collisionTmp2.copy(p).addScaledVector(collisionTmp,2.8);
         const rockAhead=segmentRockHit(p,collisionTmp2,contactRadius);
@@ -4066,7 +4102,7 @@ function updateFish(dt,t){
         }
       }
       desiredV.add(avoidFish(fish,neighborhood.neighbors(fish),avoidV));
-      const importPace=fish.userData.imported?steerImport(fish,desiredV,school,dt):1;
+      const importPace=useRockNavigator?steerImport(fish,desiredV,school,dt):1;
       if(fish.userData.restState==='settling')desiredV.set(0,0,0);
       if(desiredV.lengthSq()){
         const panicSpeed=1+panic*.95;
@@ -4094,8 +4130,8 @@ function updateFish(dt,t){
         if(ground+clearance-p.y>.25){collisionTmp2.x=p.x;collisionTmp2.z=p.z;fish.userData.velocity.y=Math.max(.2,fish.userData.velocity.y);}
         else collisionTmp2.y=ground+clearance;
       }
-      const fishHit=fish.userData.imported?null:segmentRockHit(collisionTmp,collisionTmp2,contactRadius);
-      if(fish.userData.imported){
+      const fishHit=useRockNavigator?null:segmentRockHit(collisionTmp,collisionTmp2,contactRadius);
+      if(useRockNavigator){
         moveImportSafely(fish,collisionTmp2,dt,school);
       }else if(fishHit){
         const travel=collisionTmp2.clone().sub(collisionTmp);
@@ -4126,8 +4162,9 @@ function updateFish(dt,t){
   for(const f of frameFish)if(!['sinking','burial'].includes(f.userData.vitalState))constrainWater(f);
   resolveFishContacts(frameFish.filter(f=>f.visible&&!['sinking','burial'].includes(f.userData.vitalState)),previous,(fish,next)=>{
     const clearance=fish.userData.speciesId==='reef_6'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:Math.max(.45,(SPECIES_POLICY[fish.userData.speciesId]?.bodyClearance||0)*fish.scale.x);
+    const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||(fish.userData.speciesId==='reef_5'?fishExtent(fish).length():FISH_RADIUS));
     return next.y<=waterLimit(fish)&&next.y>=terrainHeightAt(next.x,next.z)+clearance
-      && (fish.userData.imported?!moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+(fish.userData.contactRadius||FISH_RADIUS)+4),Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS),{minY:terrainHeightAt(next.x,next.z)+clearance,maxY:waterLimit(fish)}).blocked:!segmentRockHit(fish.position,next,FISH_RADIUS));
+      && (fish.userData.imported||fish.userData.speciesId==='reef_5'?!moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+radius+4),radius,{minY:terrainHeightAt(next.x,next.z)+clearance,maxY:waterLimit(fish)}).blocked:!segmentRockHit(fish.position,next,FISH_RADIUS));
   });
   for(const f of frameFish){
     if(f.userData.burialComplete){removeBuriedFish(f);continue;}
@@ -4617,7 +4654,7 @@ const microLife=createMicroLife({scene,terrain:terrainHeightAt,boundary:WORLD_HA
   getShelters:()=>reef.children.filter(r=>r.userData.orcaRock).map(r=>new THREE.Box3().setFromObject(r)),
   getThreats:()=>fishes.filter(f=>f.parent&&f.visible&&!f.userData.dead)
     .map(f=>({position:f.position,radius:Math.max(...fishExtent(f).toArray())})).filter(f=>f.radius>.8),
-  getObstacles:()=>[...reef.children.filter(r=>r.userData.orcaRock),...lavaVents.map(v=>v.root)].map(r=>new THREE.Box3().setFromObject(r))
+  getObstacles:()=>[...importedRockBoxes(),...lavaVents.map(v=>new THREE.Box3().setFromObject(v.root))]
 });
 addEventListener('pagehide',()=>microLife.dispose(),{once:true});
 function animate(){

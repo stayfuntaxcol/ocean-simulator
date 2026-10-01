@@ -15,8 +15,8 @@ export function moveImportedFish(from,to,obstacles,radius,{minY=-40,maxY=18}={})
       if(free(p))candidates.push(p);
     }
     candidates.sort((a,b)=>a.distanceToSquared(start)-b.distanceToSquared(start));
-    if(!candidates.length)return {position:start,blocked:true};
-    return {position:candidates[0],blocked:true};
+    if(!candidates.length)return {position:start,blocked:true,trapped:true};
+    return {position:candidates[0],blocked:true,recovered:true};
   }
   const delta=to.clone().sub(start),length=delta.length();
   if(!length)return {position:start,blocked:false};
@@ -134,6 +134,7 @@ export function steerImportedFish(position,desired,goal,obstacles,radius,state,d
   const out=state.route?.length?state.route[0].clone().sub(position).normalize():state.tangent?.clone()||desired.clone();
   const grazing=state.nearRock&&!state.route?.length&&position.distanceTo(goal)<3;
   state.mode=state.route?.length||state.tangent?'passing':grazing?'grazing':'travel';
-  // Slow, bounded feeding passes; the school still owns residence/migration time.
-  return {direction:out,pace:grazing?.4:state.mode==='passing'?.72:1};
+  // Let the school's normal swim rhythm govern speed. Proximity to rock alone
+  // is not a reason to crawl: safety comes from swept contact and sliding.
+  return {direction:out,pace:grazing?.8:1};
 }
