@@ -37,12 +37,13 @@ export async function getFish(id) {
     tx.objectStore('assets').get(id).onsuccess=e=>{asset=e.target.result||null;finish();};
   });
 }
-export async function saveFish({id,blob,project=null,thumbnail='',name,author='',species='',source='studio'}) {
+export async function saveFish({id,blob,project=null,thumbnail='',name,author='',species='',source='studio',oceanProfile=null}) {
   if(!(blob instanceof Blob)||!blob.size||blob.size>MAX_FISH_BYTES)throw Error('Kies een GLB-bestand van maximaal 25 MB.');
   name=String(name||'').trim().slice(0,80);if(!name)throw Error('Geef je vis eerst een naam.');
   // Store the same labelled bytes that we share, so a downloaded backup can be
   // re-imported without duplicating its entry.
-  const bytes=labelGlb(await blob.arrayBuffer(),{name,author});
+  oceanProfile=oceanProfile||project?.oceanProfile||null;
+  const bytes=labelGlb(await blob.arrayBuffer(),{name,author,oceanProfile});
   if(bytes.byteLength>MAX_FISH_BYTES)throw Error('Het complete deelbestand is groter dan 25 MB.');
   blob=new Blob([bytes],{type:'model/gltf-binary'});
   const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -53,7 +54,8 @@ export async function saveFish({id,blob,project=null,thumbnail='',name,author=''
       if(duplicate&&duplicate.id!==id){done({id:duplicate.id,duplicate:true});return;}
       const write=old=>{
         const key=id||crypto.randomUUID(),now=Date.now();
-        meta.put({id:key,name,author:String(author).trim().slice(0,60),species,source,hash,size:blob.size,thumbnail,editable:!!project,favorite:old?.favorite||false,createdAt:old?.createdAt||now,updatedAt:now});
+        meta.put({id:key,name,author:String(author).trim().slice(0,60),species,source,hash,size:blob.size,thumbnail,editable:!!project,favorite:old?.favorite||false,
+          ...(oceanProfile?{oceanProfile}:{}),createdAt:old?.createdAt||now,updatedAt:now});
         tx.objectStore('assets').put({id:key,blob,project});done({id:key,duplicate:false});
       };
       if(id)meta.get(id).onsuccess=event=>write(event.target.result);else write(null);

@@ -1,6 +1,7 @@
 import {listFish,getFish,updateFish,deleteFish} from './FishStore.js';
 import {SPECIES_NAMES,formatBytes} from './FishFormat.js';
 import {createThumbnails,importFishFile,downloadFish} from './FishAssets.js';
+import {normalizeOceanProfile,formatOceanTraits} from '../graphics/OceanProfile.js';
 
 function element(tag,className,text) {const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;}
 
@@ -46,6 +47,8 @@ export function installFishLibrary({onOpen=()=>{},onPlace,onEdit,onNew,canPlace=
     const heading=element('div','fl-detail-heading');heading.append(element('h3','',item.name));
     const favorite=button(item.favorite?'★':'☆',async()=>{await updateFish(item.id,{favorite:!item.favorite});},'fl-favorite');favorite.setAttribute('aria-label',item.favorite?'Verwijder favoriet':'Maak favoriet');favorite.setAttribute('aria-pressed',String(item.favorite));heading.append(favorite);detail.append(heading);
     detail.append(element('p','fl-hint',`${SPECIES_NAMES[item.species]||'Eigen GLB-model'} · ${formatBytes(item.size)} · ${new Date(item.updatedAt).toLocaleDateString('nl-NL')}`));
+    const ocean=normalizeOceanProfile(item.oceanProfile);
+    detail.append(element('p','fl-hint',`OCEAN · ${ocean.name} · ${formatOceanTraits(ocean.traits)}`));
     const form=element('div','fl-fields'),nameLabel=element('label','','Naam'),name=element('input');name.value=item.name;name.maxLength=80;nameLabel.append(name);
     const authorLabel=element('label','','Maker (optioneel)'),author=element('input');author.value=item.author;author.maxLength=60;authorLabel.append(author);
     form.append(nameLabel,authorLabel,button('Naam en maker bewaren',async()=>{if(!name.value.trim())throw Error('Vul een naam in.');await updateFish(item.id,{name:name.value,author:author.value});say('Naam en maker bewaard.');},'fl-subtle'));

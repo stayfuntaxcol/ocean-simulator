@@ -184,7 +184,7 @@ await context.route(origin+'/**',async route=>{
           return {suitable,hungrySuitable,meters,extinct:row?.textContent,disabled:row?.querySelector('button').disabled};
         },
         clockCheck:()=>{
-          const fish=livingImportedFish()[0];fish.position.set(135,-8,135);fish.userData.localFoodSupply=0;
+          const fish=livingImportedFish()[0];fish.position.set(135,-8,135);fish.userData.localFoodSupply=0;fish.userData.metabolism=1;
           const result={};populationGrowth.checked=false;
           for(const speed of [0,1,8]){
             ecologySpeed.value=String(speed);fish.userData.foodReserve=180;fish.userData.health=100;
@@ -242,7 +242,7 @@ await context.route(origin+'/**',async route=>{
         addGuests:(count=3)=>{const school=makeSchool('qa-guests');for(let i=0;i<count;i++){const fish=new THREE.Group();fish.position.set(i,-10,0);fish.userData.velocity=new THREE.Vector3(1,0,0);fish.userData.imported=true;fish.userData.health=100;registerFish(fish,'qa-guests',school);scene.add(fish);fishes.push(fish);}updateEcosystem(performance.now()/1000,true);updateLocalFood(.5);return window.__ecosystemQA.snapshot();},
         starve:(seconds=5)=>{for(let t=0;t<seconds;t+=.25){updateLocalFood(.25);updateImportedHealth(.25);}return window.__ecosystemQA.snapshot();},
         exhaust:()=>{for(const fish of livingImportedFish()){fish.userData.foodReserve=0;fish.userData.starvationSeconds=31;}},
-        buryOne:()=>{const fish=livingImportedFish()[0];fish.userData.health=0;fish.userData.vitalState='sinking';fish.position.y=terrainHeightAt(fish.position.x,fish.position.z)+.08;updateFish(.04,10);const began=fish.userData.vitalState;for(let i=0;i<140;i++)updateFish(.04,10+i*.04);return {began,remaining:livingImportedFish().length,stillInScene:Boolean(fish.parent)};},
+        buryOne:()=>{const fish=livingImportedFish()[0];fish.userData.health=0;fish.userData.vitalState='sinking';fish.position.y=terrainHeightAt(fish.position.x,fish.position.z)+.08;updateFish(.04,10);const began=fish.userData.vitalState;for(let i=0;i<140;i++)updateFish(.04,10+i*.04);return {began,remaining:livingImportedFish().length,stillInScene:Boolean(fish.parent),markers:deathMarkers.length,markerSaved:worldData().deathMarkers.length};},
         buildRich:()=>{const types=['coral','seagrass','sponge','rocks','mixed'];for(let i=0;i<60;i++)addLayerToCell(i%10-5,Math.floor(i/10)-3,types[i%types.length]);for(let i=0;i<60;i++)updateEcosystem(100+i*2,true);updateLocalFood(.5);updateEcosystem(230,true);return window.__ecosystemQA.snapshot();},
         migrate:()=>{const school=[...schools.values()].find(item=>item.natural&&item.members.length);school.center.copy(school.members[0].position);const from=foodSectorKey(school.center.x,school.center.z,FOOD_SECTOR_SIZE);school.currentFoodSector=from;school.forceMigration=true;chooseSchoolTarget(school,500);return {from,to:foodSectorKey(school.target.x,school.target.z,FOOD_SECTOR_SIZE),forced:school.forceMigration};}
       };
@@ -314,7 +314,7 @@ await page.evaluate(()=>window.__ecosystemQA.exhaust());
 const depleted=await page.evaluate(()=>window.__ecosystemQA.starve(5));
 assert.ok(depleted.health.every(value=>value<100));
 const burial=await page.evaluate(()=>window.__ecosystemQA.buryOne());
-assert.deepEqual(burial,{began:'burial',remaining:2,stillInScene:false});
+assert.deepEqual(burial,{began:'burial',remaining:2,stillInScene:false,markers:1,markerSaved:1});
 const rich=await page.evaluate(()=>window.__ecosystemQA.buildRich());
 assert.ok(rich.capacity>10&&rich.capacity<30);assert.equal(rich.stage,5);assert.ok(rich.natural>0);assert.ok(rich.target>0);
 assert.ok(rich.sectors.active>0);
@@ -363,6 +363,10 @@ const survival=await page.evaluate(()=>window.__ecosystemQA.survivalCheck());
 assert.ok(survival.suitable>=95);assert.deepEqual(survival.meters,[42,60,80]);assert.match(survival.extinct,/0 · uitgestorven/);assert.equal(survival.disabled,true);
 assert.equal(survival.hungrySuitable,20,'hungry school consistently selects the available feeding ground');
 await page.screenshot({path:'/tmp/ocean-follow-meters.png'});
+await page.locator('#saveSelectedFishBtn').click();
+await page.waitForFunction(()=>document.getElementById('fishLibraryDialog')?.open);
+assert.match(await page.locator('#fishLibraryDialog').textContent(),/Test growth/);
+await page.locator('#fishLibraryDialog .fl-close').click();
 assert.equal(await page.evaluate(()=>window.__firebaseWrites||0),0);assert.deepEqual(errors,[]);
 console.log(JSON.stringify({growth,split,surfaceRoute,animals,clock,survival}));
 await page.locator('#journeyMenu').click();

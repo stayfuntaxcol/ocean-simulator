@@ -25,6 +25,14 @@ test('old GLBs are still importable but never falsely marked editable',()=>{
   const original=glb({asset:{version:'2.0'},nodes:[{extras:{species:'clown'}}]});
   assert.deepEqual(fishMetadata(original,'mijn-vis.glb'),{name:'mijn-vis',author:'',species:'',project:null});
 });
+test('OCEAN temperament travels with the editable design and GLB share file',()=>{
+  const oceanProfile={version:1,presetId:'custom',name:'Dappere voedselzoeker',description:'Zoekt vroeg voedsel.',traits:{O:72,C:88,E:44,A:61,N:26}};
+  const designed={...project,oceanProfile};
+  const original=glb({asset:{version:'2.0'},nodes:[{extras:{fishStudio:designed,fishLibrary:{name:'Kompasvis',author:'Kenneth',oceanProfile}}}]});
+  const metadata=fishMetadata(labelGlb(original,{name:'Kompasvis',author:'Kenneth',oceanProfile}));
+  assert.deepEqual(metadata.oceanProfile,oceanProfile);
+  assert.deepEqual(metadata.project.oceanProfile,oceanProfile);
+});
 test('broken, oversized and externally linked files fail before loading models',()=>{
   assert.throws(()=>readGlb(new ArrayBuffer(10)));
   assert.throws(()=>readGlb(new ArrayBuffer(MAX_FISH_BYTES+1)),/25 MB/);

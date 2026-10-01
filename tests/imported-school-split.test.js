@@ -19,6 +19,7 @@ function environment(size){
   }
   const original=makeSchool('reef-import',{cohesion:.67,alignment:.58,separation:.82,habitatPull:.57,exploration:.2,cruiseSpeed:1.35});
   original.importTemplate={name:'Shared template'};original.sourceName='Eigen vis';original.libraryId='library-1';original.birthCredit=.6;
+  original.oceanProfile={name:'Avonturiers'};original.foodSeekThreshold=.84;original.sourceRecord={id:'library-1'};
   for(let i=0;i<size;i++){
     const fish={parent:{},position:new THREE.Vector3(i%4,0,Math.floor(i/4)),userData:{schoolId:original.id,health:100}};
     original.members.push(fish);
@@ -42,6 +43,7 @@ test('a school reaching 16 fish becomes two independent groups of eight',()=>{
   assert.notEqual(original.feedingSector,sibling.feedingSector,'each half seeks its own feeding sector');
   assert.equal(sibling.importTemplate,original.importTemplate);assert.equal(sibling.libraryId,'library-1');
   assert.equal(sibling.sourceName,'Eigen vis');
+  assert.equal(sibling.oceanProfile,original.oceanProfile);assert.equal(sibling.foodSeekThreshold,.84);assert.equal(sibling.sourceRecord,original.sourceRecord);
   assert.ok(Math.abs(original.birthCredit+sibling.birthCredit-.6)<1e-12);
   for(const school of schools.values())for(const fish of school.members)assert.equal(fish.userData.schoolId,school.id);
   assert.equal(new Set([...schools.values()].flatMap(s=>s.members)).size,16);

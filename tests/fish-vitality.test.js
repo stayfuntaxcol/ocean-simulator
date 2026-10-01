@@ -76,6 +76,17 @@ test('partial feeding supports maintenance and gradual reserve recovery',()=>{
   assert.equal(recovering.health,60,'maintenance stops starvation damage');
 });
 
+test('a careful temperament conserves reserve without bypassing starvation',()=>{
+  const simulate=metabolism=>{
+    let fish=createImportedVitality({reserveSeconds:180});
+    for(let t=0;t<90;t+=.25)fish=advanceImportedVitality(fish,.25,{foodSupply:0,metabolism});
+    return fish;
+  };
+  const careful=simulate(.82),restless=simulate(1.18);
+  assert.ok(careful.foodReserve>restless.foodReserve);
+  assert.equal(careful.health,100);assert.equal(restless.health,100);
+});
+
 test('every fish profile receives a finite migration interval of a few minutes',()=>{
   for(const species of ['reef_0','reef_1','reef_2','reef_3','reef_4','reef_5','reef_6','reef_7','custom-import']){
     const early=residenceDuration(species,0),late=residenceDuration(species,1);
