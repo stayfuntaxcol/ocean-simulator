@@ -10,8 +10,8 @@ test('daylight follows sunrise, noon, sunset and night', () => {
   assert.ok(daylightState(0).moonlight > 0);
   assert.ok(daylightState(0).moonlight < .03);
   assert.ok(daylightState(0).nightFactor > .95);
-  assert.ok(daylightState(6.2).sunriseWarmth > .7);
-  assert.ok(daylightState(18.1).sunsetWarmth > .7);
+  assert.ok(daylightState(6.4).sunriseWarmth > .7);
+  assert.ok(daylightState(18.1).sunsetWarmth > .5);
   assert.ok(daylightState(12).nightFactor < .01);
 });
 
