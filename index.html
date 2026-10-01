@@ -29,6 +29,14 @@
     #hud.swimming.settings-open{display:block}
     #graphicsOptionsPanel{margin-top:10px}
     #graphicsOptionsPanel>summary{font-size:14px;color:#d9f5ff}
+    #weatherOptionsPanel{margin:9px 0;border:1px solid rgba(127,226,255,.25);border-radius:10px;background:rgba(4,42,55,.34);overflow:hidden}
+    #weatherOptionsPanel>summary{padding:9px 10px;cursor:pointer;color:#d9f5ff;font-size:13px;font-weight:700}
+    .weather-controls{padding:0 10px 10px;display:grid;gap:8px;font-size:12px}
+    .weather-controls label{display:grid;grid-template-columns:minmax(95px,.8fr) minmax(120px,1.2fr);gap:8px;align-items:center}
+    .weather-controls select{width:100%;padding:6px;border:1px solid #487179;border-radius:7px;background:#10313f;color:#e9fbff}
+    .weather-range{display:grid;grid-template-columns:1fr 42px;gap:6px;align-items:center}
+    .weather-range input{width:100%;accent-color:#7ee2f5}.weather-range output{text-align:right;color:#d9f5ff}
+    #weatherStatus{margin:2px 0 0;color:#bfe5f3;font-size:11px;line-height:1.35}
     #fishStyleStatus{margin:7px 0 0;color:#bfe5f3;font-size:11px;line-height:1.35}
     #hud h1{font-size:18px;margin:0 0 6px}
     #hud p{margin:5px 0;color:var(--muted);font-size:13px;line-height:1.4}
@@ -220,6 +228,18 @@
       <summary>🎨 Grafische vormgeving &amp; opties</summary>
       <label>Beeld <select id="visualStyle"><option value="upgraded">Nieuwe onderwatersfeer</option><option value="original">Oorspronkelijk beeld</option></select></label>
       <label>Kwaliteit <select id="visualQuality"><option value="low">Licht</option><option value="medium" selected>Gebalanceerd</option><option value="high">Hoog</option></select></label>
+      <details id="weatherOptionsPanel">
+        <summary>☀️ Tijd, licht &amp; weer</summary>
+        <div class="weather-controls">
+          <label>Dag/nachtcyclus <input id="dayNightCycle" type="checkbox" checked></label>
+          <label>Tijdstip <span class="weather-range"><input id="timeOfDay" type="range" min="0" max="24" step="0.1" value="9.5"><output id="timeOfDayValue">09:30</output></span></label>
+          <label>Duur van een dag <select id="dayLength"><option value="5">5 minuten</option><option value="10">10 minuten</option><option value="20" selected>20 minuten</option><option value="40">40 minuten</option><option value="60">60 minuten</option></select></label>
+          <label>Weertype <select id="weatherType"><option value="sunny">Zonnig</option><option value="cloudy">Bewolkt</option><option value="calm">Windstil</option><option value="storm">Stormachtig</option><option value="thunder">Onweer met bliksem</option></select></label>
+          <label>Weersterkte <span class="weather-range"><input id="weatherIntensity" type="range" min="25" max="150" step="5" value="100"><output id="weatherIntensityValue">100%</output></span></label>
+          <p id="weatherStatus" aria-live="polite">09:30 · Ochtend · Zonnig</p>
+          <small>Slecht weer maakt het water donkerder en onstuimiger. Vissen zoeken dan geleidelijk dieper water.</small>
+        </div>
+      </details>
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
       <label>Gedetailleerde koraalvis <input id="fishDetail" type="checkbox" checked></label>
       <label>Levend rifdetail <input id="reefDetail" type="checkbox" checked></label>
@@ -486,6 +506,7 @@ import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { normalizeWorldBlueprint } from './worlds/WorldBlueprint.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
+import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
 import { createRockLibrary } from './graphics/ReefRocks.js';
@@ -718,6 +739,37 @@ const glow = new THREE.PointLight(0x2fb7ff, 12, 160, 2);
 glow.position.set(20, 20, -10);
 scene.add(glow);
 const atmosphere = createUnderwaterAtmosphere({ scene, renderer, camera, sun, ambient, glow });
+const WEATHER_STORAGE_KEY='fiveLoavesOceanWeatherV1';
+let storedWeather={};
+try{storedWeather=JSON.parse(localStorage.getItem(WEATHER_STORAGE_KEY)||'{}');}catch{}
+const oceanWeather=createOceanWeather(storedWeather);
+let currentWeatherState=oceanWeather.snapshot();
+const dayNightCycle=document.getElementById('dayNightCycle'),timeOfDay=document.getElementById('timeOfDay');
+const timeOfDayValue=document.getElementById('timeOfDayValue'),dayLength=document.getElementById('dayLength');
+const weatherType=document.getElementById('weatherType'),weatherIntensity=document.getElementById('weatherIntensity');
+const weatherIntensityValue=document.getElementById('weatherIntensityValue'),weatherStatus=document.getElementById('weatherStatus');
+dayNightCycle.checked=currentWeatherState.cycleEnabled;timeOfDay.value=currentWeatherState.hour;
+dayLength.value=String(currentWeatherState.dayLengthMinutes);weatherType.value=currentWeatherState.id;
+weatherIntensity.value=String(Math.round(currentWeatherState.intensity*100));
+function formatOceanClock(hour){
+  const minutes=Math.round((((hour%24)+24)%24)*60)%1440;
+  return `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;
+}
+function saveWeatherSettings(){
+  try{localStorage.setItem(WEATHER_STORAGE_KEY,JSON.stringify(oceanWeather.serialize()));}catch{}
+}
+function refreshWeatherControls(){
+  const clockText=formatOceanClock(currentWeatherState.hour);
+  timeOfDay.value=currentWeatherState.hour;timeOfDayValue.textContent=clockText;
+  weatherIntensityValue.textContent=`${Math.round(currentWeatherState.intensity*100)}%`;
+  weatherStatus.textContent=`${clockText} · ${currentWeatherState.phase} · ${currentWeatherState.name} · golven ${currentWeatherState.waveHeight.toFixed(1)}×`;
+}
+dayNightCycle.addEventListener('change',()=>{oceanWeather.setCycleEnabled(dayNightCycle.checked);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+timeOfDay.addEventListener('input',()=>{oceanWeather.setHour(timeOfDay.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+dayLength.addEventListener('change',()=>{oceanWeather.setDayLengthMinutes(dayLength.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+weatherType.addEventListener('change',()=>{oceanWeather.setWeather(weatherType.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+weatherIntensity.addEventListener('input',()=>{oceanWeather.setIntensity(Number(weatherIntensity.value)/100);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+refreshWeatherControls();
 const sandDetail = { value: 1 };
 const rockLibrary = createRockLibrary(atmosphere.uniforms);
 const seabedDetail = document.getElementById('seabedDetail');
@@ -3887,6 +3939,9 @@ function migrationCells(candidates,school){
 }
 function chooseSchoolTarget(school,t){
   rebuildHabitatMap();
+  // A new destination starts from its natural habitat height. The current
+  // weather correction is applied centrally by updateSchoolBrains.
+  school.weatherDepthApplied=0;
   const c=school.center;
   if(school.importTemplate){
     if(chooseImportedFeedingTarget(school,t))return;
@@ -4021,6 +4076,24 @@ function chooseSchoolTarget(school,t){
   school.mode='explore';
   school.retargetAt=t+8+oceanRandom()*12;
   school.forceMigration=false;
+}
+
+function applyWeatherDepthToSchool(school){
+  const policy=SPECIES_POLICY[school.speciesId];
+  if(policy?.kind==='bottom'||school.speciesId==='stingray'){
+    school.weatherDepthApplied=0;return;
+  }
+  const desired=currentWeatherState.fishDepthBias||0;
+  const applied=school.weatherDepthApplied||0;
+  const delta=desired-applied;
+  if(Math.abs(delta)<.01)return;
+  const lower=(point)=>{
+    if(!point)return;
+    const floor=terrainHeightAt(point.x,point.z)+(school.importTemplate?1.05:.75);
+    point.y=THREE.MathUtils.clamp(point.y-delta,floor,16);
+  };
+  lower(school.target);lower(school.navWaypoint);
+  school.weatherDepthApplied=desired;
 }
 
 function chooseBestCorridor(school,t){
@@ -4167,9 +4240,10 @@ function updateSchoolBrains(t){
       school.migrationAt=t+residenceDuration(school.speciesId,oceanRandom());
     }
 
+    if(school.forceMigration||t>=school.retargetAt || (!school.importTemplate&&!SPECIES_POLICY[school.speciesId] && school.center.distanceTo(school.target)<10))chooseSchoolTarget(school,t);
+    applyWeatherDepthToSchool(school);
     school.target.y=Math.min(school.target.y,16);
     if(school.navWaypoint)school.navWaypoint.y=Math.min(school.navWaypoint.y,16);
-    if(school.forceMigration||t>=school.retargetAt || (!school.importTemplate&&!SPECIES_POLICY[school.speciesId] && school.center.distanceTo(school.target)<10))chooseSchoolTarget(school,t);
 
     // Imported fish share a destination, not an additional competing obstacle
     // route. Each member follows the same local steering and swept safety pass.
@@ -5199,6 +5273,8 @@ function simulationTime() { return referenceMode ? visualTime : performance.now(
 let metricStart = performance.now(), metricFrames = 0;
 let lastRockDetailUpdate = -Infinity, previousSeabedDetail = null;
 let lastReefDetailUpdate = -Infinity, previousReefDetail = null;
+let lastWeatherUiUpdate = -Infinity;
+addEventListener('pagehide',saveWeatherSettings,{once:true});
 const microLifeEnabled=document.getElementById('microLifeEnabled'),microSchoolsEnabled=document.getElementById('microSchoolsEnabled'),microPlanktonEnabled=document.getElementById('microPlanktonEnabled');
 const microLife=createMicroLife({scene,terrain:terrainHeightAt,boundary:WORLD_HALF,caustics:atmosphere.uniforms,
   getHabitats:()=>{rebuildHabitatMap();return habitatCells;},
@@ -5214,6 +5290,8 @@ function animate(){
   if (!referencePaused && !editMode) visualTime += dt;
   const t = simulationTime();
   const streamingTime = performance.now()/1000;
+  currentWeatherState=oceanWeather.update(!referencePaused&&!editMode?dt:0);
+  if(streamingTime-lastWeatherUiUpdate>.5){refreshWeatherControls();lastWeatherUiUpdate=streamingTime;}
 
   const previousPosition=camera.position.clone();
   updateMovement(dt);
@@ -5233,7 +5311,7 @@ function animate(){
   glow.position.x = Math.sin(t*.18)*35;
   glow.position.z = Math.cos(t*.15)*35;
 
-  atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive });
+  atmosphere.update(t, { editor: landscapeEditorActive, inspect: terrainInspectActive, weather: currentWeatherState });
   updateMegafauna(dt,t);
   // Visstijl en waterstijl zijn onafhankelijk: ook in de oorspronkelijke
   // belichting moet Cartoon ↔ Realistisch direct kunnen wisselen.
