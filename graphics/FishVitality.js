@@ -140,9 +140,9 @@ export function healthMotionFactor(health){
   return 1;
 }
 
-export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0}={}){
+export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0,metabolism=1}={}){
   const next={...createImportedVitality(),...vitality};
-  const delta=clamp(clean(dt),0,.25),supply=clamp(clean(foodSupply),0,1),heat=clamp(clean(hazard),0,1);
+  const delta=clamp(clean(dt),0,.25),supply=clamp(clean(foodSupply),0,1),heat=clamp(clean(hazard),0,1),energyUse=clamp(clean(metabolism,1),.75,1.25);
   next.health=clamp(clean(next.health,100),0,100);
   next.maxFoodReserve=clamp(clean(next.maxFoodReserve,240),180,360);
   next.foodReserve=clamp(clean(next.foodReserve,next.maxFoodReserve),0,next.maxFoodReserve);
@@ -155,15 +155,15 @@ export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0}={}){
   const recovery=Math.max(0,(supply-.8)/.2);
   if(next.state!=='sinking'&&next.state!=='burial'&&next.state!=='dead'){
     if(deficit>0){
-      next.foodReserve=Math.max(0,next.foodReserve-delta*deficit);
-      if(next.foodReserve<=0)next.starvationSeconds+=delta*deficit;
+      next.foodReserve=Math.max(0,next.foodReserve-delta*deficit*energyUse);
+      if(next.foodReserve<=0)next.starvationSeconds+=delta*deficit*energyUse;
     }else{
       next.foodReserve=Math.min(next.maxFoodReserve,next.foodReserve+delta*.85*recovery);
       next.starvationSeconds=Math.max(0,next.starvationSeconds-delta*2*recovery);
       next.health=Math.min(100,next.health+delta*.05*recovery);
     }
     if(deficit>0&&next.foodReserve<=0&&next.starvationSeconds>30){
-      const starvationDamage=.09+.18*deficit;
+      const starvationDamage=(.09+.18*deficit)*energyUse;
       next.health=Math.max(0,next.health-delta*starvationDamage);
     }
     if(heat>0)next.health=Math.max(0,next.health-delta*(1.2+heat*7.5));

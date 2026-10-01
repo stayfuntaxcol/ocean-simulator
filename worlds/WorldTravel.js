@@ -15,17 +15,21 @@ function readWorldList(value,field) {
 export function validateWorldRecord(record) {
   if(!record||typeof record!=='object'||!record.world||![1,2,3,4].includes(record.world.version))throw Error('Dit wereldbestand wordt nog niet ondersteund.');
   const w=record.world;
-  const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents');
+  const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents'),deathMarkers=readWorldList(w.deathMarkers,'deathMarkers');
   if(w.worldHalf!=null&&w.worldHalf!==HEX.radius)throw Error('Deze wereld heeft een andere maat en kan nog niet aansluiten.');
   for(const [field,items] of [['cells',cells],['terrain',terrain]])for(const item of items)if(!item||!/^[-]?\d+,[-]?\d+$/.test(String(item.key)))throw Error(`Een terreincoördinaat in ${field} is ongeldig.`);
   if(terrain.some(t=>!Number.isFinite(t.offset)))throw Error('Een bodemhoogte is ongeldig.');
+  if(deathMarkers.length>500||deathMarkers.some(marker=>{
+    const x=Array.isArray(marker)?marker[0]:marker?.x,z=Array.isArray(marker)?marker[1]:marker?.z;
+    return !Number.isFinite(Number(x))||!Number.isFinite(Number(z));
+  }))throw Error('De lijst met sterfteplekken is ongeldig.');
   const normalizedCells=cells.map(c=>{
     if(c.layers==null)return {...c}; // Preserve legacy v1 cells with a single type.
     const layers=readWorldList(c.layers,`cells[${c.key}].layers`);
     if(layers.some(l=>!l||typeof l.type!=='string'))throw Error(`Een landschapslaag in cells[${c.key}] is ongeldig.`);
     return {...c,layers};
   });
-  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents}};
+  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers}};
 }
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,

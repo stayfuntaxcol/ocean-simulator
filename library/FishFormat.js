@@ -1,3 +1,5 @@
+import {normalizeOceanProfile} from '../graphics/OceanProfile.js';
+
 // Portable, self-contained GLB files. No Firebase records or remote textures.
 export const MAX_FISH_BYTES = 25 * 1024 * 1024;
 export const SPECIES_NAMES = Object.freeze({clown:'Clownvis',butterfly:'Koraalvlindervis',koi:'Koi',storyblue:'Blauwe verhalenvis',flatgreen:'Groene bodemvis',orange_story:'Oranje verhalenvis'});
@@ -34,7 +36,9 @@ export function validateProject(value) {
     const url=value.layers?.[part]?.[layer];
     if(typeof url!=='string' || url.length>4*1024*1024 || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(url)) return null;
   }
-  return structuredClone(value);
+  const project=structuredClone(value);
+  if(value.oceanProfile)project.oceanProfile=normalizeOceanProfile(value.oceanProfile);
+  return project;
 }
 
 export function fishMetadata(buffer,fileName='Mijn vis.glb') {
@@ -42,13 +46,17 @@ export function fishMetadata(buffer,fileName='Mijn vis.glb') {
   const metadata=json.extras?.fishLibrary || json.nodes?.find(n=>n.extras?.fishLibrary)?.extras.fishLibrary || {};
   const rawProject=json.nodes?.find(n=>n.extras?.fishStudio)?.extras.fishStudio;
   const project=validateProject(rawProject);
-  return {name:String(metadata.name||fileName.replace(/\.glb$/i,'')).slice(0,80),author:String(metadata.author||'').slice(0,60),species:project?.species||'',project};
+  const rawProfile=metadata.oceanProfile||project?.oceanProfile;
+  return {name:String(metadata.name||fileName.replace(/\.glb$/i,'')).slice(0,80),author:String(metadata.author||'').slice(0,60),species:project?.species||'',project,
+    ...(rawProfile?{oceanProfile:normalizeOceanProfile(rawProfile)}:{})};
 }
 
 // Rename/credit a portable file without recomputing its geometry or embedded textures.
-export function labelGlb(buffer,{name,author}) {
+export function labelGlb(buffer,{name,author,oceanProfile}) {
   const {json,chunks}=readGlb(buffer);
-  json.extras={...json.extras,fishLibrary:{name:String(name).slice(0,80),author:String(author||'').slice(0,60)}};
+  const previous=json.extras?.fishLibrary||{};
+  json.extras={...json.extras,fishLibrary:{name:String(name).slice(0,80),author:String(author||'').slice(0,60),
+    ...((oceanProfile||previous.oceanProfile)?{oceanProfile:normalizeOceanProfile(oceanProfile||previous.oceanProfile)}:{})}};
   const bytes=new TextEncoder().encode(JSON.stringify(json));
   const padded=new Uint8Array(Math.ceil(bytes.length/4)*4);padded.fill(32);padded.set(bytes);
   chunks[0]={type:JSON_CHUNK,bytes:padded};
