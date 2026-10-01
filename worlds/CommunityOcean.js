@@ -12,6 +12,7 @@ export function installCommunityOcean(api) {
   const known=document.getElementById('journeyKnownWorlds'),connect=document.getElementById('journeyConnect');
   let activeId=null,sample=null,lastStatus='',lastPrefetch=0,revision=-1,disposed=false,rebuilding=false,lastBoundaryMessage=0;
   const localRoutes=new Map(),failures=new Map();
+  const mapFailures=new Set();
   function say(text){lastStatus=text;status.textContent=text;}
   function persist(){try{localStorage.setItem(ROUTES_KEY,JSON.stringify([...localRoutes].map(([id,p])=>({id,...p}))));}catch{say('De bezoekroute werkt, maar kon niet op dit apparaat worden bewaard.');}}
   try{for(const p of JSON.parse(localStorage.getItem(ROUTES_KEY)||'[]'))if(p&&typeof p.id==='string'&&Number.isSafeInteger(p.hexQ)&&Number.isSafeInteger(p.hexR))localRoutes.set(p.id,{hexQ:p.hexQ,hexR:p.hexR});}catch{}
@@ -36,7 +37,11 @@ export function installCommunityOcean(api) {
       }
     }finally{rebuilding=false;}
   }
-  const engine=createWorldTravel({readWorld,capture,getUserId,onStatus:say,onCache:()=>{rebuild();refreshHUD();},activate:async(id,record,arrival,context)=>{
+  const engine=createWorldTravel({readWorld,capture,getUserId,onStatus:say,onCache:id=>{
+    const record=engine.cached(id),position=engine.positions.get(id);
+    if(record&&position)api.registerAtlas?.({id,name:record.name,ownerId:record.ownerId,visibility:record.visibility,...position,map:api.mapForWorld?.(record.world)});
+    rebuild();refreshHUD();
+  },activate:async(id,record,arrival,context)=>{
     const oldPosition=camera.position.clone(),oldQuaternion=camera.quaternion.clone(),oldSample=sample;
     veil.classList.add('visible');
     await new Promise(resolve=>setTimeout(resolve,160));
@@ -130,7 +135,7 @@ export function installCommunityOcean(api) {
       const record=await engine.prefetch(id,{fresh:true});
       if(engine.busy||activeId!==sourceId||api.canTravel?.()===false)throw Error('Wacht tot de huidige reis is afgerond.');
       const p={hexQ:origin.hexQ+s.q,hexR:origin.hexR+s.r};engine.setPosition(id,p);localRoutes.set(id,p);persist();
-      api.registerAtlas({id,name:record.name,ownerId:record.ownerId,visibility:record.visibility,...p,routeOnly:true,unplaced:false});
+      api.registerAtlas({id,name:record.name,ownerId:record.ownerId,visibility:record.visibility,...p,routeOnly:true,unplaced:false,map:api.mapForWorld?.(record.world)});
       rebuild();refreshHUD();api.onChanged?.();say(`Verbonden met ${record.name||id} aan de ${s.name}kant. Dit is een bezoekroute op dit apparaat.`);
     }catch(error){say(error.message);}finally{connect.disabled=false;}
   }
@@ -154,10 +159,17 @@ export function installCommunityOcean(api) {
     const s=SIDES[side],exit=s
       ? {x:s.nx*(apothem(HEX.radius)+.2),y:camera.position.y,z:s.nz*(apothem(HEX.radius)+.2)}
       : {x:0,y:camera.position.y,z:0};
-    say('Wereld laden…');
+    api.captureMap?.();say('Wereld laden…');
     const ok=await engine.travelTo(id,exit,{allowDistant:true,mode:'atlas',beforeActivate:()=>api.prepareTravel?.()});
     if(ok)failures.delete(id);else api.onTravelError?.(lastStatus);
     return ok;
+  }
+  async function loadAtlasMaps(ids=[]){
+    const requested=[...new Set(ids)].filter(id=>id&&id!==activeId&&!mapFailures.has(id));
+    if(!requested.length)return;
+    const results=await Promise.allSettled(requested.map(id=>engine.prefetch(id)));
+    results.forEach((result,index)=>{if(result.status==='rejected')mapFailures.add(requested[index]);});
+    api.onChanged?.();
   }
   function update(previous,{enabled=true,revision:nextRevision=0}={}) {
     if(disposed||!activeId)return;
@@ -174,7 +186,7 @@ export function installCommunityOcean(api) {
     const next={x:camera.position.x,y:camera.position.y,z:camera.position.z},side=exitSide(previous,next);
     const safe=closestInHex(next,HEX.radius-.7);camera.position.set(safe.x,safe.y,safe.z);
     const id=engine.neighbor(side);
-    if(id&&now-(failures.get(id)??-Infinity)>5000){void engine.travelTo(id,next).then(ok=>{if(!ok)failures.set(id,performance.now());refreshHUD();});}
+    if(id&&now-(failures.get(id)??-Infinity)>5000){api.captureMap?.();void engine.travelTo(id,next).then(ok=>{if(!ok)failures.set(id,performance.now());refreshHUD();});}
     else if(now-lastBoundaryMessage>5000){lastBoundaryMessage=now;say('Hier is nog geen bezoekwereld verbonden. Kies een wereldlink in de atlas.');}
   }
   connect.addEventListener('click',connectWorld);known.addEventListener('change',()=>{if(known.value)link.value=known.value;});
@@ -182,7 +194,7 @@ export function installCommunityOcean(api) {
   document.getElementById('journeyMenu').onclick=()=>api.openMenu();
   addEventListener('pagehide',()=>{disposed=true;engine.dispose();clearTerrain();scene.remove(terrainGroup);},{once:true});
   syncCurrent();
-  return {update,syncCurrent,refreshHUD,rebuild,connectWorld,visit,approach,restoreAtlasPositions,
+  return {update,syncCurrent,refreshHUD,rebuild,connectWorld,visit,approach,restoreAtlasPositions,loadAtlasMaps,
     positionFor:id=>engine.positions.get(id),
     sample:(x,z)=>sample?sample(activeId,x,z):null,
     get busy(){return engine.busy;},get activeId(){return activeId;},get lastStatus(){return lastStatus;},

@@ -11,7 +11,7 @@ const browser=await playwright.launch(bin
     : {headless:true});
 try{
 const page=await browser.newPage({viewport:{width:1200,height:800}}),errors=[];
-page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR',e.message);});
+page.on('pageerror',e=>{errors.push(e.message);console.log('PAGE ERROR',e.stack||e.message);});
 await page.route('https://cdn.jsdelivr.net/npm/three@0.179.1/**',route=>route.fulfill({path:root+'/node_modules/three/'+route.request().url().split('three@0.179.1/')[1],contentType:'text/javascript'}));
 await page.route('https://www.gstatic.com/firebasejs/**',route=>route.fulfill({contentType:'text/javascript',body:`
  export const initializeApp=()=>({}),getAuth=()=>({}),getDatabase=()=>({});
@@ -42,7 +42,7 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
     restore:data=>restoreWorld(data),
     navigation:()=>{
       const check=(condition,message)=>{if(!condition)throw Error(message);};
-      const pose=camera.position.clone(),rotation=camera.quaternion.clone(),zoom=minimapZoom;
+      const pose=camera.position.clone(),rotation=camera.quaternion.clone(),zoom=minimapZoom,savedFood=foodSectors;
       const originalTranslate=minimapCtx.translate,originalRotate=minimapCtx.rotate;
       let arrow,angle;
       minimapCtx.translate=function(x,y){arrow={x,y};return originalTranslate.call(this,x,y);};
@@ -67,6 +67,15 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
           controls.isLocked=true;press(code);controls.isLocked=false;
           check(camera.position.clone().sub(before).dot(screenRight)*(code==='KeyD'?1:-1)>.1,'A/D screen direction while swimming');
         }
+        camera.position.set(0,-10,0);camera.lookAt(0,-10,-1);
+        minimap.dispatchEvent(new MouseEvent('click',{clientX:rect.left+rect.width*.25,clientY:rect.top+rect.height*.25,bubbles:true}));
+        check(Math.abs(camera.position.x+72)<4&&Math.abs(camera.position.z+72)<4,'free swimmer travels to clicked map position');
+        foodSectors=new Map([['0,0',{key:'0,0',x:18,z:18,capacity:4,demand:6,pressure:1.5,stock:10,maxFood:20,supply:1}]]);
+        dispatchEvent(new KeyboardEvent('keydown',{code:'Space'}));
+        check(pressureOverlayVisible&&!document.getElementById('minimapPressureLegend').hidden,'space shows pressure overlay');
+        dispatchEvent(new KeyboardEvent('keyup',{code:'Space'}));dispatchEvent(new KeyboardEvent('keydown',{code:'Space'}));
+        check(!pressureOverlayVisible&&document.getElementById('minimapPressureLegend').hidden,'second space hides pressure overlay');
+        dispatchEvent(new KeyboardEvent('keyup',{code:'Space'}));
         for(const mode of ['fish','school'])for(const orbit of [0,Math.PI/2,Math.PI,Math.PI*1.5])for(const code of ['KeyA','KeyD']){
           camera.position.set(Math.sin(orbit)*9,10,Math.cos(orbit)*9);camera.lookAt(probe.position);camera.updateMatrixWorld(true);
           const screenRight=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),before=camera.position.clone();
@@ -88,11 +97,11 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
         teleportEditorTo(target.x,target.z);check(camera.position.x===-72&&camera.position.z===-72,'editor map teleport');
         camera.updateMatrixWorld(true);check(new THREE.Vector3(-72,-18,-90).project(camera).y>0,'editor stays north-up after teleport');
         drawMinimap();check(angle===0,'editor map arrow points north');
-        setEditMode(false);return {maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true,hexBoundary:true};
+        setEditMode(false);return {maps:true,mapTravel:true,pressure:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true,hexBoundary:true};
       }finally{
         if(editMode)setEditMode(false);stopFollowing(false);scene.remove(probe);schools.delete('navigation-probe');
         minimapCtx.translate=originalTranslate;minimapCtx.rotate=originalRotate;
-        Object.keys(keys).forEach(k=>keys[k]=false);controls.isLocked=false;minimapZoom=zoom;
+        Object.keys(keys).forEach(k=>keys[k]=false);controls.isLocked=false;minimapZoom=zoom;foodSectors=savedFood;pressureOverlayVisible=false;
         camera.position.copy(pose);camera.quaternion.copy(rotation);camera.up.set(0,1,0);drawMinimap();
       }
     },
@@ -100,6 +109,7 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
     cross:()=>{camera.position.set(0,-20,-124);const previous=camera.position.clone();controls.isLocked=true;keys.KeyW=true;updateMovement(.2);keys.KeyW=false;controls.isLocked=false;communityOcean.update(previous,{revision:habitatRevision});},
     visit:id=>communityOcean.visit(id),sync:()=>communityOcean.rebuild(),
     addFar:()=>{const position={hexQ:0,hexR:-2};communityOcean.engine.setPosition('C',position);registerAtlasWorld({id:'C',name:'Verre rifwereld',ownerId:'owner-B',visibility:'link',...position});communityOcean.refreshHUD();renderWorldAtlas();},
+    atlasPressure:()=>{foodSectors=new Map([['0,0',{key:'0,0',x:18,z:18,capacity:4,demand:6,pressure:1.5,stock:10,maxFood:20,supply:1}]]);for(const world of worldAtlasState.worlds.values())if(world.map&&world.id!=='A')world.map.overload=[[0,0,3]];dispatchEvent(new KeyboardEvent('keydown',{code:'Space'}));},
     orient:()=>{camera.rotation.set(.05,.3,0);},move:()=>{controls.isLocked=true;keys.KeyW=true;updateMovement(.01);keys.KeyW=false;controls.isLocked=false;}};
   `;
   return route.fulfill({body:html.replace('</script>\n</body>',qa+'</script>\n</body>'),contentType:'text/html'});
@@ -110,7 +120,7 @@ await page.goto('http://127.0.0.1:8765/?world=A&reef=organic');
 await page.waitForFunction(()=>window.__communityQA?.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual(errors,[]);
 const navigation=await page.evaluate(()=>window.__communityQA.navigation());
-assert.deepEqual(navigation,{maps:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true,hexBoundary:true});
+assert.deepEqual(navigation,{maps:true,mapTravel:true,pressure:true,freeSwim:true,fishFollow:true,schoolFollow:true,editor:true,hexBoundary:true});
 await page.evaluate(()=>window.__communityQA.edit());
 const own=await page.evaluate(()=>window.__communityQA.state());assert.equal(own.cells[0].layers.length,2);
 await page.locator('#journeyAtlas').click();
@@ -118,6 +128,13 @@ await page.locator('#journeyWorldLink').fill('http://localhost/?world=B');
 await page.locator('#journeyConnect').click();
 await page.waitForFunction(()=>document.getElementById('journeyStatus').textContent.includes('Verbonden met'),null,{timeout:60000});
 assert.equal(await page.locator('#worldAtlasSvg .atlas-world').count(),2);
+assert.ok(await page.locator('#worldAtlasSvg .atlas-map-cell').count()>=2,'real landscape cells appear inside both atlas worlds');
+assert.ok(await page.locator('#worldAtlasSvg .atlas-map-terrain').count()>=25,'edited terrain relief appears inside atlas worlds');
+await page.evaluate(()=>window.__communityQA.atlasPressure());
+assert.ok(await page.locator('#worldAtlasSvg .atlas-overload').count()>=2,'space shows orange/red overload zones in atlas worlds');
+assert.equal(await page.locator('#atlasPressureLegend').isVisible(),true);
+await page.evaluate(()=>{dispatchEvent(new KeyboardEvent('keyup',{code:'Space'}));dispatchEvent(new KeyboardEvent('keydown',{code:'Space'}));dispatchEvent(new KeyboardEvent('keyup',{code:'Space'}));});
+assert.equal(await page.locator('#worldAtlasSvg .atlas-overload').count(),0,'second space hides atlas overload zones');
 const atlasLabels=await page.locator('#worldAtlasSvg .atlas-world-label').evaluateAll(elements=>elements.map(e=>({name:e.textContent,y:Number(e.getAttribute('y'))})));
 assert.ok(atlasLabels.find(e=>e.name==='Diepe buurwereld').y<atlasLabels.find(e=>e.name==='Mijn koraaltuin').y,'north neighbor is above source');
 await fs.mkdir(artifacts,{recursive:true});
@@ -200,6 +217,6 @@ assert.deepEqual((await page.evaluate(()=>window.__communityQA.state())).terrain
 await page.evaluate(()=>window.__communityQA.restore({version:4}));
 const empty=await page.evaluate(()=>window.__communityQA.state());assert.deepEqual(empty.cells,[]);assert.deepEqual(empty.terrain,[]);
 assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
-console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','two atlas hexes','atlas button opens adjacent world','atlas directly opens distant known world','failed atlas travel remains visible','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
-await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true,homeVisibleFromNeighbor:true,homeVisibleAfterReload:true,firebaseListNormalization:true,terrainOnlyWorld:true,emptyWorld:true,invalidImportPreservesTerrain:true},null,2));
+console.log(JSON.stringify({passed:true,navigation,checks:['Firebase read adapter','click-to-travel minimap','space toggles overload zones','real terrain and habitat inside atlas hexes','two atlas hexes','atlas button opens adjacent world','atlas directly opens distant known world','failed atlas travel remains visible','visible editor hex boundary','natural north crossing','opposite entrance','deep arrival and continued swimming','visitor build lock','permission failure preserves world','round trip preserves own draft','atlas route recovery after local route loss','scrollable menu','zero cloud writes','zero browser errors'],state},null,2));
+await fs.writeFile(artifacts+'/browser-result.json',JSON.stringify({passed:true,navigation,errors,cloudWrites:0,mapTravel:true,pressureOverlay:true,atlasWorldMaps:true,ownDraftPreserved:true,oppositeEntrance:true,deepSwimming:true,atlasRouteRecovered:true,homeVisibleFromNeighbor:true,homeVisibleAfterReload:true,firebaseListNormalization:true,terrainOnlyWorld:true,emptyWorld:true,invalidImportPreservesTerrain:true},null,2));
 }finally{await browser.close();}
