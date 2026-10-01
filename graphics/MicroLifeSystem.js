@@ -232,7 +232,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
     // Close to white: the old multiplicative brown tint hid the anatomy.
     color.setRGB(1,.94+.06*Math.sin(scale*7)**2,.89+.10*Math.cos(scale*7)**2);mesh.setColorAt(i,color);
   }
-  function update(dt,camera,{enabled=true,editor=false,inspect=false,paused=false,quality:nextQuality='medium',revision=0,worldKey='local-world',showSchools=true,showPlankton=true}={}) {
+  function update(dt,camera,{enabled=true,editor=false,inspect=false,paused=false,quality:nextQuality='medium',revision=0,worldKey='local-world',showSchools=true,showPlankton=true,nightFactor=0}={}) {
     if(disposed)return;
     if(worldKey!==schoolWorldKey){schoolWorldKey=worldKey;schools=[];lastKey='';}
     root.visible=enabled&&!editor&&!inspect;if(!root.visible){lastKey='';return;}
@@ -240,7 +240,7 @@ export function createMicroLife({scene,terrain=()=>-18,getHabitats=()=>[],getObs
     const delta=!paused&&Number.isFinite(dt)?THREE.MathUtils.clamp(dt,0,.08):0;clock.value+=delta;sinceRefresh+=delta;
     const key=`${Math.floor(camera.position.x/12)*12},${Math.floor(camera.position.y/8)*8},${Math.floor(camera.position.z/12)*12},${quality},${revision}`;
     if(key!==lastKey||sinceRefresh>=2)refresh(camera,revision);
-    behavior.update(delta);
+    behavior.update(delta,{nightFactor});
     updateSchools(delta,camera);
     for(const asset of assets.values())for(const level of asset.levels)level.mesh.count=0;
     contact.count=0;

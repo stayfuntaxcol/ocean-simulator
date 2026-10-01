@@ -85,25 +85,25 @@ export function createMicroBehavior({terrain,groundPose,swimSafe,getThreats=()=>
     for(const t of threats){const d=a.position.distanceTo(t.position)-Math.max(0,t.radius??0);if(d<best){best=d;found=t;}}
     return found;
   }
-  function stepCrab(a,dt,threat) {
-    a.timer-=dt;a.velocity.set(0,0,0);
+  function stepCrab(a,dt,threat,nightFactor=0) {
+    a.timer-=dt*(1+nightFactor*1.8);a.velocity.set(0,0,0);
     if(threat&&a.state!=='HIDE'){a.state='RETURN';a.target=a.home.clone();}
     if(a.state==='HIDE') {
       if(threat){a.timer=Math.max(a.timer,8);return;}
       if(a.timer>0)return;
       for(let i=0;i<12;i++) {
-        const angle=a.random()*Math.PI*2,r=.45+a.random()*.45;
+        const angle=a.random()*Math.PI*2,r=.45+a.random()*(.45+nightFactor*1.15);
         const target=groundPose(a.home.x+Math.cos(angle)*r,a.home.z+Math.sin(angle)*r,.58);
         if(!target||!groundPath(a.home,target.position,.58))continue;
         if(animals.some(b=>b!==a&&b.type==='crab'&&b.home.distanceTo(target.position)<2.2))continue;
         a.target=target.position;a.state='TURN';return;
       }
-      a.timer=3+a.random()*5;return;
+      a.timer=(3+a.random()*5)*(1-nightFactor*.55);return;
     }
     if(a.state==='FORAGE'){if(a.timer<=0){a.state='RETURN';a.target=a.home.clone();}return;}
     const direction=a.target.clone().sub(a.position);direction.y=0;const remaining=direction.length();
     if(remaining<.025) {
-      a.state=a.state==='RETURN'?'HIDE':'FORAGE';a.timer=a.state==='HIDE'?20+a.random()*28:2+a.random()*3;return;
+      a.state=a.state==='RETURN'?'HIDE':'FORAGE';a.timer=a.state==='HIDE'?(20+a.random()*28)*(1-nightFactor*.72):(2+a.random()*(3+nightFactor*5));return;
     }
     direction.normalize();
     // Select either lateral side so the body never has to turn around to return.
@@ -113,7 +113,7 @@ export function createMicroBehavior({terrain,groundPose,swimSafe,getThreats=()=>
     a.yaw+=THREE.MathUtils.clamp(turn,-dt*2,dt*2);
     if(Math.abs(turn)>.03)return;
     if(a.state==='TURN')a.state='WALK';
-    const speed=(a.state==='RETURN'&&threat?.55:.22)*Math.min(1,remaining/.18);
+    const speed=(a.state==='RETURN'&&threat?.55:(.22+nightFactor*.14))*Math.min(1,remaining/.18);
     const next=a.position.clone().addScaledVector(direction,Math.min(speed*dt,remaining));
     if(!groundPath(a.position,next,.58)||animals.some(b=>b!==a&&b.type==='crab'&&b.position.distanceTo(next)<1.18)) {
       a.state='RETURN';a.target=a.home.clone();return;
@@ -162,13 +162,13 @@ export function createMicroBehavior({terrain,groundPose,swimSafe,getThreats=()=>
     else {a.velocity.set(0,0,0);if(a.state==='EVADE'){a.state='RECOVER';a.timer=0;a.cooldown=2.5;}}
     a.floor=terrain(a.position.x,a.position.z);
   }
-  function update(dt) {
+  function update(dt,{nightFactor=0}={}) {
     if(dt<=0)return;time+=dt;
     const threats=getThreats().filter(t=>t?.position&&[t.position.x,t.position.y,t.position.z].every(Number.isFinite));
     const snapshot=animals.filter(a=>a.type==='shrimp').map(a=>({id:a.id,position:a.position.clone(),velocity:a.velocity.clone()}));
     for(const a of animals) {
       const previous=a.position.clone(),threat=nearestThreat(a,threats);
-      if(a.type==='crab')stepCrab(a,dt,threat);else stepShrimp(a,dt,threat,snapshot);
+      if(a.type==='crab')stepCrab(a,dt,threat,nightFactor);else stepShrimp(a,dt,threat,snapshot);
       const speed=a.position.distanceTo(previous)/dt;
       // Only travelled distance drives locomotor limbs. No walking in place.
       a.gait=a.state==='EVADE'||a.state==='RECOVER'?0:Math.min(1,speed/(a.type==='crab'?.20:.28));

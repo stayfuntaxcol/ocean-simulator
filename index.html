@@ -246,6 +246,10 @@
           <label>Weersterkte <span class="weather-range"><input id="weatherIntensity" type="range" min="25" max="150" step="5" value="100"><output id="weatherIntensityValue">100%</output></span></label>
           <label>Weerduur <select id="weatherDuration"><option value="1">1 minuut</option><option value="3" selected>3 minuten</option><option value="5">5 minuten</option><option value="10">10 minuten</option><option value="20">20 minuten</option></select></label>
           <label>Overgang <select id="weatherTransition"><option value="0">Direct</option><option value="8">8 sec</option><option value="18" selected>18 sec</option><option value="35">35 sec</option><option value="60">60 sec</option></select></label>
+          <label>Zaklamp <input id="nightFlashlight" type="checkbox"></label>
+          <label>Lichtkleur <select id="flashlightStyle"><option value="turquoise" selected>Turquoise</option><option value="fluorescent">Fluorescent groen</option><option value="ethereal">Ethereal blauw</option></select></label>
+          <label>Kwallenzwerm <input id="jellyfishEnabled" type="checkbox" checked></label>
+          <small>Zaklamp: toets F. Kwallenzwerm licht 's nachts sterker op en drijft als losse bloom door open water.</small>
           <p id="weatherStatus" aria-live="polite">09:30 · Ochtend · Zonnig</p>
           <small>Nacht wordt bijna volledig donker. Zonsopgang en zonsondergang kleuren ook het water. Stormen versterken golven, lichtbreking en visreacties.</small>
         </div>
@@ -516,6 +520,8 @@ import { validateWorldRecord } from './worlds/WorldTravel.js';
 import { normalizeWorldBlueprint } from './worlds/WorldBlueprint.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
+import { createNightFlashlight } from './graphics/NightLighting.js';
+import { createJellyfishSwarm } from './graphics/JellyfishSwarm.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -750,6 +756,7 @@ const glow = new THREE.PointLight(0x2fb7ff, 12, 160, 2);
 glow.position.set(20, 20, -10);
 scene.add(glow);
 const atmosphere = createUnderwaterAtmosphere({ scene, renderer, camera, sun, ambient, glow });
+const nightFlashlight=createNightFlashlight({scene,camera});
 const WEATHER_STORAGE_KEY='fiveLoavesOceanWeatherV1';
 let storedWeather={};
 try{storedWeather=JSON.parse(localStorage.getItem(WEATHER_STORAGE_KEY)||'{}');}catch{}
@@ -759,6 +766,8 @@ const dayNightCycle=document.getElementById('dayNightCycle'),timeOfDay=document.
 const timeOfDayValue=document.getElementById('timeOfDayValue'),dayLength=document.getElementById('dayLength');
 const dynamicWeather=document.getElementById('dynamicWeather'),weatherDuration=document.getElementById('weatherDuration');
 const weatherTransition=document.getElementById('weatherTransition');
+const nightFlashlightToggle=document.getElementById('nightFlashlight'),flashlightStyle=document.getElementById('flashlightStyle');
+const jellyfishEnabled=document.getElementById('jellyfishEnabled');
 const weatherType=document.getElementById('weatherType'),weatherIntensity=document.getElementById('weatherIntensity');
 const weatherIntensityValue=document.getElementById('weatherIntensityValue'),weatherStatus=document.getElementById('weatherStatus');
 dayNightCycle.checked=currentWeatherState.cycleEnabled;timeOfDay.value=currentWeatherState.hour;
@@ -792,6 +801,8 @@ dayLength.addEventListener('change',()=>{oceanWeather.setDayLengthMinutes(dayLen
 dynamicWeather.addEventListener('change',()=>{oceanWeather.setDynamicWeather(dynamicWeather.checked);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 weatherDuration.addEventListener('change',()=>{oceanWeather.setWeatherDurationMinutes(weatherDuration.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 weatherTransition.addEventListener('change',()=>{oceanWeather.setTransitionSeconds(weatherTransition.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+nightFlashlightToggle.addEventListener('change',()=>nightFlashlight.setEnabled(nightFlashlightToggle.checked));
+flashlightStyle.addEventListener('change',()=>nightFlashlight.applyStyle(flashlightStyle.value));
 weatherType.addEventListener('change',()=>{oceanWeather.setWeather(weatherType.value,false);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 weatherIntensity.addEventListener('input',()=>{oceanWeather.setIntensity(Number(weatherIntensity.value)/100);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 refreshWeatherControls();
@@ -4471,7 +4482,8 @@ function updatePopulationGrowth(dt){
   for(const fish of imported){
     if(fish.userData.growthAge!=null&&fish.userData.growthAge<MATURITY_SECONDS){
       if(!['sinking','burial'].includes(fish.userData.vitalState)){
-        const nourishment=Math.min(1,Math.max(0,fish.userData.localFoodSupply??0));
+        const sleeping=Boolean(fish.userData.sleeping);
+        const nourishment=sleeping ? .35 : Math.min(1,Math.max(0,fish.userData.localFoodSupply??0));
         fish.userData.growthAge=Math.min(MATURITY_SECONDS,fish.userData.growthAge+dt*nourishment*(fish.userData.health>20?1:0));
         const scale=juvenileScale(fish.userData.growthAge);
         fish.scale.copy(fish.userData.adultScale).multiplyScalar(scale);
@@ -4481,21 +4493,23 @@ function updatePopulationGrowth(dt){
       juveniles++;
     }else adults++;
   }
-  let room=Math.min(MAX_POPULATION-fishes.length,Math.floor(foodSectorSummary.capacity)-fishes.length,Math.floor(foodSectorSummary.capacity-foodSectorSummary.demand));
+  // Population count already includes juveniles, so do not subtract the same future biomass twice.
+  // Imported fish may roam across sectors; reproduction is therefore limited by global carrying
+  // capacity plus current nutritional condition, not an arbitrary 80% threshold in one local cell.
+  let room=Math.min(MAX_POPULATION-fishes.length,Math.max(0,Math.floor(foodSectorSummary.capacity)-fishes.length));
   for(const school of schools.values()){
     if(!school.importTemplate)continue;
     const parents=school.members.filter(f=>f.parent&&!f.userData.dead&&f.userData.health>=80&&
       (f.userData.growthAge==null||f.userData.growthAge>=MATURITY_SECONDS)&&f.userData.foodReserve>f.userData.maxFoodReserve*.5&&
       !['sinking','burial'].includes(f.userData.vitalState));
     const parent=parents[0],food=parent?localFoodAt(parent.position.x,parent.position.z):null;
-    const futureLoad=school.members.reduce((sum,f)=>sum+(f.parent&&!f.userData.dead&&f.userData.growthAge<MATURITY_SECONDS?Math.max(0,fishBiomass({imported:true,contactRadius:f.userData.adultRadius,scale:f.userData.adultScale?.x})-(f.userData.biomass||0)):0),0);
-    const recovered=school.members.every(f=>!f.parent||f.userData.dead||(f.userData.health>=80&&f.userData.foodReserve/f.userData.maxFoodReserve>=.7));
-    const localRoom=food?food.capacity*.8-food.demand-futureLoad:0;
+    const recovered=school.members.every(f=>!f.parent||f.userData.dead||(f.userData.health>=75&&f.userData.foodReserve/f.userData.maxFoodReserve>=.58));
     const adultBiomass=parent?.userData.biomass||1;
+    const nourishment=food&&recovered?Math.min(1,(food.supply*.72+food.stockRatio*.28)*(.55+.45*foodSectorSummary.stockRatio)):0;
     const budget=growthBudget({credit:school.birthCredit,adults:parents.length,dt,
       enabled:populationGrowth.checked&&!cloudBusy&&!communityOcean?.busy,factor:Number(reproductionFactor.value),
-      room:Math.min(room/adultBiomass,localRoom/adultBiomass),
-      foodRatio:food&&recovered&&food.stockRatio>.75?Math.min(food.supply,Math.max(0,localRoom/Math.max(1,food.capacity))):0});
+      room:room/adultBiomass,
+      foodRatio:nourishment});
     school.birthCredit=budget.credit;
     if(!budget.births)continue;
     const fish=cloneFishModel(school.importTemplate);
@@ -4851,7 +4865,12 @@ function updateFish(dt,t){
       }
       if(!fish.userData.imported&&policy?.kind!=='bottom'&&!policy?.reefHeight)p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.06;
       if(editMode || distSq<=FISH_ANIMATION_RADIUS*FISH_ANIMATION_RADIUS){
-        if(fish.userData.tail)fish.userData.tail.rotation.y=Math.sin(t*7.5*fish.userData.speed*Math.max(.12,vitalityPace)+fish.userData.phase)*.42*Math.sqrt(vitalityPace);
+        if(fish.userData.tail){
+          const sleeping=fish.userData.imported&&fish.userData.sleeping;
+          const frequency=sleeping?1.15:7.5*fish.userData.speed*Math.max(.12,vitalityPace);
+          const amplitude=sleeping?.10:.42*Math.sqrt(vitalityPace);
+          fish.userData.tail.rotation.y=Math.sin(t*frequency+fish.userData.phase)*amplitude;
+        }
         if(fish.userData.velocity.lengthSq()>.001){
           const before=fish.quaternion.clone();orientFishForward(fish,tmpV.copy(p).add(fish.userData.velocity));
           const target=fish.quaternion.clone();fish.quaternion.copy(before).slerp(target,1-Math.exp(-dt*(policy?.kind==='family'?5:2.8)));
@@ -5264,6 +5283,9 @@ addEventListener('keydown',e=>{
   if(e.code==='Space'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     e.preventDefault();setPressureOverlay(!pressureOverlayVisible);return;
   }
+  if(e.code==='KeyF'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!editMode){
+    e.preventDefault();nightFlashlightToggle.checked=nightFlashlight.toggle();return;
+  }
   if(e.code==='KeyO'&&!editMode&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('worldAtlasOverlay').classList.contains('open')){
     e.preventDefault();toggleMainMenu();return;
   }
@@ -5416,7 +5438,13 @@ const microLife=createMicroLife({scene,terrain:terrainHeightAt,boundary:WORLD_HA
     .map(f=>({position:f.position,radius:Math.max(...fishExtent(f).toArray())})).filter(f=>f.radius>.8),
   getObstacles:()=>[...importedRockBoxes(),...lavaVents.map(v=>new THREE.Box3().setFromObject(v.root))]
 });
-addEventListener('pagehide',()=>microLife.dispose(),{once:true});
+const jellyfishSwarm=createJellyfishSwarm({
+  scene,terrain:terrainHeightAt,boundary:WORLD_HALF-4,
+  isBlocked:(point,radius)=>Boolean(pointInsideRock(point,radius))
+});
+jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
+jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
@@ -5455,7 +5483,8 @@ function animate(){
   pufferLibrary.update(t,camera,atmosphere.quality,fishDetail.checked,fishRenderStyle.value);
   newReefSpecies.update(t,camera,atmosphere.quality,fishRenderStyle.value);
   microLife.update(dt,camera,{enabled:microLifeEnabled.checked&&ecosystemState.stageId>=1,editor:editMode||landscapeEditorActive,inspect:terrainInspectActive,paused:referencePaused,
-    quality:atmosphere.quality,revision:habitatRevision,worldKey:currentAtlasWorldId(),showSchools:microSchoolsEnabled.checked&&ecosystemState.stageId>=2,showPlankton:microPlanktonEnabled.checked&&ecosystemState.stageId>=1});
+    quality:atmosphere.quality,revision:habitatRevision,worldKey:currentAtlasWorldId(),showSchools:microSchoolsEnabled.checked&&ecosystemState.stageId>=2,showPlankton:microPlanktonEnabled.checked&&ecosystemState.stageId>=1,
+    nightFactor:currentWeatherState.nightFactor||0});
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
@@ -5471,6 +5500,8 @@ function animate(){
   }
   legacyRays.visible = !atmosphere.enabled && !landscapeEditorActive && !terrainInspectActive;
   bubbles.visible = !atmosphere.enabled && !landscapeEditorActive;
+  nightFlashlight.update({nightFactor:currentWeatherState.nightFactor||0});
+  jellyfishSwarm.update(dt,t,{nightFactor:currentWeatherState.nightFactor||0,storminess:currentWeatherState.storminess||0});
   renderer.render(scene,camera);
   metricFrames++;
   const metricNow = performance.now();
