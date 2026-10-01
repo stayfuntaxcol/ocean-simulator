@@ -137,6 +137,8 @@
     .atlas-world-inner{fill:rgba(205,238,240,.9);stroke:rgba(255,255,255,.88);stroke-width:1.5}
     .atlas-world-current .atlas-world-outer{fill:rgba(55,199,231,.42);stroke:#baf6ff;stroke-width:3}
     .atlas-world-current .atlas-world-inner{fill:rgba(224,251,249,.96)}
+    .atlas-map-terrain,.atlas-map-cell,.atlas-overload{pointer-events:none;shape-rendering:crispEdges}
+    .atlas-world-label,.atlas-world-sub{paint-order:stroke;stroke:rgba(225,250,250,.9);stroke-width:3px;stroke-linejoin:round}
     .atlas-world-unconnected .atlas-world-outer{stroke-dasharray:8 6;opacity:.68}
     .atlas-world-unconnected .atlas-world-inner{fill:rgba(132,177,188,.38);opacity:.72}
     .atlas-world-empty{fill:rgba(255,255,255,.035);stroke:rgba(181,241,255,.36);stroke-width:2;stroke-dasharray:8 7}
@@ -156,6 +158,7 @@
     #worldAtlasLegend span{display:inline-flex;align-items:center;gap:5px}
     #worldAtlasLegend i{display:inline-block;width:10px;height:10px;border-radius:50%;background:#37c7e7}
     #worldAtlasLegend .owned{background:#7fe2ff}.atlas-legend-empty{background:transparent!important;border:1px dashed #b5f1ff}
+    #worldAtlasLegend .pressure-light{background:#ffbe52}.pressure-heavy{background:#cd252d}
     @media (max-width:760px){
       #worldAtlasBody{grid-template-columns:1fr;grid-template-rows:minmax(330px,1fr) auto}
       #worldAtlasDetails{border-left:0;border-top:1px solid rgba(255,255,255,.13);max-height:240px}
@@ -365,9 +368,9 @@
 
 
   <div id="minimapWrap">
-    <div id="minimapHeader"><span>🧭 Kaart · klik om te reizen</span><div id="minimapControls"><button id="mapZoomOut" type="button" title="Uitzoomen">−</button><button id="mapZoomIn" type="button" title="Inzoomen">+</button><button id="mapToggle" type="button" title="Kaart inklappen">▾</button></div></div>
+    <div id="minimapHeader"><span>🧭 Kaart · klik om te reizen · spatie: belasting</span><div id="minimapControls"><button id="mapZoomOut" type="button" title="Uitzoomen">−</button><button id="mapZoomIn" type="button" title="Inzoomen">+</button><button id="mapToggle" type="button" title="Kaart inklappen">▾</button></div></div>
     <canvas id="minimap" width="404" height="404" aria-label="Minimap van de onderwaterwereld"></canvas>
-    <div id="minimapLegend"><span>laag landschap</span><span>rijk rif</span><span>▲ jij</span></div>
+    <div id="minimapLegend"><span>laag landschap</span><span>rijk rif</span><span id="minimapPressureLegend" hidden>oranje/rood: overbelast</span><span>▲ jij</span></div>
   </div>
 
   <div id="worldAtlasOverlay" aria-hidden="true">
@@ -375,7 +378,7 @@
       <header id="worldAtlasHeader">
         <div>
           <h2 id="worldAtlasTitle">Wereldatlas</h2>
-          <p>Bekijk je oceaanwerelden en kies een aangrenzende positie.</p>
+          <p>Bekijk je oceaanwerelden · spatie toont of verbergt overbelaste zones.</p>
         </div>
         <button id="worldAtlasClose" type="button">Sluiten</button>
       </header>
@@ -387,6 +390,7 @@
             <span><i class="owned"></i> eigen wereld</span>
             <span><i></i> huidige wereld</span>
             <span><i class="atlas-legend-empty"></i> beschikbare positie</span>
+            <span id="atlasPressureLegend" hidden><i class="pressure-light"></i> licht overbelast <i class="pressure-heavy"></i> zwaar</span>
           </div>
         </div>
         <aside id="worldAtlasDetails">
@@ -461,6 +465,7 @@ import { createReefLife } from './graphics/ReefLife.js';
 import { createWhale, WHALE_MARGIN, WHALE_EXTENT } from './graphics/Whale.js';
 import { createPufferLibrary } from './graphics/PufferFish.js';
 import { createWhaleCruise, whaleRouteClear, validateWhaleRecord } from './graphics/WhaleNavigation.js';
+import {createWorldMapSnapshot,normalizeWorldMapSnapshot,habitatMapWeight,overloadColor} from './worlds/MapSnapshot.js';
 import {createStingray,createSeaTurtle,VISITOR_SPECIES} from './graphics/ReefVisitors.js';
 import {visitorPathClear,createVisitorCruise,validateVisitorRecords} from './graphics/ReefVisitorNavigation.js';
 import { createOrca, ORCA_CLEARANCE } from './graphics/Orca.js';
@@ -559,6 +564,7 @@ const mapToggle = document.getElementById('mapToggle');
 const minimapCtx = minimap.getContext('2d');
 let minimapZoom = 1;
 let lastMinimapDraw = 0;
+let pressureOverlayVisible = false;
 let firebaseUser = null;
 let communityOcean = null, cloudBusy = false, currentCloudVisibility = "link", cloudWorldLoaded = false;
 let currentCloudWorldId = new URLSearchParams(location.search).get('world');
@@ -843,6 +849,27 @@ function teleportEditorTo(x,z){
   orientEditorCamera();
   drawMinimap();
 }
+function teleportSwimmerTo(x,z){
+  if(editMode||followMode||cloudBusy||communityOcean?.busy)return false;
+  const point=closestInHex({x,y:camera.position.y,z},HEX.radius-.8),previous=camera.position.clone();
+  camera.position.set(point.x,THREE.MathUtils.clamp(camera.position.y,terrainHeightAt(point.x,point.z)+1,18.8),point.z);
+  lastStreamingCell='';refreshWorldStreaming(true);
+  const offsets=[[0,0],[2,0],[-2,0],[0,2],[0,-2],[3,3],[-3,3],[3,-3],[-3,-3]];
+  for(const [dx,dz] of offsets){
+    const px=point.x+dx,pz=point.z+dz;if(!containsHex({x:px,z:pz},HEX.radius-.8))continue;
+    const floor=terrainHeightAt(px,pz);
+    for(const y of [camera.position.y,floor+1.1,floor+3,floor+6,18.5]){
+      const candidate=new THREE.Vector3(px,THREE.MathUtils.clamp(y,floor+1,18.8),pz);
+      if(!pointInsideRock(candidate,CAMERA_RADIUS)){
+        camera.position.copy(candidate);lastStreamingCell='';refreshWorldStreaming(true);drawMinimap();
+        hint.textContent=`Naar kaartpositie x ${candidate.x.toFixed(0)}, z ${candidate.z.toFixed(0)} gereisd · klik op het water om verder te zwemmen.`;
+        return true;
+      }
+    }
+  }
+  camera.position.copy(previous);lastStreamingCell='';refreshWorldStreaming(true);
+  hint.textContent='Deze kaartpositie ligt in massieve rots. Kies een plek ernaast.';return false;
+}
 
 
 
@@ -1075,11 +1102,17 @@ function currentAtlasWorldName(){ return cloudWorldName?.value?.trim() || 'Mijn 
 function registerAtlasWorld(world){
   if(!world?.id) return;
   const existing=worldAtlasState.worlds.get(world.id)||{};
+  const incomingMap=normalizeWorldMapSnapshot(world.map);
+  const previousMap=normalizeWorldMapSnapshot(existing.map);
+  const map=incomingMap
+    ? {...incomingMap,overload:incomingMap.overload.length?incomingMap.overload:(previousMap?.overload||[])}
+    : previousMap;
   worldAtlasState.worlds.set(world.id,{
     ...existing,
     ...world,
     hexQ:Number.isFinite(world.hexQ)?Math.trunc(world.hexQ):(existing.hexQ??0),
-    hexR:Number.isFinite(world.hexR)?Math.trunc(world.hexR):(existing.hexR??0)
+    hexR:Number.isFinite(world.hexR)?Math.trunc(world.hexR):(existing.hexR??0),
+    ...(map?{map}: {})
   });
 }
 function syncCurrentAtlasWorld(){
@@ -1185,6 +1218,30 @@ function selectAtlasEmpty(position){
   }
   setAtlasStatus('De overgangszone wordt pas gemaakt wanneer hier een nieuwe wereld naast wordt geplaatst.');
 }
+function appendAtlasWorldMap(group,world,point,index){
+  const snapshot=atlasWorldIsCurrent(world)?refreshCurrentAtlasMap(false):normalizeWorldMapSnapshot(world.map);
+  if(!snapshot)return;
+  const radius=100*HEX_WORLD_CONFIG.innerScale,scale=radius/WORLD_HALF;
+  const clipId=`atlas-map-${index}`;
+  const defs=createSvgElement('defs'),clip=createSvgElement('clipPath',{id:clipId});
+  clip.append(createSvgElement('polygon',{points:svgPoints(flatTopHexPoints(point.x,point.y,radius-1))}));defs.append(clip);group.append(defs);
+  const map=createSvgElement('g',{'clip-path':`url(#${clipId})`,'aria-hidden':'true'});
+  for(const [ix,iz,offset] of snapshot.terrain){
+    const raised=offset>0,t=Math.min(1,Math.abs(offset)/12);
+    map.append(createSvgElement('rect',{class:'atlas-map-terrain',x:point.x+ix*TERRAIN_CELL*scale,y:point.y+iz*TERRAIN_CELL*scale,
+      width:TERRAIN_CELL*scale+.3,height:TERRAIN_CELL*scale+.3,fill:raised?`rgba(131,145,111,${.22+.38*t})`:`rgba(21,75,91,${.20+.42*t})`}));
+  }
+  for(const [ix,iz,score] of snapshot.cells){
+    const t=Math.min(1,score/18),r=Math.round(34+85*t),g=Math.round(106+110*t),b=Math.round(92-30*t);
+    map.append(createSvgElement('rect',{class:'atlas-map-cell',x:point.x+ix*CELL*scale,y:point.y+iz*CELL*scale,
+      width:CELL*scale+.3,height:CELL*scale+.3,fill:`rgba(${r},${g},${b},${.48+.45*t})`}));
+  }
+  if(pressureOverlayVisible)for(const [sx,sz,level] of snapshot.overload){
+    map.append(createSvgElement('rect',{class:'atlas-overload',x:point.x+sx*FOOD_SECTOR_SIZE*scale,y:point.y+sz*FOOD_SECTOR_SIZE*scale,
+      width:FOOD_SECTOR_SIZE*scale+.4,height:FOOD_SECTOR_SIZE*scale+.4,fill:overloadColor(level,.78)}));
+  }
+  group.append(map);
+}
 function renderWorldAtlas(){
   const svg=document.getElementById('worldAtlasSvg');
   if(!svg) return;
@@ -1206,7 +1263,7 @@ function renderWorldAtlas(){
       if(!occupied.has(position.key)) emptyPositions.set(position.key,{...position,name:world.name||'de huidige wereld'});
     });
   });
-  visibleWorlds.forEach(world=>{
+  visibleWorlds.forEach((world,index)=>{
     const point=axialToAtlas(world.hexQ,world.hexR);
     const current=atlasWorldIsCurrent(world),connected=atlasWorldIsConnected(world);
     const group=createSvgElement('g',{class:`atlas-world${current?' atlas-world-current':''}${connected?'':' atlas-world-unconnected'}`,'data-world-id':world.id,tabindex:'0'});
@@ -1214,9 +1271,9 @@ function renderWorldAtlas(){
     const inner=createSvgElement('polygon',{class:'atlas-world-inner',points:svgPoints(flatTopHexPoints(point.x,point.y,100*HEX_WORLD_CONFIG.innerScale))});
     const label=createSvgElement('text',{class:'atlas-world-label',x:point.x,y:point.y-4}); label.textContent=(world.name||'Wereld').slice(0,22);
     const sub=createSvgElement('text',{class:'atlas-world-sub',x:point.x,y:point.y+16}); sub.textContent=current?'HIER BEN JE':connected?'VERBONDEN':'HERSTELLEN';
-    group.append(outer,inner,label,sub);
+    group.append(outer,inner);appendAtlasWorldMap(group,world,point,index);group.append(label,sub);
     group.addEventListener('click',()=>{selectAtlasWorld(world);renderWorldAtlas();});
-    group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectAtlasWorld(world);renderWorldAtlas();}});
+    group.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();selectAtlasWorld(world);renderWorldAtlas();}});
     svg.append(group);
   });
   emptyPositions.forEach(position=>{
@@ -1226,7 +1283,7 @@ function renderWorldAtlas(){
     const label=createSvgElement('text',{class:'atlas-empty-label',x:point.x,y:point.y+5}); label.textContent='+';
     group.append(outer,label);
     group.addEventListener('click',()=>{selectAtlasEmpty(position);renderWorldAtlas();});
-    group.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();selectAtlasEmpty(position);renderWorldAtlas();}});
+    group.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();selectAtlasEmpty(position);renderWorldAtlas();}});
     svg.append(group);
   });
   updateAtlasViewBox();
@@ -1236,7 +1293,7 @@ function renderWorldAtlas(){
 function openWorldAtlas(){
   const overlay=document.getElementById('worldAtlasOverlay');
   if(!overlay) return;
-  syncCurrentAtlasWorld();
+  syncCurrentAtlasWorld();refreshCurrentAtlasMap(false);
   controls.unlock();
   document.getElementById('hud').classList.remove('settings-open');
   document.getElementById('hud').classList.add('swimming');
@@ -1246,6 +1303,8 @@ function openWorldAtlas(){
   overlay.setAttribute('aria-hidden','false');
   renderWorldAtlas();
   if(!worldAtlasState.selectedId) selectAtlasWorld(worldAtlasState.worlds.get(currentAtlasWorldId()));
+  const missing=[...worldAtlasState.worlds.values()].filter(world=>world.id!==currentAtlasWorldId()&&atlasWorldIsConnected(world)&&!normalizeWorldMapSnapshot(world.map)).map(world=>world.id);
+  if(missing.length)void communityOcean?.loadAtlasMaps?.(missing);
 }
 function closeWorldAtlas(){
   const overlay=document.getElementById('worldAtlasOverlay');
@@ -1328,14 +1387,13 @@ async function saveRemoteWorldAtlasIndex(worldId,record){
       visibility:record.visibility,
       hexQ:record.world?.hexWorld?.hexQ??hexWorldState.hexQ,
       hexR:record.world?.hexWorld?.hexR??hexWorldState.hexR,
+      map:mapSnapshotForWorld(record.world,livePressureRecords()),
       updatedAt:serverTimestamp()
     });
   }catch(err){
     console.info('Online Wereldatlas-index opslaan overgeslagen',err?.message||err);
   }
 }
-loadLocalWorldAtlas();
-installWorldAtlasInteractions();
 const FLOOR_Y = -17.35;
 // Map: cellKey -> [{id,type}, ...] in plaatsingsvolgorde.
 // Daardoor kan één vak tegelijk rotsen, gras, koraal, sponzen enz. bevatten.
@@ -1345,18 +1403,31 @@ let nextLayerId = 1;
 
 
 // -------- MINIMAP / ORIENTATIE --------
-function mapHabitatWeight(layers){
-  let score=0;
-  for(const l of layers||[]){
-    if(l.type==='coral') score+=3;
-    else if(l.type==='seagrass') score+=2;
-    else if(l.type==='sponge') score+=2;
-    else if(l.type==='rocks') score+=1.25;
-    else if(l.type==='mixed') score+=2.5;
-    else score+=1;
-  }
-  return score;
+function mapHabitatWeight(layers){return habitatMapWeight(layers);}
+function livePressureRecords(){return [...foodSectors.values()].map(sector=>({key:sector.key,pressure:sector.pressure}));}
+function mapSnapshotForWorld(world,pressures=[]){return createWorldMapSnapshot(world||{},pressures);}
+function liveWorldMapSnapshot(){
+  return mapSnapshotForWorld({terrain:[...terrainOffsets].map(([key,offset])=>({key,offset})),cells:[...worldCells].map(([key,layers])=>({key,layers}))},livePressureRecords());
 }
+function refreshCurrentAtlasMap(save=false){
+  const snapshot=liveWorldMapSnapshot(),id=currentAtlasWorldId(),world=worldAtlasState.worlds.get(id);
+  if(world)world.map=snapshot;
+  else registerAtlasWorld({id,name:currentAtlasWorldName(),hexQ:hexWorldState.hexQ,hexR:hexWorldState.hexR,map:snapshot});
+  if(save)saveLocalWorldAtlas();
+  return snapshot;
+}
+function setPressureOverlay(visible){
+  pressureOverlayVisible=Boolean(visible);
+  document.getElementById('minimapPressureLegend').hidden=!pressureOverlayVisible;
+  document.getElementById('atlasPressureLegend').hidden=!pressureOverlayVisible;
+  drawMinimap();
+  if(document.getElementById('worldAtlasOverlay')?.classList.contains('open'))renderWorldAtlas();
+  const status=document.getElementById('journeyStatus');
+  if(status)status.textContent=pressureOverlayVisible?'Belastingskaart aan · oranje en rood tonen overbelaste voedselzones.':'Belastingskaart uit.';
+}
+
+loadLocalWorldAtlas();
+installWorldAtlasInteractions();
 
 function drawMinimap(){
   const ctx=minimapCtx, w=minimap.width, h=minimap.height;
@@ -1375,6 +1446,13 @@ function drawMinimap(){
   for(let z=Math.ceil(minZ/step)*step;z<=maxZ;z+=step){const py=sy(z);ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(w,py);ctx.stroke();}
 
   // Landschap per wereldcel; meer lagen = lichtere / warmere tint.
+  for(const [key,offset] of terrainOffsets.entries()){
+    const [ix,iz]=key.split(',').map(Number),x0=ix*TERRAIN_CELL,z0=iz*TERRAIN_CELL,x1=x0+TERRAIN_CELL,z1=z0+TERRAIN_CELL;
+    if(x1<minX||x0>maxX||z1<minZ||z0>maxZ)continue;
+    const t=Math.min(1,Math.abs(offset)/12),a=mapPoint({x:x0,z:z0},bounds,w,h),b=mapPoint({x:x1,z:z1},bounds,w,h);
+    ctx.fillStyle=offset>0?`rgba(131,145,111,${.22+.38*t})`:`rgba(21,75,91,${.20+.42*t})`;
+    ctx.fillRect(a.x,Math.min(a.y,b.y),Math.max(1,b.x-a.x),Math.max(1,Math.abs(b.y-a.y)));
+  }
   for(const [key,layers] of worldCells.entries()){
     const [ix,iz]=key.split(',').map(Number);
     const x0=ix*CELL,z0=iz*CELL,x1=x0+CELL,z1=z0+CELL;
@@ -1385,6 +1463,18 @@ function drawMinimap(){
     ctx.fillStyle=`rgba(${r},${g},${b},${0.34+0.56*t})`;
     const px0=sx(x0),px1=sx(x1),py0=sy(z0),py1=sy(z1);
     ctx.fillRect(px0,Math.min(py0,py1),Math.max(1,px1-px0),Math.max(1,Math.abs(py1-py0)));
+  }
+
+  // De voedselbelasting gebruikt dezelfde vaste 36-meterzones als health.
+  // De laag wordt alleen getekend wanneer de speler haar met spatie activeert.
+  if(pressureOverlayVisible)for(const sector of foodSectors.values()){
+    const level=sector.pressure<1.25?(sector.pressure>1.02?1:0):sector.pressure<1.75?2:3;
+    if(!level)continue;
+    const [sxIndex,szIndex]=sector.key.split(',').map(Number);
+    const x0=sxIndex*FOOD_SECTOR_SIZE,z0=szIndex*FOOD_SECTOR_SIZE,x1=x0+FOOD_SECTOR_SIZE,z1=z0+FOOD_SECTOR_SIZE;
+    if(x1<minX||x0>maxX||z1<minZ||z0>maxZ)continue;
+    const a=mapPoint({x:x0,z:z0},bounds,w,h),b=mapPoint({x:x1,z:z1},bounds,w,h);
+    ctx.fillStyle=overloadColor(level,.72);ctx.fillRect(a.x,Math.min(a.y,b.y),b.x-a.x,Math.abs(b.y-a.y));
   }
 
   // De vaste binnen- en buitenrand blijven op de navigatiekaart zichtbaar.
@@ -1431,10 +1521,11 @@ mapToggle.addEventListener('click',e=>{e.stopPropagation();minimapWrap.classList
 
 minimap.addEventListener('click',e=>{
   e.stopPropagation();
-  if(!editMode) return;
   const p=minimapWorldFromEvent(e);
-  teleportEditorTo(p.x,p.z);
-  editorInfo.textContent=`Verplaatst naar kaartpositie x ${p.x.toFixed(0)}, z ${p.z.toFixed(0)}.`;
+  if(editMode){
+    teleportEditorTo(p.x,p.z);
+    editorInfo.textContent=`Verplaatst naar kaartpositie x ${p.x.toFixed(0)}, z ${p.z.toFixed(0)}.`;
+  }else if(!followMode)teleportSwimmerTo(p.x,p.z);
 });
 
 minimapWrap.addEventListener('click',e=>e.stopPropagation());
@@ -2410,6 +2501,7 @@ async function loadCloudWorld(worldId){
     communityOcean?.syncCurrent();
     refreshWorldPermissions();
     syncCurrentAtlasWorld();
+    refreshCurrentAtlasMap(false);
     saveLocalWorldAtlas();
     history.replaceState(null,'',cloudWorldUrl(worldId));
     cloudStatus.textContent=currentCloudOwnerId===firebaseUser.uid
@@ -2446,6 +2538,7 @@ async function saveCloudWorld(){
     communityOcean?.engine.forgetDraft(worldId);
     refreshWorldPermissions();
     syncCurrentAtlasWorld();
+    refreshCurrentAtlasMap(false);
     saveLocalWorldAtlas();
     await saveRemoteWorldAtlasIndex(worldId,record);
     history.replaceState(null,'',cloudWorldUrl(worldId));
@@ -4605,6 +4698,9 @@ function updateFollowCamera(dt){
 const keys = {};
 addEventListener('keydown',e=>{
   if(document.getElementById('fishLibraryDialog')?.open || e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
+  if(e.code==='Space'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+    e.preventDefault();setPressureOverlay(!pressureOverlayVisible);return;
+  }
   if(e.code==='KeyO'&&!editMode&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('worldAtlasOverlay').classList.contains('open')){
     e.preventDefault();toggleMainMenu();return;
   }
@@ -4833,9 +4929,10 @@ if(!referenceMode){
       history.replaceState(null,'',url);refreshWorldPermissions();setCloudBusy(false);
       cloudStatus.textContent=canEditCurrentWorld()?'Eigen wereld · je werk uit deze sessie is hersteld.':'Bezoekwereld · alleen bekijken.';
     },
-    getAtlasWorlds:()=>[...worldAtlasState.worlds.values()],registerAtlas:registerAtlasWorld,
+    getAtlasWorlds:()=>[...worldAtlasState.worlds.values()],registerAtlas:registerAtlasWorld,mapForWorld:world=>mapSnapshotForWorld(world),
     onChanged:()=>{syncCurrentAtlasWorld();saveLocalWorldAtlas();if(document.getElementById('worldAtlasOverlay').classList.contains('open'))renderWorldAtlas();},
-    prepareTravel:()=>{closeWorldAtlas();if(editMode)setEditMode(false);if(followMode)stopFollowing(false);},
+    captureMap:()=>refreshCurrentAtlasMap(true),
+    prepareTravel:()=>{refreshCurrentAtlasMap(true);closeWorldAtlas();if(editMode)setEditMode(false);if(followMode)stopFollowing(false);},
     onTravelError:message=>{openWorldAtlas();setAtlasStatus(message);},
     openAtlas:openWorldAtlas,
     openMenu:toggleMainMenu
