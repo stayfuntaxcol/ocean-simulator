@@ -149,17 +149,20 @@ export function advanceImportedVitality(vitality,dt,{foodSupply=1,hazard=0}={}){
   next.starvationSeconds=Math.max(0,clean(next.starvationSeconds));
   if(next.health<=5&&!['burial','dead'].includes(next.state))next.state='sinking';
 
-  const deficit=1-supply;
+  // 80% supply covers maintenance. Partial feeding below that still saves
+  // reserve; above it the fish replenishes gradually instead of starving at 99%.
+  const deficit=Math.pow(Math.max(0,1-supply/.8),1.5);
+  const recovery=Math.max(0,(supply-.8)/.2);
   if(next.state!=='sinking'&&next.state!=='burial'&&next.state!=='dead'){
-    if(deficit>.01){
+    if(deficit>0){
       next.foodReserve=Math.max(0,next.foodReserve-delta*deficit);
       if(next.foodReserve<=0)next.starvationSeconds+=delta*deficit;
     }else{
-      next.foodReserve=Math.min(next.maxFoodReserve,next.foodReserve+delta*.85);
-      next.starvationSeconds=Math.max(0,next.starvationSeconds-delta*2);
-      next.health=Math.min(100,next.health+delta*.05);
+      next.foodReserve=Math.min(next.maxFoodReserve,next.foodReserve+delta*.85*recovery);
+      next.starvationSeconds=Math.max(0,next.starvationSeconds-delta*2*recovery);
+      next.health=Math.min(100,next.health+delta*.05*recovery);
     }
-    if(next.foodReserve<=0&&next.starvationSeconds>30){
+    if(deficit>0&&next.foodReserve<=0&&next.starvationSeconds>30){
       const starvationDamage=.09+.18*deficit;
       next.health=Math.max(0,next.health-delta*starvationDamage);
     }
