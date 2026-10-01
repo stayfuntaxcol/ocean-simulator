@@ -3139,7 +3139,7 @@ function updateImportedHealth(dt){
     const next=advanceImportedVitality({
       health:fish.userData.health,foodReserve:fish.userData.foodReserve,maxFoodReserve:fish.userData.maxFoodReserve,
       starvationSeconds:fish.userData.starvationSeconds,state:fish.userData.vitalState
-    },dt,{hazard,foodSupply:fish.userData.localFoodSupply??0,metabolism:fish.userData.metabolism??1});
+    },dt,{hazard,foodSupply:fish.userData.localFoodSupply??0,metabolism:fish.userData.metabolism??1,resting:Boolean(fish.userData.sleeping)});
     fish.userData.health=next.health;fish.userData.foodReserve=next.foodReserve;
     fish.userData.maxFoodReserve=next.maxFoodReserve;fish.userData.starvationSeconds=next.starvationSeconds;
     fish.userData.vitalState=next.state;
@@ -3725,7 +3725,8 @@ function updateLocalFood(dt){
     if(!fish.parent||fish.userData.dead||fish.userData.vitalState==='burial'||fish.userData.vitalState==='sinking')continue;
     if(fish===orca?.root||fish===whale?.root)continue;
     const biomass=fish.userData.biomass??fishBiomass({imported:fish.userData.imported,contactRadius:fish.userData.contactRadius,scale:fish.scale.x});
-    fish.userData.biomass=biomass;consumers.push({x:fish.position.x,z:fish.position.z,biomass});
+    fish.userData.biomass=biomass;
+    if(!(fish.userData.imported&&fish.userData.sleeping))consumers.push({x:fish.position.x,z:fish.position.z,biomass});
   }
   if(orca&&!orca.root.userData.dead)consumers.push({x:orca.root.position.x,z:orca.root.position.z,biomass:18});
   if(whale&&!whale.root.userData.dead)consumers.push({x:whale.root.position.x,z:whale.root.position.z,biomass:30});
@@ -4451,14 +4452,15 @@ function updateEcology(dt){
       school.foodCheck=(school.foodCheck||0)+step;
       if(school.foodCheck<12)continue;school.foodCheck=0;
       const members=school.members.filter(f=>f.parent&&!f.userData.dead);if(!members.length)continue;
-      const food=localFoodAt(school.center.x,school.center.z);
+      if(importedDayPhase(currentWeatherState.hour).sleeping)continue;
       const reserves=Math.min(...members.map(f=>f.userData.foodReserve/f.userData.maxFoodReserve));
-      const destination=foodSectors.get(school.feedingSector);
-      if(destination&&school.currentFoodSector!==school.feedingSector&&school.center.distanceTo(school.target)>8&&destination.stock>destination.maxFood*.5&&destination.demand<destination.capacity)continue;
-      // Stay long enough to refill at a good feeding ground. Low reserve alone
-      // used to restart migration every twelve seconds, even while recovering.
-      if(food.supply<.8||(food.stockRatio<.4&&food.demand>food.capacity)||(reserves<(school.foodSeekThreshold??.75)&&food.supply<.95)){
+      const mode=importedReserveMode(reserves);
+      // Food no longer drives healthy fish around the map. Only low reserve can
+      // interrupt free roaming; otherwise the current exploration target remains.
+      if(mode==='urgent'||mode==='forage'){
         school.forceMigration=true;school.retargetAt=0;school.navWaypoint=null;
+      }else if(mode==='seek'&&school.mode==='explore'&&oceanRandom()<.12){
+        school.retargetAt=0;
       }
     }
   }
@@ -4812,17 +4814,39 @@ function updateFish(dt,t){
       }else if(fishHit){
         const travel=collisionTmp2.clone().sub(collisionTmp);
         if(travel.lengthSq())travel.normalize();
-        p.copy(fishHit.point).addScaledVector(travel,-contactRadius-.04);
+        p.copy(fishHit.point).addScaledVector(travel,-contactRadius-.025);
 
-        const nav=school.navWaypoint||school.target;
-        const reroute=nav.clone().sub(p);
-        if(reroute.lengthSq()){
-          reroute.normalize();
-          fish.userData.velocity.lerp(reroute.multiplyScalar(school.cruiseSpeed*.68),.28);
+        if(fish.userData.imported){
+          const now=simulationTime();
+          if(!fish.userData.grazeUntil||now>fish.userData.grazeCooldownUntil){
+            fish.userData.grazeUntil=now+.8+oceanRandom()*1.8;
+            fish.userData.grazeCooldownUntil=fish.userData.grazeUntil+4+oceanRandom()*4;
+          }
+          if(now<fish.userData.grazeUntil){
+            // Briefly hover with the nose close to real rock geometry: this can
+            // read visually as grazing/feeding, but never lets the body enter rock.
+            fish.userData.velocity.multiplyScalar(.12);
+          }else{
+            const root=fishHit.solidRoot;
+            const center=root?new THREE.Box3().setFromObject(root).getCenter(new THREE.Vector3()):fishHit.point;
+            const away=p.clone().sub(center);away.y*=.25;
+            if(away.lengthSq()<.001)away.set(-travel.z,.15,travel.x);
+            away.normalize();
+            const nav=(school.target||p).clone().sub(p).normalize();
+            fish.userData.velocity.lerp(away.multiplyScalar(school.cruiseSpeed*.92).addScaledVector(nav,.35),.55);
+          }
         }else{
-          fish.userData.velocity.multiplyScalar(.45);
+          const nav=school.navWaypoint||school.target;
+          const reroute=nav.clone().sub(p);
+          if(reroute.lengthSq()){
+            reroute.normalize();
+            fish.userData.velocity.lerp(reroute.multiplyScalar(school.cruiseSpeed*.68),.28);
+          }else{
+            fish.userData.velocity.multiplyScalar(.45);
+          }
         }
       }else{
+        if(fish.userData.imported&&fish.userData.grazeUntil&&simulationTime()>fish.userData.grazeUntil)fish.userData.grazeUntil=0;
         p.copy(collisionTmp2);
       }
       if(!fish.userData.imported&&policy?.kind!=='bottom'&&!policy?.reefHeight)p.y+=Math.sin(t*1.55+fish.userData.phase)*dt*.06;
