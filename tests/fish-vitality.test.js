@@ -93,3 +93,12 @@ test('every fish profile receives a finite migration interval of a few minutes',
     assert.ok(early>=90);assert.ok(late<=330);assert.ok(late>early);
   }
 });
+
+
+test('sleeping imported fish neither eat nor consume reserve',()=>{
+  const start={...createImportedVitality({reserveSeconds:180}),foodReserve:73,starvationSeconds:12};
+  const next=advanceImportedVitality(start,30,{foodSupply:0,metabolism:1.18,resting:true});
+  assert.equal(next.foodReserve,73);
+  assert.ok(next.starvationSeconds<12);
+  assert.equal(next.health,100);
+});
