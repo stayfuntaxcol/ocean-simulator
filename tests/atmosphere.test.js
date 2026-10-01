@@ -76,6 +76,23 @@ test('shared caustic uniforms patch the installed Three.js standard shader', () 
   assert.equal(shader.uniforms.oceanTime.value, 27);
 });
 
+test('weather changes waves, cloud deck, caustic speed and underwater visibility', () => {
+  const { atmosphere, scene } = fixture();
+  const group = scene.children[0];
+  const surface = group.getObjectByName('Animated water surface');
+  const clouds = group.getObjectByName('Weather cloud deck');
+  atmosphere.update(8, { weather: { daylight: .55, moonlight: 0, sunsetWarmth: .6,
+    elevation: .1, sunX: -.8, cloudCover: .96, wind: 1, waveHeight: 1.62,
+    waveSpeed: 1.55, caustics: .24, visibility: .58, storminess: .88, lightningFlash: 0 } });
+  assert.equal(surface.material.uniforms.waveHeight.value, 1.62);
+  assert.equal(surface.material.uniforms.waveSpeed.value, 1.55);
+  assert.equal(clouds.visible, true);
+  assert.equal(clouds.material.uniforms.cloudCover.value, .96);
+  assert.equal(atmosphere.uniforms.oceanWaveSpeed.value, 1.55);
+  assert.equal(atmosphere.uniforms.oceanTurbulence.value, .88);
+  assert.ok(scene.fog.density > .04);
+});
+
 test('reference scene has reproducible randomness and a bounded composition', () => {
   const a = seededRandom(REFERENCE.seed), b = seededRandom(REFERENCE.seed);
   for (let i = 0; i < 1000; i++) { const n = a(); assert.equal(n, b()); assert.ok(n >= 0 && n < 1); }
