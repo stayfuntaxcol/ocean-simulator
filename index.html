@@ -233,11 +233,21 @@
         <div class="weather-controls">
           <label>Dag/nachtcyclus <input id="dayNightCycle" type="checkbox" checked></label>
           <label>Tijdstip <span class="weather-range"><input id="timeOfDay" type="range" min="0" max="24" step="0.1" value="9.5"><output id="timeOfDayValue">09:30</output></span></label>
-          <label>Duur van een dag <select id="dayLength"><option value="5">5 minuten</option><option value="10">10 minuten</option><option value="20" selected>20 minuten</option><option value="40">40 minuten</option><option value="60">60 minuten</option></select></label>
+          <div class="weather-quick-times" aria-label="Snel naar tijdstip">
+            <button type="button" data-ocean-hour="5.8">Dageraad</button>
+            <button type="button" data-ocean-hour="6.4">Zonsopgang</button>
+            <button type="button" data-ocean-hour="12">Middag</button>
+            <button type="button" data-ocean-hour="18.1">Zonsondergang</button>
+            <button type="button" data-ocean-hour="23.5">Nacht</button>
+          </div>
+          <label>Duur van een dag <select id="dayLength"><option value="5">5 minuten</option><option value="10">10 minuten</option><option value="20" selected>20 minuten</option><option value="40">40 minuten</option><option value="60">60 minuten</option><option value="120">120 minuten</option></select></label>
+          <label>Dynamisch weer <input id="dynamicWeather" type="checkbox"></label>
           <label>Weertype <select id="weatherType"><option value="sunny">Zonnig</option><option value="cloudy">Bewolkt</option><option value="calm">Windstil</option><option value="storm">Stormachtig</option><option value="thunder">Onweer met bliksem</option></select></label>
           <label>Weersterkte <span class="weather-range"><input id="weatherIntensity" type="range" min="25" max="150" step="5" value="100"><output id="weatherIntensityValue">100%</output></span></label>
+          <label>Weerduur <select id="weatherDuration"><option value="1">1 minuut</option><option value="3" selected>3 minuten</option><option value="5">5 minuten</option><option value="10">10 minuten</option><option value="20">20 minuten</option></select></label>
+          <label>Overgang <select id="weatherTransition"><option value="0">Direct</option><option value="8">8 sec</option><option value="18" selected>18 sec</option><option value="35">35 sec</option><option value="60">60 sec</option></select></label>
           <p id="weatherStatus" aria-live="polite">09:30 · Ochtend · Zonnig</p>
-          <small>Slecht weer maakt het water donkerder en onstuimiger. Vissen zoeken dan geleidelijk dieper water.</small>
+          <small>Nacht wordt bijna volledig donker. Zonsopgang en zonsondergang kleuren ook het water. Stormen versterken golven, lichtbreking en visreacties.</small>
         </div>
       </details>
       <label>Zand & rotsdetail <input id="seabedDetail" type="checkbox" checked></label>
@@ -746,10 +756,15 @@ const oceanWeather=createOceanWeather(storedWeather);
 let currentWeatherState=oceanWeather.snapshot();
 const dayNightCycle=document.getElementById('dayNightCycle'),timeOfDay=document.getElementById('timeOfDay');
 const timeOfDayValue=document.getElementById('timeOfDayValue'),dayLength=document.getElementById('dayLength');
+const dynamicWeather=document.getElementById('dynamicWeather'),weatherDuration=document.getElementById('weatherDuration');
+const weatherTransition=document.getElementById('weatherTransition');
 const weatherType=document.getElementById('weatherType'),weatherIntensity=document.getElementById('weatherIntensity');
 const weatherIntensityValue=document.getElementById('weatherIntensityValue'),weatherStatus=document.getElementById('weatherStatus');
 dayNightCycle.checked=currentWeatherState.cycleEnabled;timeOfDay.value=currentWeatherState.hour;
 dayLength.value=String(currentWeatherState.dayLengthMinutes);weatherType.value=currentWeatherState.id;
+dynamicWeather.checked=currentWeatherState.dynamicWeather;
+weatherDuration.value=String(currentWeatherState.weatherDurationMinutes);
+weatherTransition.value=String(currentWeatherState.transitionSeconds);
 weatherIntensity.value=String(Math.round(currentWeatherState.intensity*100));
 function formatOceanClock(hour){
   const minutes=Math.round((((hour%24)+24)%24)*60)%1440;
@@ -761,13 +776,22 @@ function saveWeatherSettings(){
 function refreshWeatherControls(){
   const clockText=formatOceanClock(currentWeatherState.hour);
   timeOfDay.value=currentWeatherState.hour;timeOfDayValue.textContent=clockText;
+  weatherType.value=currentWeatherState.id;
   weatherIntensityValue.textContent=`${Math.round(currentWeatherState.intensity*100)}%`;
-  weatherStatus.textContent=`${clockText} · ${currentWeatherState.phase} · ${currentWeatherState.name} · golven ${currentWeatherState.waveHeight.toFixed(1)}×`;
+  const darkness=currentWeatherState.nightFactor>.72?' · zeer donker':currentWeatherState.twilight>.35?' · schemerlicht':'';
+  const transition=currentWeatherState.transitionProgress<.999?` · overgang ${Math.round(currentWeatherState.transitionProgress*100)}%`:'';
+  weatherStatus.textContent=`${clockText} · ${currentWeatherState.phase}${darkness} · ${currentWeatherState.name} · golven ${currentWeatherState.waveHeight.toFixed(1)}×${transition}`;
 }
 dayNightCycle.addEventListener('change',()=>{oceanWeather.setCycleEnabled(dayNightCycle.checked);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 timeOfDay.addEventListener('input',()=>{oceanWeather.setHour(timeOfDay.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+document.querySelectorAll('[data-ocean-hour]').forEach(button=>button.addEventListener('click',()=>{
+  oceanWeather.setHour(Number(button.dataset.oceanHour));currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();
+}));
 dayLength.addEventListener('change',()=>{oceanWeather.setDayLengthMinutes(dayLength.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
-weatherType.addEventListener('change',()=>{oceanWeather.setWeather(weatherType.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+dynamicWeather.addEventListener('change',()=>{oceanWeather.setDynamicWeather(dynamicWeather.checked);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+weatherDuration.addEventListener('change',()=>{oceanWeather.setWeatherDurationMinutes(weatherDuration.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+weatherTransition.addEventListener('change',()=>{oceanWeather.setTransitionSeconds(weatherTransition.value);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
+weatherType.addEventListener('change',()=>{oceanWeather.setWeather(weatherType.value,false);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 weatherIntensity.addEventListener('input',()=>{oceanWeather.setIntensity(Number(weatherIntensity.value)/100);currentWeatherState=oceanWeather.snapshot();saveWeatherSettings();refreshWeatherControls();});
 refreshWeatherControls();
 const sandDetail = { value: 1 };
