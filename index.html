@@ -3440,6 +3440,8 @@ function restoreWorld(data){
   legacyGeneratedRocksCleared=false;
   volumeSculpt.load(data.sculpt||null);
   currentFlow.load(data.currentFlows,{defaultIfEmpty:true});
+  currentFlow.setRockFactors(new Map());
+  currentRockFactorStamp='';
   refreshCurrentFlowUi();
   refreshCurrentFlowDebug();
   if(Array.isArray(data.terrain)){
@@ -4350,6 +4352,7 @@ function refreshCurrentRockFactors(force=false){
     for(let iz=minZ;iz<=maxZ;iz++)for(let ix=minX;ix<=maxX;ix++)add(cellKey(ix,iz),.48);
   }
   currentFlow.setRockFactors(factors);
+  foodSectorRevision=-1;ecosystemLastRevision=-1;
   refreshCurrentFlowStatus();
   return true;
 }
