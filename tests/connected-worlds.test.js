@@ -112,3 +112,15 @@ test('atlas transport may open a known distant world while swimming stays neighb
  assert.equal(await e.travelTo('C',{x:0,y:-11,z:0},{allowDistant:true,mode:'atlas',beforeActivate:()=>{prepared++;}}),true);
  assert.equal(prepared,1);assert.equal(e.current.id,'C');assert.match(last,/Je bent nu in C/);e.dispose();
 });
+
+
+test('world validation normalizes persisted sculpt rock mesh descriptors',()=>{
+ const result=validateWorldRecord({world:{version:4,cells:[],terrain:[],rockFormations:[
+   {formationId:'sculpt-0_-4_0',style:'lava_rock',skin:'dark_lava',seed:55,deviation:.08,accepted:true,locked:true}
+ ]}});
+ assert.equal(result.world.rockFormations.length,1);
+ assert.equal(result.world.rockFormations[0].formationId,'sculpt-0_-4_0');
+ assert.equal(result.world.rockFormations[0].locked,true);
+ assert.equal(result.world.rockFormations[0].deviation,.08);
+ assert.throws(()=>validateWorldRecord({world:{version:4,cells:[],terrain:[],rockFormations:[{style:'lava_rock'}]}}),/formationId/);
+});
