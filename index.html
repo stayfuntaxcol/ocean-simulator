@@ -432,6 +432,13 @@
             </label>
           </div>
           <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Vormstijl
+              <input id="rockShapeLevel" type="range" min="1" max="5" step="1" value="3" style="width:100%;margin-top:4px">
+              <output id="rockShapeLevelValue">3 · Natuurlijk rif</output>
+            </label>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#86aebb;margin-top:-4px"><span>1 · Blok / snelst</span><span>5 · Rond / zwaarst</span></div>
+          <div class="toolrow">
             <button id="generateRockFormationBtn" type="button">🪨 Toon als rots</button>
             <button id="rockVariantLock" type="button">🔓 Vastzetten</button>
             <button id="rockGenerateAll" type="button">🪨 Toon alle</button>
@@ -758,6 +765,8 @@ const sculptClear = document.getElementById('sculptClear');
 const generateRockFormationBtn=document.getElementById('generateRockFormationBtn');
 const rockFormationSelect=document.getElementById('rockFormationSelect');
 const rockFormationSkin=document.getElementById('rockFormationSkin');
+const rockShapeLevel=document.getElementById('rockShapeLevel');
+const rockShapeLevelValue=document.getElementById('rockShapeLevelValue');
 const rockVariantLock=document.getElementById('rockVariantLock');
 const rockGenerateAll=document.getElementById('rockGenerateAll');
 const rockFormationStatus=document.getElementById('rockFormationStatus');
@@ -2919,11 +2928,23 @@ function removeLegacyGeneratedRocks(){
   if(removed){habitatRevision++;rockCollisionRevision++;}
   return removed;
 }
+const ROCK_SHAPE_LABELS={
+  1:'1 · Blokvormig',
+  2:'2 · Hoekig rif',
+  3:'3 · Natuurlijk rif',
+  4:'4 · Rond rif',
+  5:'5 · Zeer rond'
+};
+function updateRockShapeLabel(){
+  const value=Math.max(1,Math.min(5,Number(rockShapeLevel.value)||3));
+  rockShapeLevelValue.textContent=ROCK_SHAPE_LABELS[value];
+}
 function descriptorForFormation(id){
   const saved=rockFormationDescriptors.get(id);
   return normalizeRockFormationDescriptor(saved||{
     formationId:id,
     skin:rockFormationSkin.value||'grey_reef',
+    shapeLevel:Number(rockShapeLevel.value)||3,
     locked:false
   });
 }
@@ -2937,14 +2958,17 @@ function renderSimpleRockFormation(formation,descriptor){
 function updateFormationControls(){
   const id=rockFormationSelect.value,formation=sculptFormationById(id),descriptor=id?descriptorForFormation(id):null;
   if(descriptor&&ROCK_SKINS[descriptor.skin])rockFormationSkin.value=descriptor.skin;
+  if(descriptor)rockShapeLevel.value=String(descriptor.shapeLevel||3);
+  updateRockShapeLabel();
   const built=id?rockFormationMeshes.get(id):null;
   generateRockFormationBtn.disabled=!formation;
+  rockShapeLevel.disabled=!formation||descriptor?.locked===true;
   rockVariantLock.disabled=!built;
   rockVariantLock.textContent=descriptor?.locked?'🔒 Vastgezet':'🔓 Vastzetten';
   if(!formation)rockFormationStatus.textContent='Geen sculptformatie gevonden.';
   else rockFormationStatus.textContent=
     `Rotspartij · ${formation.cells.length} sculptcellen · ${Math.round(formation.volume)} m³`+
-    (built?` · aaneengesloten mesh · ${built.triangles} triangles · ${ROCK_SKINS[descriptor.skin]?.name||descriptor.skin}`:' · nog niet als rots getoond')+
+    (built?` · vorm ${descriptor.shapeLevel}/5 · ${built.triangles} triangles · ${ROCK_SKINS[descriptor.skin]?.name||descriptor.skin}`:' · nog niet als rots getoond')+
     (descriptor?.locked?' · 🔒':'');
 }
 function refreshRockFormationOptions(preferId=null){
@@ -2965,6 +2989,7 @@ function showSelectedFormationAsRock(){
   removeLegacyGeneratedRocks();
   const descriptor=descriptorForFormation(id);
   descriptor.skin=ROCK_SKINS[rockFormationSkin.value]?rockFormationSkin.value:'grey_reef';
+  descriptor.shapeLevel=Math.max(1,Math.min(5,Number(rockShapeLevel.value)||3));
   descriptor.formationId=id;
   try{
     const existing=rockFormationMeshes.get(id);
@@ -2978,8 +3003,8 @@ function showSelectedFormationAsRock(){
     if(!record||record.surfaceCount<1)throw Error('geen zichtbare buitenste sculptcellen');
     rockFormationDescriptors.set(id,structuredClone(descriptor));
     updateFormationControls();
-    rockFormationStatus.textContent=`Aaneengesloten mesh · ${record.vertices} vertices · ${record.triangles} triangles · ${ROCK_SKINS[descriptor.skin].name}`;
-    editorInfo.textContent=`🪨 Aaneengesloten rotsformatie klaar: ${record.vertices} vertices / ${record.triangles} triangles · ${ROCK_SKINS[descriptor.skin].name}.`;
+    rockFormationStatus.textContent=`Vorm ${descriptor.shapeLevel}/5 · ${record.vertices} vertices · ${record.triangles} triangles · ${ROCK_SKINS[descriptor.skin].name}`;
+    editorInfo.textContent=`🪨 Rotsformatie klaar: vorm ${descriptor.shapeLevel}/5 · ${record.triangles} triangles · ${ROCK_SKINS[descriptor.skin].name}.`;
     requestAnimationFrame(()=>{
       if(!rockFormationMeshes.get(id))return;
       rockMeshPreviewOnly=true;setSculptPreviewMode(true);
@@ -2997,6 +3022,22 @@ function changeCurrentFormationSkin(){
   const descriptor=descriptorForFormation(id);descriptor.skin=skin;
   rockFormationDescriptors.set(id,structuredClone(descriptor));
   if(rockFormationMeshes.get(id))rockFormationMeshes.setSkin(id,skin);
+  updateFormationControls();
+}
+function applyCurrentRockShape(){
+  const id=rockFormationSelect.value,formation=sculptFormationById(id);
+  if(!id||!formation)return;
+  const descriptor=descriptorForFormation(id);
+  if(descriptor.locked){updateFormationControls();return;}
+  descriptor.shapeLevel=Math.max(1,Math.min(5,Number(rockShapeLevel.value)||3));
+  const existing=rockFormationMeshes.get(id);
+  if(existing)descriptor.transform=rockFormationMeshes.transformFor(id);
+  rockFormationDescriptors.set(id,structuredClone(descriptor));
+  if(existing){
+    renderSimpleRockFormation(formation,descriptor);
+    const record=rockFormationMeshes.get(id);
+    editorInfo.textContent=`Vormstijl toegepast: ${ROCK_SHAPE_LABELS[descriptor.shapeLevel]} · ${record.triangles} triangles.`;
+  }
   updateFormationControls();
 }
 function toggleCurrentRockFormationLock(){
@@ -3144,6 +3185,8 @@ sculptViewMode.addEventListener('change',()=>{volumeSculpt.setViewMode(sculptVie
 sculptPreviewBtn.addEventListener('click',()=>setSculptPreviewMode(!sculptPreviewMode));
 rockFormationSelect.addEventListener('change',updateFormationControls);
 rockFormationSkin.addEventListener('change',changeCurrentFormationSkin);
+rockShapeLevel.addEventListener('input',updateRockShapeLabel);
+rockShapeLevel.addEventListener('change',applyCurrentRockShape);
 generateRockFormationBtn.addEventListener('click',showSelectedFormationAsRock);
 rockVariantLock.addEventListener('click',toggleCurrentRockFormationLock);
 rockGenerateAll.addEventListener('click',showAllFormationsAsRock);
