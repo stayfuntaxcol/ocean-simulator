@@ -56,3 +56,31 @@ test('all six skins produce distinct geological color signatures on the same roc
   }
   assert.equal(signatures.size,ROCK_SKIN_IDS.length);
 });
+
+
+test('grey reef and limestone skins reuse the simulator existing stone shader engine when ocean uniforms are available',()=>{
+  const caustics={
+    oceanTime:{value:0},
+    oceanStrength:{value:.3},
+    oceanWaveSpeed:{value:1},
+    oceanTurbulence:{value:0}
+  };
+  const grey=createRockSkinMaterial('grey_reef',caustics);
+  const limestone=createRockSkinMaterial('tropical_limestone',caustics);
+  assert.equal(grey.userData.patternKind,'basalt');
+  assert.equal(limestone.userData.patternKind,'limestone');
+  assert.match(grey.customProgramCacheKey(),/basalt/);
+  assert.match(limestone.customProgramCacheKey(),/limestone/);
+
+  const greyShader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  grey.onBeforeCompile(greyShader);
+  assert.match(greyShader.fragmentShader,/seabedNoise/);
+  assert.match(greyShader.fragmentShader,/seams/);
+
+  const limestoneShader={uniforms:{},vertexShader:THREE.ShaderLib.standard.vertexShader,fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+  limestone.onBeforeCompile(limestoneShader);
+  assert.match(limestoneShader.fragmentShader,/seabedNoise/);
+  assert.match(limestoneShader.fragmentShader,/bands/);
+
+  grey.dispose();limestone.dispose();
+});
