@@ -107,6 +107,18 @@
       border:1px solid rgba(127,226,255,.55);font-size:13px;font-weight:700
     }
     #editBadge.on{display:block}
+    #buildDepthHud{
+      display:none;position:absolute;right:18px;top:18px;z-index:20;min-width:190px;
+      padding:9px 12px;border-radius:10px;background:rgba(4,24,34,.86);
+      border:1px solid rgba(70,218,242,.58);color:#e9fbff;font-size:11px;line-height:1.45;
+      backdrop-filter:blur(7px);pointer-events:none
+    }
+    #buildDepthHud.on{display:block}
+    #buildDepthHud strong{display:block;color:#72f0ff;font-size:12px}
+    #terrainFeatureTools{padding:8px;border:1px solid rgba(127,226,255,.18);border-radius:9px;background:rgba(4,42,55,.24)}
+    #terrainFeatureTools[hidden]{display:none}
+    #terrainFeatureTools label{display:grid;grid-template-columns:82px 1fr 46px;gap:7px;align-items:center;width:100%;font-size:11px;color:#d9f5ff}
+    #terrainFeatureTools input{width:100%}
 
 
     #minimapWrap{
@@ -332,9 +344,11 @@
           <option value="rocks">🪨 Rotsrif</option>
           <option value="seagrass">🌿 Zeegrasveld</option>
           <option value="sponge">🧽 Spons & anemoon</option>
-          <option value="terrainLower">⬇ Bodem verlagen / geul</option>
+          <option value="terrainLower">⬇ Bodem verlagen</option>
           <option value="terrainRaise">⬆ Bodem verhogen</option>
           <option value="terrainSmooth">〰 Bodem gladstrijken</option>
+          <option value="terrainCanyon">🏞 Canyon / ravijn</option>
+          <option value="terrainDropoff">🌊 Reef drop-off</option>
           <option value="lavaVent">🌋 Lava-bron plaatsen</option>
           <option value="removeTop">↩ Verwijder bovenste laag</option>
           <option value="clear">🧹 Vak helemaal leegmaken</option>
@@ -404,6 +418,15 @@
         <button id="randomTerrainBtn" type="button">🎲 Random bodem</button>
         <button id="flatTerrainBtn" type="button">▭ Bodem vlak</button>
         <span style="font-size:11px;color:#9cc9d8;align-self:center">Alleen hoogte/diepte · geen rotsen of begroeiing</span>
+      </div>
+      <div id="terrainFeatureTools" hidden>
+        <div class="toolrow">
+          <label>Doeldiepte <input id="terrainTargetDepth" type="range" min="20" max="520" step="10" value="80"><output id="terrainTargetDepthValue">80 m</output></label>
+        </div>
+        <div class="toolrow">
+          <label>Breedte <input id="terrainFeatureWidth" type="range" min="12" max="84" step="6" value="36"><output id="terrainFeatureWidthValue">36 m</output></label>
+        </div>
+        <span style="font-size:11px;color:#9cc9d8">Canyon: sleep langs de as van het ravijn. Drop-off: sleep van de ondiepe kant naar de diepe kant.</span>
       </div>
       <div class="toolrow">
         <button id="saveWorldBtn" type="button">💾 Opslaan</button>
@@ -508,6 +531,7 @@
   </div>
 
   <div id="editBadge">BOUWMODUS · sleep over de zeebodem om een groot gebied te vullen</div>
+  <div id="buildDepthHud"><strong>🌊 SEA LEVEL · 0 m</strong><span id="buildDepthReadout">Diepte 0 m · laag 0</span><br><span id="buildLayerReadout">Laag 0: 0–288 m</span></div>
   <div id="crosshair"></div>
   <div id="hint">Klik op “Start verkennen”. Druk ESC om de muis vrij te geven.</div>
 </div>
@@ -545,6 +569,9 @@ import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './gra
 import { createNightFlashlight } from './graphics/NightLighting.js';
 import { createJellyfishSwarm } from './graphics/JellyfishSwarm.js';
 import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
+import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
+import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
+import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -647,6 +674,14 @@ const landscapeDensity = document.getElementById('landscapeDensity');
 const terrainInspectToggle = document.getElementById('terrainInspectToggle');
 const randomTerrainBtn = document.getElementById('randomTerrainBtn');
 const flatTerrainBtn = document.getElementById('flatTerrainBtn');
+const terrainFeatureTools=document.getElementById('terrainFeatureTools');
+const terrainTargetDepth=document.getElementById('terrainTargetDepth');
+const terrainTargetDepthValue=document.getElementById('terrainTargetDepthValue');
+const terrainFeatureWidth=document.getElementById('terrainFeatureWidth');
+const terrainFeatureWidthValue=document.getElementById('terrainFeatureWidthValue');
+const buildDepthHud=document.getElementById('buildDepthHud');
+const buildDepthReadout=document.getElementById('buildDepthReadout');
+const buildLayerReadout=document.getElementById('buildLayerReadout');
 const saveWorldBtn = document.getElementById('saveWorldBtn');
 const loadWorldBtn = document.getElementById('loadWorldBtn');
 const exportWorldBtn = document.getElementById('exportWorldBtn');
