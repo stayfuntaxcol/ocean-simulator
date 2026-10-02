@@ -33,7 +33,8 @@ export function createVolumeSculptEditor({
   );
   brush.name='Sculpt brush';brush.renderOrder=50;brush.visible=false;group.add(brush);
 
-  let visible=false,brushRadius=6,strength=.45,tool='add',dirty=true;
+  let visible=false,brushRadius=6,strength=.45,tool='add',dirty=true,strokeOpen=false;
+  const history=[];
 
   function accepted(c){
     if(c.y<minY||c.y>maxY||!contains(c.x,c.z))return false;
@@ -56,6 +57,19 @@ export function createVolumeSculptEditor({
     }
     mesh.count=i;mesh.instanceMatrix.needsUpdate=true;
     if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+  }
+
+  function snapshotHistory(){
+    history.push(sculptDataFromMap(cells,cellSize));
+    if(history.length>30)history.shift();
+  }
+  function beginStroke(){if(strokeOpen)return;strokeOpen=true;snapshotHistory();}
+  function endStroke(){strokeOpen=false;}
+  function undo(){
+    const previous=history.pop();if(!previous)return false;
+    const mapped=sculptMapFromData(previous,{worldHalf,minY,maxY,maxCells});cells.clear();
+    for(const [key,value] of mapped.cells)cells.set(key,value);
+    dirty=true;refresh();return true;
   }
 
   function apply(point,mode=tool){
@@ -91,12 +105,12 @@ export function createVolumeSculptEditor({
   function serialize(){return sculptDataFromMap(cells,cellSize);}
   function load(data){
     const normalized=normalizeVolumeSculpt(data,{worldHalf,minY,maxY,maxCells});
-    cells.clear();
+    history.length=0;strokeOpen=false;cells.clear();
     const mapped=sculptMapFromData(normalized,{worldHalf,minY,maxY,maxCells});
     for(const [key,value] of mapped.cells)if(cells.size<maxCells)cells.set(key,value);
     dirty=true;refresh();
   }
-  function clear(){cells.clear();dirty=true;refresh();}
+  function clear(){if(cells.size)snapshotHistory();cells.clear();strokeOpen=false;dirty=true;refresh();}
   function setVisible(value){visible=Boolean(value);group.visible=visible;if(!visible)brush.visible=false;refresh();}
   function setBrushRadius(value){brushRadius=clamp(Number(value)||6,cellSize,18);if(brush.visible)brush.scale.setScalar(brushRadius);}
   function setStrength(value){strength=clamp(Number(value)||.45,.05,1);}
@@ -108,7 +122,7 @@ export function createVolumeSculptEditor({
 
   group.visible=false;
   return {
-    group,mesh,brush,apply,brushPointFromHit,setBrushPreview,serialize,load,clear,refresh,
+    group,mesh,brush,apply,beginStroke,endStroke,undo,brushPointFromHit,setBrushPreview,serialize,load,clear,refresh,
     setVisible,setBrushRadius,setStrength,setTool,dispose,
     get visible(){return visible;},get count(){return cells.size;},get cellSize(){return cellSize;},
     get brushRadius(){return brushRadius;},get strength(){return strength;},get tool(){return tool;},
