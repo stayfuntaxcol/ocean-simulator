@@ -2867,7 +2867,7 @@ function toggleSelectedEditorLock(){
   if(root.userData.generatedRock!==true)return;
   const layer=layerRecord(root.userData.editorCell,root.userData.editorLayerId);if(!layer?.generatedRock)return;
   layer.locked=!layer.locked;root.userData.editorLocked=layer.locked;
-  refreshPrecisionLockUi();updateRockFormationButton();
+  refreshPrecisionLockUi();
   precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'formatie-rots'}</strong> · ${layer.locked?'🔒 beschermd bij regenereren':'🔓 wordt opnieuw berekend bij regenereren'}`;
 }
 function deleteSelectedEditorObject(){
@@ -3349,6 +3349,7 @@ function worldData(){
     reefVisitors:Object.fromEntries([...reefVisitors].map(([kind,a])=>[kind,{position:a.root.position.toArray(),heading:-a.root.rotation.y}])),
     terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
     sculpt:volumeSculpt.serialize(),
+    rockFormations:serializedRockFormations(),
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
     orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
       heading:Math.atan2(orca.root.userData.velocity.z,orca.root.userData.velocity.x),health:orca.root.userData.health} : null,
@@ -3394,7 +3395,10 @@ function restoreWorld(data){
     if(reef.children[i].userData.editorCell) removeReefRoot(reef.children[i]);
   }
   clearAllWorldVisuals();clearDeathMarkers();
+  for(const root of rockFormationMeshes.roots())if(rockCollisionRoots.delete(root))rockCollisionRevision++;
+  rockFormationMeshes.clear();rockFormationDescriptors.clear();rockVariantHistory.clear();
   worldCells.clear(); terrainOffsets.clear(); clearLavaVents(); nextLayerId=1;
+  legacyGeneratedRocksCleared=false;
   volumeSculpt.load(data.sculpt||null);
   if(Array.isArray(data.terrain)){
     for(const item of data.terrain){
@@ -3470,7 +3474,7 @@ function restoreWorld(data){
   if(savedOrca)placeOrcaAt(savedOrca);
   if(savedWhale)placeWhaleAt(savedWhale);
   for(const [kind,record] of Object.entries(savedVisitors))placeReefVisitorAt(kind,record);
-  updateRockFormationButton();
+  restoreRockFormationMeshes(data.rockFormations||[]);
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
@@ -3640,8 +3644,21 @@ blueprintFile.addEventListener('change',async()=>{
     let placed=0;
     for(const item of plan.objects)if(addPrecisionObject(item.type,{x:item.x,y:terrainHeightAt(item.x,item.z),z:item.z},{scale:item.scale,rotation:item.rotation}))placed++;
     if(plan.sculpt?.cells?.length)volumeSculpt.load(plan.sculpt);
+    refreshRockFormationOptions();
+    if(plan.rockFormations?.length){
+      const formations=currentSculptFormations();
+      const byId=new Map(formations.map(f=>[f.id,f]));
+      for(const item of plan.rockFormations){
+        const formation=item.formationId?byId.get(item.formationId):formations[item.formationIndex];
+        if(!formation)continue;
+        const descriptor=normalizeRockFormationDescriptor({...item,formationId:formation.id,accepted:true});
+        rockFormationDescriptors.set(formation.id,structuredClone(descriptor));
+        const history=historyForFormation(formation.id);history.items=[structuredClone(descriptor)];history.index=0;
+        renderRockFormationDescriptor(formation,descriptor);
+      }
+    }
     clearEditorSelection();
-    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
+    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen · ${plan.rockFormations?.length||0} meshformaties. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
   }catch(error){editorInfo.textContent=`AI-wereldplan niet geïmporteerd: ${error.message}`;}
   blueprintFile.value='';
 });
@@ -6137,7 +6154,7 @@ const jellyfishSwarm=createJellyfishSwarm({
 });
 jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
 jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
-addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();},{once:true});
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();rockFormationMeshes.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
