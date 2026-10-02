@@ -2785,7 +2785,7 @@ function toggleSelectedEditorLock(){
   const root=selectedEditorRoot;if(!root?.parent||root.userData.generatedRock!==true)return;
   const layer=layerRecord(root.userData.editorCell,root.userData.editorLayerId);if(!layer?.generatedRock)return;
   layer.locked=!layer.locked;root.userData.editorLocked=layer.locked;
-  refreshPrecisionLockUi();
+  refreshPrecisionLockUi();updateRockFormationButton();
   precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'formatie-rots'}</strong> · ${layer.locked?'🔒 beschermd bij regenereren':'🔓 wordt opnieuw berekend bij regenereren'}`;
 }
 function deleteSelectedEditorObject(){
@@ -3142,6 +3142,16 @@ function worldData(){
         id:l.id,
         type:l.type,
         habitatPoint:l.habitatPoint ? {x:l.habitatPoint.x,y:l.habitatPoint.y,z:l.habitatPoint.z} : null,
+        ...(l.generatedRock?{
+          generatedRock:true,
+          formationId:String(l.formationId||ROCK_FORMATION_ID),
+          locked:l.locked===true,
+          placementMode:l.placementMode==='center'?'center':'bottom',
+          rockRadius:Number(l.rockRadius)||3,
+          rockSeed:Number(l.rockSeed)||0,
+          rockKind:String(l.rockKind||'medium'),
+          sourceSculpt:l.sourceSculpt?{...l.sourceSculpt}:null
+        }:{}),
         ...(l.precision?{precision:true,placement:{...l.placement},objectEdits:structuredClone(l.objectEdits||{})}:l.objectEdits?{objectEdits:structuredClone(l.objectEdits)}:{})
       }))
     }))
@@ -3190,6 +3200,18 @@ function restoreWorld(data){
           ? {x:layer.habitatPoint.x,y:layer.habitatPoint.y,z:layer.habitatPoint.z}
           : null
       };
+      if(layer.generatedRock===true&&layer.type==='rocks'){
+        cleanLayer.generatedRock=true;
+        cleanLayer.formationId=String(layer.formationId||ROCK_FORMATION_ID).slice(0,80);
+        cleanLayer.locked=layer.locked===true;
+        cleanLayer.placementMode=layer.placementMode==='center'?'center':'bottom';
+        cleanLayer.rockRadius=THREE.MathUtils.clamp(Number(layer.rockRadius)||3,.6,14);
+        cleanLayer.rockSeed=Number.isFinite(Number(layer.rockSeed))?Number(layer.rockSeed):Number(id);
+        cleanLayer.rockKind=['large','medium','small'].includes(layer.rockKind)?layer.rockKind:'medium';
+        if(layer.sourceSculpt&&['ix','iy','iz'].every(k=>Number.isInteger(Number(layer.sourceSculpt[k])))){
+          cleanLayer.sourceSculpt={ix:Number(layer.sourceSculpt.ix),iy:Number(layer.sourceSculpt.iy),iz:Number(layer.sourceSculpt.iz)};
+        }
+      }
       const placement=layer.placement;
       if(layer.precision===true&&placement&&Number.isFinite(placement.x)&&Number.isFinite(placement.y)&&Number.isFinite(placement.z)){
         cleanLayer.precision=true;
@@ -3228,6 +3250,7 @@ function restoreWorld(data){
   if(savedOrca)placeOrcaAt(savedOrca);
   if(savedWhale)placeWhaleAt(savedWhale);
   for(const [kind,record] of Object.entries(savedVisitors))placeReefVisitorAt(kind,record);
+  updateRockFormationButton();
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
