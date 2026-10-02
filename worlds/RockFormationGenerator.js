@@ -64,6 +64,7 @@ export function normalizeRockFormationDescriptor(value={}){
   return {
     formationId:String(value.formationId||'').slice(0,100),
     skin:String(value.skin||'grey_reef').slice(0,60),
+    shapeLevel:clamp(Math.round(Number(value.shapeLevel)||3),1,5),
     locked:value.locked===true,
     transform:{
       position:Array.isArray(value.transform?.position)&&value.transform.position.length===3?value.transform.position.map(finite):[0,0,0],
@@ -88,6 +89,87 @@ const SURFACE_FACES=[
   {d:[0,0,1], corners:[[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1]]},
   {d:[0,0,-1], corners:[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]}
 ];
+
+function greedyRectangles(cells){
+  const remaining=new Set(cells.map(({u,v})=>u+','+v));
+  const sorted=[...cells].sort((a,b)=>a.v-b.v||a.u-b.u);
+  const rectangles=[];
+  for(const start of sorted){
+    const startKey=start.u+','+start.v;
+    if(!remaining.has(startKey))continue;
+    let width=1;
+    while(remaining.has((start.u+width)+','+start.v))width++;
+    let height=1,grow=true;
+    while(grow){
+      const v=start.v+height;
+      for(let u=start.u;u<start.u+width;u++){
+        if(!remaining.has(u+','+v)){grow=false;break;}
+      }
+      if(grow)height++;
+    }
+    for(let v=start.v;v<start.v+height;v++){
+      for(let u=start.u;u<start.u+width;u++)remaining.delete(u+','+v);
+    }
+    rectangles.push({u:start.u,v:start.v,width,height});
+  }
+  return rectangles;
+}
+
+export function buildGreedyRockSurface(formation,{densityThreshold=.18}={}){
+  const occupied=new Set(
+    formation.cells.filter(c=>c.density>=densityThreshold).map(c=>sculptKey(c.ix,c.iy,c.iz))
+  );
+  const groups=new Map();
+  const addFace=(faceIndex,plane2,u,v)=>{
+    const key=faceIndex+':'+plane2;
+    if(!groups.has(key))groups.set(key,{faceIndex,plane2,cells:[]});
+    groups.get(key).cells.push({u,v});
+  };
+
+  for(const c of formation.cells){
+    if(c.density<densityThreshold)continue;
+    if(!occupied.has(sculptKey(c.ix+1,c.iy,c.iz)))addFace(0,c.ix*2+1,c.iy,c.iz);
+    if(!occupied.has(sculptKey(c.ix-1,c.iy,c.iz)))addFace(1,c.ix*2-1,c.iy,c.iz);
+    if(!occupied.has(sculptKey(c.ix,c.iy+1,c.iz)))addFace(2,c.iy*2+1,c.ix,c.iz);
+    if(!occupied.has(sculptKey(c.ix,c.iy-1,c.iz)))addFace(3,c.iy*2-1,c.ix,c.iz);
+    if(!occupied.has(sculptKey(c.ix,c.iy,c.iz+1)))addFace(4,c.iz*2+1,c.ix,c.iy);
+    if(!occupied.has(sculptKey(c.ix,c.iy,c.iz-1)))addFace(5,c.iz*2-1,c.ix,c.iy);
+  }
+
+  const positions=[],indices=[];
+  const pushQuad=verts=>{
+    const base=positions.length/3;
+    for(const p of verts){
+      positions.push(p[0]-formation.center.x,p[1]-formation.center.y,p[2]-formation.center.z);
+    }
+    indices.push(base,base+1,base+2,base,base+2,base+3);
+  };
+  const cs=formation.cellSize;
+  for(const group of groups.values()){
+    for(const rect of greedyRectangles(group.cells)){
+      const u0=(rect.u-.5)*cs,u1=(rect.u+rect.width-.5)*cs;
+      const v0=(rect.v-.5)*cs,v1=(rect.v+rect.height-.5)*cs;
+      const plane=group.plane2*cs*.5;
+      if(group.faceIndex===0)pushQuad([[plane,u0,v0],[plane,u1,v0],[plane,u1,v1],[plane,u0,v1]]);
+      else if(group.faceIndex===1)pushQuad([[plane,u0,v1],[plane,u1,v1],[plane,u1,v0],[plane,u0,v0]]);
+      else if(group.faceIndex===2)pushQuad([[u0,plane,v0],[u0,plane,v1],[u1,plane,v1],[u1,plane,v0]]);
+      else if(group.faceIndex===3)pushQuad([[u0,plane,v1],[u0,plane,v0],[u1,plane,v0],[u1,plane,v1]]);
+      else if(group.faceIndex===4)pushQuad([[u1,v0,plane],[u1,v1,plane],[u0,v1,plane],[u0,v0,plane]]);
+      else pushQuad([[u0,v0,plane],[u0,v1,plane],[u1,v1,plane],[u1,v0,plane]]);
+    }
+  }
+  return {
+    formationId:formation.id,
+    center:{...formation.center},
+    positions,indices,
+    stats:{
+      cells:formation.cells.length,
+      quads:indices.length/6,
+      vertices:positions.length/3,
+      triangles:indices.length/3
+    }
+  };
+}
 
 function buildAdjacency(vertexCount,indices){
   const adjacency=Array.from({length:vertexCount},()=>new Set());
@@ -184,7 +266,9 @@ function smoothPositions(positions,indices,cellSize,{
   return current;
 }
 
-export function buildContinuousRockSurface(formation,{densityThreshold=.18,smooth=true}={}){
+export function buildContinuousRockSurface(formation,{densityThreshold=.18,smooth=true,shapeLevel=3}={}){
+  shapeLevel=clamp(Math.round(Number(shapeLevel)||3),1,5);
+  if(shapeLevel===1)return buildGreedyRockSurface(formation,{densityThreshold});
   const occupied=new Set(
     formation.cells.filter(c=>c.density>=densityThreshold).map(c=>sculptKey(c.ix,c.iy,c.iz))
   );
@@ -216,15 +300,17 @@ export function buildContinuousRockSurface(formation,{densityThreshold=.18,smoot
     }
   }
 
-  const subdivided=smooth ? subdivideSurface(positions,indices,1) : {positions,indices};
+  const useSubdivision=smooth&&shapeLevel>=4;
+  const subdivided=useSubdivision?subdivideSurface(positions,indices,1):{positions,indices};
+  const smoothing=shapeLevel===2
+    ? {iterations:2,lambda:.24,mu:-.25,inflate:.006,maxMove:formation.cellSize*.08}
+    : shapeLevel===3
+      ? {iterations:5,lambda:.30,mu:-.31,inflate:.012,maxMove:formation.cellSize*.11}
+      : shapeLevel===4
+        ? {iterations:4,lambda:.31,mu:-.32,inflate:.014,maxMove:formation.cellSize*.11}
+        : {iterations:7,lambda:.34,mu:-.35,inflate:.018,maxMove:formation.cellSize*.13};
   const finalPositions=smooth
-    ? smoothPositions(subdivided.positions,subdivided.indices,formation.cellSize,{
-        iterations:6,
-        lambda:.34,
-        mu:-.35,
-        inflate:.018,
-        maxMove:formation.cellSize*.13
-      })
+    ? smoothPositions(subdivided.positions,subdivided.indices,formation.cellSize,smoothing)
     : subdivided.positions;
 
   return {
@@ -237,7 +323,8 @@ export function buildContinuousRockSurface(formation,{densityThreshold=.18,smoot
       exposedFaces,
       vertices:finalPositions.length/3,
       triangles:subdivided.indices.length/3,
-      subdivision:smooth?1:0
+      subdivision:useSubdivision?1:0,
+      shapeLevel
     }
   };
 }
