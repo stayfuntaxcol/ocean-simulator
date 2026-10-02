@@ -88,7 +88,7 @@ test('rock formation descriptors clamp unsafe AI or saved values',()=>{
 
 
 test('large solid sculpt creates surface geometry instead of volume-proportional geometry',()=>{
-  const formation=splitSculptFormations(sculptFromCells(solid(0,14,0,14,0,14)))[0];
+  const formation=splitSculptFormations(sculptFromCells(solid(0,14,-14,0,0,14)))[0];
   const mesh=buildFormationBaseMesh(formation);
   assert.equal(formation.cells.length,3375);
   assert.equal(mesh.stats.triangles,2700);
