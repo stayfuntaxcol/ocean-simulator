@@ -3560,14 +3560,13 @@ blueprintFile.addEventListener('change',async()=>{
       for(const item of plan.rockFormations){
         const formation=item.formationId?byId.get(item.formationId):formations[item.formationIndex];
         if(!formation)continue;
-        const descriptor=normalizeRockFormationDescriptor({...item,formationId:formation.id,accepted:true});
+        const descriptor=normalizeRockFormationDescriptor({...item,formationId:formation.id});
         rockFormationDescriptors.set(formation.id,structuredClone(descriptor));
-        const history=historyForFormation(formation.id);history.items=[structuredClone(descriptor)];history.index=0;
-        renderRockFormationDescriptor(formation,descriptor);
+        renderSimpleRockFormation(formation,descriptor);
       }
     }
     clearEditorSelection();
-    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen · ${plan.rockFormations?.length||0} meshformaties. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
+    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen · ${plan.rockFormations?.length||0} rock skins. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
   }catch(error){editorInfo.textContent=`AI-wereldplan niet geïmporteerd: ${error.message}`;}
   blueprintFile.value='';
 });
