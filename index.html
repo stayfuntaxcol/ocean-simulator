@@ -2930,7 +2930,7 @@ function useDetailEditor(event){
 }
 function currentSculptFormations(){
   const revision=volumeSculpt.revision;
-  if(cachedSculptRevision===revision&&cachedSculptFormations.length)return cachedSculptFormations;
+  if(cachedSculptRevision===revision)return cachedSculptFormations;
   cachedSculptFormations=splitSculptFormations(volumeSculpt.serialize());
   cachedSculptRevision=revision;
   return cachedSculptFormations;
