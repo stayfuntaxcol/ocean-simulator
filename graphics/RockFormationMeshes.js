@@ -1,26 +1,24 @@
 import * as THREE from 'three';
 import { createRockSkinLibrary,ROCK_SKINS } from './RockFormationSkins.js';
+import { surfaceCellsForFormation } from '../worlds/RockFormationGenerator.js';
+
+function cellAngle(ix,iy,iz){
+  const n=Math.abs((ix*73856093)^(iy*19349663)^(iz*83492791));
+  return (n%6283)/1000;
+}
 
 export function createRockFormationMeshSystem({parent,caustics}={}){
   const records=new Map(),skins=createRockSkinLibrary(caustics);
+  const cellGeometry=new THREE.IcosahedronGeometry(1,0);
+  const dummy=new THREE.Object3D();
 
   function remove(id){
     const record=records.get(id);if(!record)return false;
-    parent.remove(record.root);
-    record.geometry.dispose();
-    records.delete(id);
-    return true;
+    parent.remove(record.root);records.delete(id);return true;
   }
   function clear(){for(const id of [...records.keys()])remove(id);}
-  function applyDescriptor(record,descriptor={}){
-    const skin=ROCK_SKINS[descriptor.skin]?descriptor.skin:'grey_reef';
-    record.mesh.material=skins.get(skin);
-    record.root.userData.formationSkin=skin;
-    record.root.userData.formationStyle=descriptor.style||'rounded_reef';
-    record.root.userData.variantSeed=Number(descriptor.seed)||1;
-    record.root.userData.variantDeviation=Number(descriptor.deviation)||.07;
-    record.root.userData.formationAccepted=descriptor.accepted===true;
-    record.root.userData.editorLocked=descriptor.locked===true;
+
+  function applyTransform(record,descriptor={}){
     const transform=descriptor.transform||{};
     const offset=Array.isArray(transform.position)?transform.position:[0,0,0];
     const rotation=Array.isArray(transform.rotation)?transform.rotation:[0,0,0];
@@ -35,37 +33,40 @@ export function createRockFormationMeshSystem({parent,caustics}={}){
     record.root.updateMatrixWorld(true);
   }
 
-  function upsert(meshData,descriptor={}){
-    const id=meshData.formationId,existing=records.get(id);
-    if(existing){
-      const position=existing.geometry.getAttribute('position');
-      const sameTopology=position?.count===meshData.positions.length/3&&existing.geometry.index?.count===meshData.indices.length;
-      if(sameTopology){
-        position.array.set(meshData.positions);position.needsUpdate=true;
-        existing.geometry.deleteAttribute('normal');existing.geometry.computeVertexNormals();
-        existing.geometry.computeBoundingBox();existing.geometry.computeBoundingSphere();
-        existing.center={...meshData.center};existing.meshData=meshData;
-        applyDescriptor(existing,descriptor);return existing.root;
-      }
-      remove(id);
-    }
-    const geometry=new THREE.BufferGeometry();
-    geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(meshData.positions),3));
-    geometry.setIndex(meshData.indices);
-    geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
-
-    const mesh=new THREE.Mesh(geometry,skins.get(descriptor.skin));
-    mesh.name='Rock formation surface';mesh.castShadow=false;mesh.receiveShadow=false;
+  function build(formation,descriptor={}){
+    const id=formation.id;remove(id);
+    const surface=surfaceCellsForFormation(formation);
+    const mesh=new THREE.InstancedMesh(cellGeometry,skins.get(descriptor.skin),Math.max(1,surface.length));
+    mesh.name='Sculpt rock skin surface';
+    mesh.count=surface.length;
+    mesh.frustumCulled=true;
     mesh.userData.formationSurface=true;
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+
+    for(let i=0;i<surface.length;i++){
+      const c=surface[i],density=Math.max(.18,Math.min(1,c.density));
+      const radius=formation.cellSize*(.72+.10*density);
+      dummy.position.set(c.x-formation.center.x,c.y-formation.center.y,c.z-formation.center.z);
+      const a=cellAngle(c.ix,c.iy,c.iz);
+      dummy.rotation.set(a*.17,a,a*.11);
+      dummy.scale.set(radius*(.96+.06*Math.sin(a)),radius*(.90+.08*Math.cos(a*.7)),radius*(.96+.06*Math.sin(a*.43)));
+      dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate=true;
+    mesh.computeBoundingBox();mesh.computeBoundingSphere();
+
     const root=new THREE.Group();
     root.name='Sculpt rock formation '+id;
     root.userData.editorKind='sculpt-rotsformatie';
     root.userData.generatedFormationMesh=true;
     root.userData.formationId=id;
     root.userData.isSolidRock=true;
+    root.userData.editorLocked=descriptor.locked===true;
+    root.userData.formationSkin=ROCK_SKINS[descriptor.skin]?descriptor.skin:'grey_reef';
     root.add(mesh);parent.add(root);
-    const record={id,root,mesh,geometry,center:{...meshData.center},meshData};
-    records.set(id,record);applyDescriptor(record,descriptor);
+
+    const record={id,root,mesh,center:{...formation.center},surfaceCount:surface.length,totalCells:formation.cells.length};
+    records.set(id,record);applyTransform(record,descriptor);
     return root;
   }
 
@@ -100,6 +101,6 @@ export function createRockFormationMeshSystem({parent,caustics}={}){
       scale:record.root.scale.toArray()
     };
   }
-  function dispose(){clear();skins.dispose();}
-  return {upsert,remove,clear,setSkin,setLocked,get,roots,rootFromObject,transformFor,dispose,get size(){return records.size;}};
+  function dispose(){clear();cellGeometry.dispose();skins.dispose();}
+  return {build,remove,clear,setSkin,setLocked,get,roots,rootFromObject,transformFor,dispose,get size(){return records.size;}};
 }
