@@ -383,20 +383,28 @@
       <div id="volumeSculptTools" hidden>
         <div class="toolrow">
           <select id="sculptTool" aria-label="Volume sculpt gereedschap">
-            <option value="add">➕ Volume toevoegen</option>
-            <option value="remove">➖ Volume weghalen</option>
-            <option value="smooth">〰 Volume verzachten</option>
+            <option value="add">➕ Build volume</option>
+            <option value="remove">⛏ Carve / uithollen</option>
+            <option value="smooth">〰 Smooth</option>
+            <option value="cell">● Cell Edit · verwijder één cel</option>
           </select>
+          <button id="sculptPreviewBtn" type="button">👁 Preview</button>
           <button id="sculptUndo" type="button">↶ Undo</button>
           <button id="sculptClear" type="button">🧹 Wis volume</button>
         </div>
         <div class="toolrow">
-          <label>Penseel <input id="sculptBrushSize" type="range" min="3" max="18" step="1" value="6"><output id="sculptBrushValue">6 m</output></label>
+          <label>Penseel <input id="sculptBrushSize" type="range" min="3" max="36" step="1" value="6"><output id="sculptBrushValue">6 m</output></label>
         </div>
         <div class="toolrow">
           <label>Sterkte <input id="sculptStrength" type="range" min="5" max="100" step="5" value="45"><output id="sculptStrengthValue">45%</output></label>
         </div>
-        <div id="volumeSculptStatus">Blauwgroene kleimassa = blueprintvolume. Houd de muisknop ingedrukt en beweeg je blik om te boetseren. De zichtbare zeespiegel en depth layers blijven je referentie.</div>
+        <div class="toolrow">
+          <label>Afstand <select id="sculptDistance"><option value="auto" selected>Auto · eerste raakpunt</option><option value="3">3 m</option><option value="6">6 m</option><option value="10">10 m</option><option value="20">20 m</option><option value="30">30 m</option></select><output id="sculptDistanceValue">Auto</output></label>
+        </div>
+        <div class="toolrow">
+          <label>Weergave <select id="sculptViewMode"><option value="clay" selected>Clay · massief</option><option value="cells">Cells · losse bollen</option><option value="ghost">Ghost · transparant</option></select><span></span></label>
+        </div>
+        <div id="volumeSculptStatus">Build grote vormen, Carve ze daarna met een kleinere brush. Preview pauzeert bewerken zodat je vrij rond het resultaat kunt vliegen. Tab wisselt Edit/Preview.</div>
       </div>
       <div class="toolrow" id="autoLandscapeTools">
         <select id="landscapeDensity" aria-label="Dichtheid automatisch landschap">
@@ -704,6 +712,10 @@ const sculptBrushSize = document.getElementById('sculptBrushSize');
 const sculptBrushValue = document.getElementById('sculptBrushValue');
 const sculptStrength = document.getElementById('sculptStrength');
 const sculptStrengthValue = document.getElementById('sculptStrengthValue');
+const sculptDistance = document.getElementById('sculptDistance');
+const sculptDistanceValue = document.getElementById('sculptDistanceValue');
+const sculptViewMode = document.getElementById('sculptViewMode');
+const sculptPreviewBtn = document.getElementById('sculptPreviewBtn');
 const sculptUndo = document.getElementById('sculptUndo');
 const sculptClear = document.getElementById('sculptClear');
 const volumeSculptStatus = document.getElementById('volumeSculptStatus');
@@ -1860,20 +1872,50 @@ const volumeSculpt=createVolumeSculptEditor({
   terrain:terrainHeightAt,
   contains:isPointInsideBuildHex
 });
-let sculptPainting=false,lastSculptPaintAt=0,lastSculptPreviewAt=0;
+let sculptPainting=false,sculptPreviewMode=false,lastSculptPaintAt=0,lastSculptPreviewAt=0;
+let sculptStrokeDistance=null;
 function sculptRayHit(){
   raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
   const hits=raycaster.intersectObjects([volumeSculpt.mesh,floor],true);
   return hits.find(hit=>isPointInsideBuildHex(hit.point.x,hit.point.z))||null;
 }
-function sculptBrushPoint(){
+function sculptRay(){
+  raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+  return {origin:raycaster.ray.origin.clone(),direction:raycaster.ray.direction.clone()};
+}
+function configuredSculptDistance(){
+  return sculptDistance.value==='auto'?null:Number(sculptDistance.value)||10;
+}
+function beginSculptStroke(){
+  const hit=sculptRayHit(),ray=sculptRay(),fixed=configuredSculptDistance();
+  if(fixed!=null)sculptStrokeDistance=fixed;
+  else if(hit)sculptStrokeDistance=ray.origin.distanceTo(volumeSculpt.brushPointFromHit(hit,sculptTool.value)||hit.point);
+  else sculptStrokeDistance=10;
+  sculptStrokeDistance=THREE.MathUtils.clamp(sculptStrokeDistance,2,60);
+  sculptDistanceValue.textContent=`${sculptStrokeDistance.toFixed(1)} m`;
+  volumeSculpt.beginStroke();
+}
+function endSculptStroke(){
+  sculptPainting=false;sculptStrokeDistance=null;volumeSculpt.endStroke();
+  sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;
+}
+function sculptBrushPoint({forPreview=false}={}){
+  if(sculptTool.value==='cell')return null;
+  const ray=sculptRay();
+  if(sculptPainting&&sculptStrokeDistance!=null)return volumeSculpt.pointAtDistance(ray.origin,ray.direction,sculptStrokeDistance);
+  const fixed=configuredSculptDistance();
+  if(fixed!=null)return volumeSculpt.pointAtDistance(ray.origin,ray.direction,fixed);
   const hit=sculptRayHit();
-  return hit?volumeSculpt.brushPointFromHit(hit,sculptTool.value):null;
+  if(!hit)return forPreview?volumeSculpt.pointAtDistance(ray.origin,ray.direction,10):null;
+  return volumeSculpt.brushPointFromHit(hit,sculptTool.value);
 }
 function updateSculptStatus(prefix=''){
-  volumeSculptStatus.textContent=`${prefix?prefix+' · ':''}${volumeSculpt.count} sculptcellen · grid ${volumeSculpt.cellSize} m · penseel ${volumeSculpt.brushRadius.toFixed(0)} m · ${Math.round(volumeSculpt.strength*100)}%`;
+  const mode=sculptPreviewMode?'PREVIEW':'EDIT';
+  const distance=sculptPainting&&sculptStrokeDistance!=null?`${sculptStrokeDistance.toFixed(1)} m`:(sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`);
+  volumeSculptStatus.textContent=`${prefix?prefix+' · ':''}${mode} · ${volumeSculpt.count} cellen · ${volumeSculpt.viewMode} · brush ${volumeSculpt.brushRadius.toFixed(0)} m · afstand ${distance}`;
 }
 function applySculptBrush(){
+  if(sculptPreviewMode||sculptTool.value==='cell')return false;
   const point=sculptBrushPoint();
   if(!point){volumeSculpt.setBrushPreview(null);return false;}
   volumeSculpt.setBrushPreview(point);
@@ -1881,10 +1923,25 @@ function applySculptBrush(){
   updateSculptStatus(changed?`${sculptTool.options[sculptTool.selectedIndex].text} toegepast`:'Geen volume gewijzigd');
   return changed>0;
 }
-function updateSculptPreview(){
-  if(!editMode||editorView!=='sculpt'){volumeSculpt.setBrushPreview(null);return;}
-  const point=sculptBrushPoint();volumeSculpt.setBrushPreview(point);
+function removeSculptCellUnderCrosshair(){
+  const hit=sculptRayHit();
+  if(!hit||hit.object!==volumeSculpt.mesh||hit.instanceId==null){updateSculptStatus('Geen sculptcel geraakt');return false;}
+  const removed=volumeSculpt.removeInstance(hit.instanceId);
+  updateSculptStatus(removed?'Één sculptcel verwijderd':'Cel niet verwijderd');
+  return removed;
 }
+function updateSculptPreview(){
+  if(!editMode||editorView!=='sculpt'||sculptPreviewMode||sculptTool.value==='cell'){volumeSculpt.setBrushPreview(null);return;}
+  volumeSculpt.setBrushPreview(sculptBrushPoint({forPreview:true}));
+}
+function setSculptPreviewMode(value){
+  sculptPreviewMode=Boolean(value);
+  if(sculptPreviewMode){endSculptStroke();volumeSculpt.setBrushPreview(null);}
+  sculptPreviewBtn.classList.toggle('active',sculptPreviewMode);
+  sculptPreviewBtn.textContent=sculptPreviewMode?'✏ Terug naar Edit':'👁 Preview';
+  updateSculptStatus(sculptPreviewMode?'Vrij rondvliegen · sculpting gepauzeerd':'Bewerken hervat');
+}
+
 
 const selectionMat = new THREE.MeshBasicMaterial({
   color:0x7fe2ff,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide
@@ -2726,10 +2783,10 @@ function setEditorView(view){
     hint.textContent=view==='sculpt'
       ? 'VOLUME SCULPT · klik om te activeren · houd links ingedrukt om volume te boetseren · WASD/Q/E bewegen'
       : 'Klik op de wereld om de detailvlucht te activeren.';
-    if(view==='sculpt')updateSculptStatus('Blueprint actief');
+    if(view==='sculpt'){setSculptPreviewMode(false);updateSculptStatus('Blueprint actief');}
   }else{
     if(leavingFlight){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
-    sculptPainting=false;volumeSculpt.endStroke();volumeSculpt.setVisible(false);
+    setSculptPreviewMode(false);endSculptStroke();volumeSculpt.setVisible(false);
     controls.unlock();editorView='overview';camera.up.set(0,0,-1);
     const overview=savedOverviewPos||new THREE.Vector3(camera.position.x,Math.max(95,camera.position.y),camera.position.z);
     camera.position.copy(overview);camera.position.y=THREE.MathUtils.clamp(camera.position.y,45,260);orientEditorCamera();
@@ -2767,7 +2824,7 @@ function setEditMode(on){
     grid.visible=false; hexBoundaryGroup.visible=false; selection.visible=false; editBadge.classList.remove('on'); editModeBtn.classList.remove('active');
     editModeBtn.textContent='🧱 Wereld bouwen';
     editorViewTools.hidden=true;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
-    sculptPainting=false;volumeSculpt.endStroke();volumeSculpt.setVisible(false);
+    setSculptPreviewMode(false);endSculptStroke();volumeSculpt.setVisible(false);
     depthLayerGuide.setVisible(false);buildDepthHud.classList.remove('on');
     document.getElementById('crosshair').style.display='';
     camera.up.set(0,1,0);
@@ -2783,12 +2840,15 @@ editModeBtn.addEventListener('click',()=>setEditMode(!editMode));
 editorOverviewBtn.addEventListener('click',()=>setEditorView('overview'));
 editorDetailBtn.addEventListener('click',()=>setEditorView('detail'));
 editorSculptBtn.addEventListener('click',()=>setEditorView('sculpt'));
-sculptTool.addEventListener('change',()=>{volumeSculpt.setTool(sculptTool.value);updateSculptStatus();});
+sculptTool.addEventListener('change',()=>{endSculptStroke();volumeSculpt.setTool(sculptTool.value);updateSculptStatus();});
 sculptBrushSize.addEventListener('input',()=>{volumeSculpt.setBrushRadius(sculptBrushSize.value);sculptBrushValue.textContent=`${sculptBrushSize.value} m`;updateSculptStatus();});
 sculptStrength.addEventListener('input',()=>{volumeSculpt.setStrength(Number(sculptStrength.value)/100);sculptStrengthValue.textContent=`${sculptStrength.value}%`;updateSculptStatus();});
-sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();updateSculptStatus(ok?'Laatste penseelstreek teruggedraaid':'Niets om terug te draaien');});
+sculptDistance.addEventListener('change',()=>{endSculptStroke();sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;updateSculptStatus();});
+sculptViewMode.addEventListener('change',()=>{volumeSculpt.setViewMode(sculptViewMode.value);updateSculptStatus();});
+sculptPreviewBtn.addEventListener('click',()=>setSculptPreviewMode(!sculptPreviewMode));
+sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();updateSculptStatus(ok?'Laatste bewerking teruggedraaid':'Niets om terug te draaien');});
 sculptClear.addEventListener('click',()=>{volumeSculpt.clear();updateSculptStatus('Volume gewist');});
-volumeSculpt.setTool(sculptTool.value);volumeSculpt.setBrushRadius(sculptBrushSize.value);volumeSculpt.setStrength(Number(sculptStrength.value)/100);
+volumeSculpt.setTool(sculptTool.value);volumeSculpt.setBrushRadius(sculptBrushSize.value);volumeSculpt.setStrength(Number(sculptStrength.value)/100);volumeSculpt.setViewMode(sculptViewMode.value);
 precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
 precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
 precisionRotateLeft.addEventListener('click',()=>rotateSelectedEditorObject(-Math.PI/12));
@@ -2843,7 +2903,9 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   }
   if(editorView==='sculpt'){
     if(!controls.isLocked){controls.lock();return;}
-    sculptPainting=true;volumeSculpt.beginStroke();lastSculptPaintAt=0;applySculptBrush();
+    if(sculptPreviewMode)return;
+    if(sculptTool.value==='cell'){removeSculptCellUnderCrosshair();return;}
+    sculptPainting=true;beginSculptStroke();lastSculptPaintAt=0;applySculptBrush();
     return;
   }
   dragStart=pointerGround(e); dragEnd=dragStart;
@@ -2851,9 +2913,9 @@ renderer.domElement.addEventListener('pointerdown',e=>{
 });
 renderer.domElement.addEventListener('pointermove',e=>{
   if(!editMode)return;
-  if(editorView==='sculpt'&&sculptPainting&&controls.isLocked){
+  if(editorView==='sculpt'&&sculptPainting&&controls.isLocked&&!sculptPreviewMode){
     const now=performance.now();
-    if(now-lastSculptPaintAt>70){lastSculptPaintAt=now;applySculptBrush();}
+    if(now-lastSculptPaintAt>95){lastSculptPaintAt=now;applySculptBrush();}
     return;
   }
   if(editorView!=='overview'||!dragStart)return;
@@ -2862,14 +2924,14 @@ renderer.domElement.addEventListener('pointermove',e=>{
 renderer.domElement.addEventListener('pointerup',e=>{
   if(!editMode)return;
   if(editorView==='sculpt'){
-    sculptPainting=false;volumeSculpt.endStroke();return;
+    endSculptStroke();return;
   }
   if(editorView!=='overview'||!dragStart)return;
   const p=pointerGround(e)||dragEnd;
   if(p) fillSelection(dragStart,p);
   dragStart=null;dragEnd=null;selection.visible=false;
 });
-renderer.domElement.addEventListener('pointercancel',()=>{if(sculptPainting){sculptPainting=false;volumeSculpt.endStroke();}});
+renderer.domElement.addEventListener('pointercancel',()=>{if(sculptPainting)endSculptStroke();});
 renderer.domElement.addEventListener('wheel',e=>{
   if(!editMode)return;
   e.preventDefault();
@@ -2878,7 +2940,12 @@ renderer.domElement.addEventListener('wheel',e=>{
     return;
   }
   if(editorView==='sculpt'){
-    const next=THREE.MathUtils.clamp(Number(sculptBrushSize.value)+(e.deltaY>0?-1:1),3,18);
+    if(e.shiftKey&&sculptDistance.value!=='auto'){
+      const values=[3,6,10,20,30],current=Number(sculptDistance.value),index=Math.max(0,values.indexOf(current));
+      const nextIndex=THREE.MathUtils.clamp(index+(e.deltaY>0?-1:1),0,values.length-1);
+      sculptDistance.value=String(values[nextIndex]);sculptDistance.dispatchEvent(new Event('change'));return;
+    }
+    const next=THREE.MathUtils.clamp(Number(sculptBrushSize.value)+(e.deltaY>0?-1:1),3,36);
     sculptBrushSize.value=String(next);sculptBrushSize.dispatchEvent(new Event('input'));return;
   }
   camera.position.y=THREE.MathUtils.clamp(camera.position.y+Math.sign(e.deltaY)*18,70,380);
