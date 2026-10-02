@@ -376,7 +376,16 @@
           <button id="precisionLarger" type="button" title="Vergroot geselecteerd object">+ Groter</button>
           <button id="precisionRotateLeft" type="button" title="Draai linksom">↶</button>
           <button id="precisionRotateRight" type="button" title="Draai rechtsom">↷</button>
+          <button id="precisionLock" type="button" title="Bescherm gegenereerde rots bij regenereren">🔓 Lock</button>
           <button id="precisionDelete" type="button" title="Verwijder geselecteerd object">🗑</button>
+        </div>
+        <div class="toolrow">
+          <button id="precisionMoveXMinus" type="button" title="Verplaats 0,5 m naar -X">X−</button>
+          <button id="precisionMoveXPlus" type="button" title="Verplaats 0,5 m naar +X">X+</button>
+          <button id="precisionMoveYMinus" type="button" title="Verplaats 0,5 m omlaag">Y−</button>
+          <button id="precisionMoveYPlus" type="button" title="Verplaats 0,5 m omhoog">Y+</button>
+          <button id="precisionMoveZMinus" type="button" title="Verplaats 0,5 m naar -Z">Z−</button>
+          <button id="precisionMoveZPlus" type="button" title="Verplaats 0,5 m naar +Z">Z+</button>
         </div>
         <div id="precisionSelection">Klik op <strong>Detailvlucht</strong>, richt het vizier en klik om nauwkeurig te bouwen.</div>
       </div>
@@ -403,6 +412,10 @@
         </div>
         <div class="toolrow">
           <label>Weergave <select id="sculptViewMode"><option value="clay" selected>Clay · massief</option><option value="cells">Cells · losse bollen</option><option value="ghost">Ghost · transparant</option></select><span></span></label>
+        </div>
+        <div class="toolrow">
+          <button id="generateRockFormationBtn" type="button">🪨 Generate Rock Formation</button>
+          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;align-self:center">Maakt echte bewerkbare rotsen langs het sculpt-oppervlak.</span>
         </div>
         <div id="volumeSculptStatus">Build grote vormen, Carve ze daarna met een kleinere brush. Preview pauzeert bewerken zodat je vrij rond het resultaat kunt vliegen. Tab wisselt Edit/Preview.</div>
       </div>
@@ -580,6 +593,7 @@ import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
+import { generateRockFormation } from './worlds/RockFormationGenerator.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -718,6 +732,8 @@ const sculptViewMode = document.getElementById('sculptViewMode');
 const sculptPreviewBtn = document.getElementById('sculptPreviewBtn');
 const sculptUndo = document.getElementById('sculptUndo');
 const sculptClear = document.getElementById('sculptClear');
+const generateRockFormationBtn=document.getElementById('generateRockFormationBtn');
+const rockFormationStatus=document.getElementById('rockFormationStatus');
 const volumeSculptStatus = document.getElementById('volumeSculptStatus');
 const precisionTool = document.getElementById('precisionTool');
 const precisionSelection = document.getElementById('precisionSelection');
@@ -725,7 +741,14 @@ const precisionSmaller = document.getElementById('precisionSmaller');
 const precisionLarger = document.getElementById('precisionLarger');
 const precisionRotateLeft = document.getElementById('precisionRotateLeft');
 const precisionRotateRight = document.getElementById('precisionRotateRight');
+const precisionLock = document.getElementById('precisionLock');
 const precisionDelete = document.getElementById('precisionDelete');
+const precisionMoveXMinus=document.getElementById('precisionMoveXMinus');
+const precisionMoveXPlus=document.getElementById('precisionMoveXPlus');
+const precisionMoveYMinus=document.getElementById('precisionMoveYMinus');
+const precisionMoveYPlus=document.getElementById('precisionMoveYPlus');
+const precisionMoveZMinus=document.getElementById('precisionMoveZMinus');
+const precisionMoveZPlus=document.getElementById('precisionMoveZPlus');
 const importBlueprintBtn = document.getElementById('importBlueprintBtn');
 const blueprintFile = document.getElementById('blueprintFile');
 const minimapWrap = document.getElementById('minimapWrap');
@@ -1188,6 +1211,25 @@ function addRockCluster(x,z,scale=1,layerSeed=0){
     g.add(m);
   }
   g.position.set(x,-17.7,z); g.userData.editorKind='rots'; reef.add(g); return g;
+}
+
+function addFormationRock(x,z,radius=3,rockSeed=1){
+  const random=seededRandom(Number(rockSeed)>>>0);
+  const g=new THREE.Group();
+  g.userData.orcaRock=true;
+  g.userData.generatedRock=true;
+  const m=new THREE.Mesh(
+    new THREE.DodecahedronGeometry(1,0),
+    reefMat(rockColors[Math.floor(random()*rockColors.length)])
+  );
+  m.scale.set(.90+random()*.22,.78+random()*.22,.90+random()*.22);
+  m.rotation.set((random()-.5)*.32,random()*Math.PI*2,(random()-.5)*.32);
+  rockLibrary.decorate(m,Math.max(.8,radius),Number(rockSeed)>>>0);
+  g.add(m);
+  g.position.set(x,-17.7,z);
+  g.userData.editorKind='formatie-rots';
+  reef.add(g);
+  return g;
 }
 function addBranchCoral(x,z,scale=1,color=0xff7f6e){
   const g=new THREE.Group(), mat=reefMat(color,.82);
@@ -2028,23 +2070,31 @@ function refreshLayerHabitat(key,layerId,type){
   habitatRevision++;
 }
 function markLayerRoots(before,key,layerId,type,supportRoots){
-  const roots=[];
+  const layer=layerRecord(key,layerId),roots=[];
   for(let i=before;i<reef.children.length;i++){
     const root=reef.children[i];
     root.userData.editorCell=key;
     root.userData.editorLayerId=layerId;
     root.userData.editorLayerType=type;
     root.userData.editorObjectIndex=roots.length;
+    root.userData.generatedRock=layer?.generatedRock===true;
+    root.userData.editorLocked=layer?.locked===true;
+    root.userData.formationId=layer?.formationId||null;
     root.userData.isSolidRock = type==='rocks'||Boolean(root.userData.orcaRock);
     if(root.userData.isSolidRock){rockCollisionRoots.add(root);rockCollisionRevision++;}
     roots.push(root);
   }
   placeRootsOnExistingSurface(roots,supportRoots);
-  const layer=layerRecord(key,layerId),survivors=[];
+  const survivors=[];
   for(const root of roots){
     if(layer?.precision&&Number.isFinite(layer.placement?.y)){
       root.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(root);
-      if(!box.isEmpty())root.position.y+=layer.placement.y-box.min.y;
+      if(!box.isEmpty()){
+        if(layer.placementMode==='center'){
+          const center=box.getCenter(new THREE.Vector3());
+          root.position.y+=layer.placement.y-center.y;
+        }else root.position.y+=layer.placement.y-box.min.y;
+      }
     }
     const edit=layer?.objectEdits?.[root.userData.editorObjectIndex];
     if(edit?.deleted){removeReefRoot(root);continue;}
@@ -2216,7 +2266,8 @@ function instantiateLayerVisual(ix,iz,layer){
 
   if(layer.precision&&layer.placement){
     const x=layer.placement.x,z=layer.placement.z;
-    if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
+    if(type==='rocks'&&layer.generatedRock)addFormationRock(x,z,layer.rockRadius||3,layer.rockSeed||layerSeed);
+    else if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
     else if(type==='coral')addBranchCoral(x,z,.85,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
     else if(type==='anemone')addAnemone(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
     else if(type==='sponge')addSponge(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,5,layerSeed)*coralColors.length)]);
@@ -2673,10 +2724,19 @@ function editorRootFromObject(object){
   while(root&&root.parent!==reef)root=root.parent;
   return root?.parent===reef&&root.userData.editorCell?root:null;
 }
+function refreshPrecisionLockUi(){
+  const generated=selectedEditorRoot?.userData?.generatedRock===true;
+  precisionLock.disabled=!generated;
+  if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Alleen gegenereerde formatierotsen kunnen tegen regenereren worden beschermd.';return;}
+  const locked=selectedEditorRoot.userData.editorLocked===true;
+  precisionLock.textContent=locked?'🔒 Locked':'🔓 Lock';
+  precisionLock.title=locked?'Deze rots blijft staan bij Generate Rock Formation.':'Bescherm deze rots bij regenereren.';
+}
 function clearEditorSelection(){
   selectedEditorRoot=null;
   if(selectedEditorHelper){scene.remove(selectedEditorHelper);selectedEditorHelper.geometry?.dispose?.();selectedEditorHelper.material?.dispose?.();selectedEditorHelper=null;}
   precisionSelection.innerHTML='Geen object geselecteerd. Richt het vizier en klik op een object.';
+  refreshPrecisionLockUi();
 }
 function selectEditorObject(root){
   clearEditorSelection();
@@ -2684,7 +2744,9 @@ function selectEditorObject(root){
   selectedEditorRoot=root;
   selectedEditorHelper=new THREE.BoxHelper(root,0x7fe2ff);scene.add(selectedEditorHelper);
   const kind=root.userData.editorKind||root.userData.editorLayerType||'object';
-  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong> · muiswiel of knoppen wijzigen de grootte.`;
+  const lockText=root.userData.generatedRock?(root.userData.editorLocked?' · 🔒 beschermd':' · 🔓 regenereerbaar'):'';
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong>${lockText} · schaal, draai of verplaats met de knoppen.`;
+  refreshPrecisionLockUi();
 }
 function saveSelectedObjectEdit({deleted=false}={}){
   const root=selectedEditorRoot;if(!root)return false;
@@ -2711,9 +2773,25 @@ function rotateSelectedEditorObject(angle){
   const root=selectedEditorRoot;if(!root?.parent)return;
   root.rotation.y+=angle;root.updateMatrixWorld(true);selectedEditorHelper?.update();saveSelectedObjectEdit();
 }
+function moveSelectedEditorObject(dx=0,dy=0,dz=0){
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  const next=root.position.clone().add(new THREE.Vector3(dx,dy,dz));
+  if(!isPointInsideBuildHex(next.x,next.z))return;
+  next.y=THREE.MathUtils.clamp(next.y,WORLD_MIN_Y,SEA_LEVEL_Y+20);
+  root.position.copy(next);root.updateMatrixWorld(true);selectedEditorHelper?.update();saveSelectedObjectEdit();
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'object'}</strong> · x ${next.x.toFixed(1)} · y ${next.y.toFixed(1)} · z ${next.z.toFixed(1)}`;
+}
+function toggleSelectedEditorLock(){
+  const root=selectedEditorRoot;if(!root?.parent||root.userData.generatedRock!==true)return;
+  const layer=layerRecord(root.userData.editorCell,root.userData.editorLayerId);if(!layer?.generatedRock)return;
+  layer.locked=!layer.locked;root.userData.editorLocked=layer.locked;
+  refreshPrecisionLockUi();updateRockFormationButton();
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'formatie-rots'}</strong> · ${layer.locked?'🔒 beschermd bij regenereren':'🔓 wordt opnieuw berekend bij regenereren'}`;
+}
 function deleteSelectedEditorObject(){
   const root=selectedEditorRoot;if(!root?.parent)return;
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,type=root.userData.editorLayerType;
+  const layer=layerRecord(key,layerId);if(layer?.generatedRock)layer.locked=false;
   saveSelectedObjectEdit({deleted:true});removeReefRoot(root);clearEditorSelection();refreshLayerHabitat(key,layerId,type);
   editorInfo.textContent='Object verwijderd. Deze precieze verwijdering wordt met de wereld opgeslagen.';
 }
@@ -2752,6 +2830,88 @@ function useDetailEditor(event){
   const root=addPrecisionObject(precisionTool.value,hit.point);
   if(root)selectEditorObject(root);
 }
+const ROCK_FORMATION_ID='sculpt-main';
+
+function generatedFormationLayers(formationId=ROCK_FORMATION_ID){
+  const out=[];
+  for(const [key,layers] of worldCells)for(const layer of layers){
+    if(layer?.generatedRock===true&&layer.formationId===formationId)out.push({key,layer});
+  }
+  return out;
+}
+function lockedFormationReservations(formationId=ROCK_FORMATION_ID){
+  const out=[];
+  for(const {layer} of generatedFormationLayers(formationId)){
+    if(layer.locked!==true||layer.objectEdits?.[0]?.deleted===true)continue;
+    const edit=layer.objectEdits?.[0]||{};
+    const p=Array.isArray(edit.position)&&edit.position.length===3
+      ? {x:Number(edit.position[0]),y:Number(edit.position[1]),z:Number(edit.position[2])}
+      : {x:Number(layer.placement?.x),y:Number(layer.placement?.y),z:Number(layer.placement?.z)};
+    if(![p.x,p.y,p.z].every(Number.isFinite))continue;
+    const scale=Array.isArray(edit.scale)?Math.max(...edit.scale.map(Number).filter(Number.isFinite),1):1;
+    out.push({...p,radius:Math.max(.8,Number(layer.rockRadius)||3)*scale});
+  }
+  return out;
+}
+function removeUnlockedGeneratedFormation(formationId=ROCK_FORMATION_ID){
+  let removed=0;
+  for(const [key,layers] of [...worldCells]){
+    const keep=[];
+    for(const layer of layers){
+      if(layer?.generatedRock===true&&layer.formationId===formationId&&layer.locked!==true){
+        removeLayerObjects(layer.id);removed++;continue;
+      }
+      keep.push(layer);
+    }
+    if(keep.length)worldCells.set(key,keep);else worldCells.delete(key);
+  }
+  if(removed){habitatRevision++;rockCollisionRevision++;}
+  return removed;
+}
+function placeGeneratedFormationRock(item,formationId=ROCK_FORMATION_ID){
+  const terrainY=terrainHeightAt(item.x,item.z);
+  const y=THREE.MathUtils.clamp(Math.max(item.y,terrainY+Math.min(1.1,item.radius*.22)),WORLD_MIN_Y,SEA_LEVEL_Y-1);
+  const {ix,iz}=groundToCell({x:item.x,z:item.z});
+  return addLayerToCell(ix,iz,'rocks',null,{
+    precision:true,
+    placementMode:'center',
+    generatedRock:true,
+    formationId,
+    locked:false,
+    rockRadius:Number(item.radius.toFixed(3)),
+    rockSeed:item.rockSeed,
+    rockKind:item.kind,
+    sourceSculpt:item.source,
+    placement:{x:item.x,y:Number(y.toFixed(3)),z:item.z},
+    objectEdits:{0:{rotation:item.rotation,scale:item.scale}}
+  });
+}
+function updateRockFormationButton(){
+  const layers=generatedFormationLayers();
+  const locked=layers.filter(item=>item.layer.locked===true).length;
+  generateRockFormationBtn.textContent=layers.length?'🪨 Regenerate Rock Formation':'🪨 Generate Rock Formation';
+  if(layers.length)rockFormationStatus.textContent=`${layers.length} gegenereerde rotsen · ${locked} locked`;
+}
+function generateCurrentRockFormation(){
+  if(!editMode){editorInfo.textContent='Open eerst de bouwmodus.';return;}
+  const sculpt=volumeSculpt.serialize();
+  if(!sculpt.cells.length){rockFormationStatus.textContent='Boetseer eerst een volume.';return;}
+  endSculptStroke();
+  const reserved=lockedFormationReservations();
+  const removed=removeUnlockedGeneratedFormation();
+  const result=generateRockFormation(sculpt,{maxRocks:220,seed:17,reserved});
+  let placed=0;
+  for(const item of result.placements){
+    if(placeGeneratedFormationRock(item))placed++;
+  }
+  clearEditorSelection();
+  sculptViewMode.value='ghost';volumeSculpt.setViewMode('ghost');setSculptPreviewMode(true);
+  updateRockFormationButton();
+  rockFormationStatus.textContent=`${placed} rotsen · groot ${result.stats.large}, middel ${result.stats.medium}, klein ${result.stats.small} · ${reserved.length} locked behouden · ${result.stats.protectedVoids} open ruimten beschermd`;
+  editorInfo.textContent=`🪨 Formatie gegenereerd: ${placed} nieuwe rotsen (${removed} oude niet-locked vervangen). Ga naar Detailvlucht → Object selecteren om stenen aan te passen of te locken.`;
+  habitatRevision++;rockCollisionRevision++;
+}
+
 function updateBuildDepthHud(){
   if(!editMode)return;
   const info=depthLayerGuide.describe(camera.position.y);
@@ -2846,6 +3006,7 @@ sculptStrength.addEventListener('input',()=>{volumeSculpt.setStrength(Number(scu
 sculptDistance.addEventListener('change',()=>{endSculptStroke();sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;updateSculptStatus();});
 sculptViewMode.addEventListener('change',()=>{volumeSculpt.setViewMode(sculptViewMode.value);updateSculptStatus();});
 sculptPreviewBtn.addEventListener('click',()=>setSculptPreviewMode(!sculptPreviewMode));
+generateRockFormationBtn.addEventListener('click',generateCurrentRockFormation);
 sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();updateSculptStatus(ok?'Laatste bewerking teruggedraaid':'Niets om terug te draaien');});
 sculptClear.addEventListener('click',()=>{volumeSculpt.clear();updateSculptStatus('Volume gewist');});
 volumeSculpt.setTool(sculptTool.value);volumeSculpt.setBrushRadius(sculptBrushSize.value);volumeSculpt.setStrength(Number(sculptStrength.value)/100);volumeSculpt.setViewMode(sculptViewMode.value);
@@ -2853,7 +3014,15 @@ precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
 precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
 precisionRotateLeft.addEventListener('click',()=>rotateSelectedEditorObject(-Math.PI/12));
 precisionRotateRight.addEventListener('click',()=>rotateSelectedEditorObject(Math.PI/12));
+precisionLock.addEventListener('click',toggleSelectedEditorLock);
+precisionMoveXMinus.addEventListener('click',()=>moveSelectedEditorObject(-.5,0,0));
+precisionMoveXPlus.addEventListener('click',()=>moveSelectedEditorObject(.5,0,0));
+precisionMoveYMinus.addEventListener('click',()=>moveSelectedEditorObject(0,-.5,0));
+precisionMoveYPlus.addEventListener('click',()=>moveSelectedEditorObject(0,.5,0));
+precisionMoveZMinus.addEventListener('click',()=>moveSelectedEditorObject(0,0,-.5));
+precisionMoveZPlus.addEventListener('click',()=>moveSelectedEditorObject(0,0,.5));
 precisionDelete.addEventListener('click',deleteSelectedEditorObject);
+refreshPrecisionLockUi();
 terrainInspectToggle.addEventListener('change',()=>{
   if(editMode) setTerrainInspectMode(terrainInspectToggle.checked);
 });
@@ -2973,6 +3142,16 @@ function worldData(){
         id:l.id,
         type:l.type,
         habitatPoint:l.habitatPoint ? {x:l.habitatPoint.x,y:l.habitatPoint.y,z:l.habitatPoint.z} : null,
+        ...(l.generatedRock?{
+          generatedRock:true,
+          formationId:String(l.formationId||ROCK_FORMATION_ID),
+          locked:l.locked===true,
+          placementMode:l.placementMode==='center'?'center':'bottom',
+          rockRadius:Number(l.rockRadius)||3,
+          rockSeed:Number(l.rockSeed)||0,
+          rockKind:String(l.rockKind||'medium'),
+          sourceSculpt:l.sourceSculpt?{...l.sourceSculpt}:null
+        }:{}),
         ...(l.precision?{precision:true,placement:{...l.placement},objectEdits:structuredClone(l.objectEdits||{})}:l.objectEdits?{objectEdits:structuredClone(l.objectEdits)}:{})
       }))
     }))
@@ -3021,6 +3200,18 @@ function restoreWorld(data){
           ? {x:layer.habitatPoint.x,y:layer.habitatPoint.y,z:layer.habitatPoint.z}
           : null
       };
+      if(layer.generatedRock===true&&layer.type==='rocks'){
+        cleanLayer.generatedRock=true;
+        cleanLayer.formationId=String(layer.formationId||ROCK_FORMATION_ID).slice(0,80);
+        cleanLayer.locked=layer.locked===true;
+        cleanLayer.placementMode=layer.placementMode==='center'?'center':'bottom';
+        cleanLayer.rockRadius=THREE.MathUtils.clamp(Number(layer.rockRadius)||3,.6,14);
+        cleanLayer.rockSeed=Number.isFinite(Number(layer.rockSeed))?Number(layer.rockSeed):Number(id);
+        cleanLayer.rockKind=['large','medium','small'].includes(layer.rockKind)?layer.rockKind:'medium';
+        if(layer.sourceSculpt&&['ix','iy','iz'].every(k=>Number.isInteger(Number(layer.sourceSculpt[k])))){
+          cleanLayer.sourceSculpt={ix:Number(layer.sourceSculpt.ix),iy:Number(layer.sourceSculpt.iy),iz:Number(layer.sourceSculpt.iz)};
+        }
+      }
       const placement=layer.placement;
       if(layer.precision===true&&placement&&Number.isFinite(placement.x)&&Number.isFinite(placement.y)&&Number.isFinite(placement.z)){
         cleanLayer.precision=true;
@@ -3059,6 +3250,7 @@ function restoreWorld(data){
   if(savedOrca)placeOrcaAt(savedOrca);
   if(savedWhale)placeWhaleAt(savedWhale);
   for(const [kind,record] of Object.entries(savedVisitors))placeReefVisitorAt(kind,record);
+  updateRockFormationButton();
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
