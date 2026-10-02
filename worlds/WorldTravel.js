@@ -1,5 +1,6 @@
 import { normalizeRockFormationDescriptor } from './RockFormationGenerator.js';
 import { normalizeVolumeSculpt } from './VolumeSculpt.js';
+import { normalizeCurrentFlows } from './CurrentFlowSystem.js';
 import { HEX, SIDES, neighborSide, arrivalPosition, parseWorldId } from './HexWorld.js';
 
 // RTDB omits empty lists and may return sparse indexed children as an object.
@@ -19,6 +20,7 @@ export function validateWorldRecord(record) {
   const w=record.world;
   const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents'),deathMarkers=readWorldList(w.deathMarkers,'deathMarkers');
   const sculpt=normalizeVolumeSculpt(w.sculpt,{worldHalf:HEX.radius});
+  const currentFlows=normalizeCurrentFlows(w.currentFlows,{seaLevelY:20});
   const rockFormationSource=readWorldList(w.rockFormations,'rockFormations');
   if(rockFormationSource.length>64)throw Error('Deze wereld bevat te veel rotsformaties.');
   const rockFormations=rockFormationSource.map((item,index)=>{
@@ -39,7 +41,7 @@ export function validateWorldRecord(record) {
     if(layers.some(l=>!l||typeof l.type!=='string'))throw Error(`Een landschapslaag in cells[${c.key}] is ongeldig.`);
     return {...c,layers};
   });
-  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt,rockFormations}};
+  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt,rockFormations,currentFlows}};
 }
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,
