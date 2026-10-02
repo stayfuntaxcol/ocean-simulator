@@ -6,7 +6,9 @@ test('five current categories define scale and impact from drift to main current
   assert.equal(Object.keys(CURRENT_CATEGORIES).length,5);
   assert.ok(CURRENT_CATEGORIES[1].strength<CURRENT_CATEGORIES[5].strength);
   assert.ok(CURRENT_CATEGORIES[1].width<CURRENT_CATEGORIES[5].width);
-  assert.equal(classifyCurrent({width:60,strength:1.45}).id,5);
+  for(const preset of Object.values(CURRENT_CATEGORIES)){
+    assert.equal(classifyCurrent({width:preset.width,strength:preset.strength}).id,preset.id);
+  }
 });
 
 test('a current is converted to a lightweight sector field',()=>{
