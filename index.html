@@ -3535,16 +3535,20 @@ function canEditCurrentWorld(){
 // Visitor controls are read-only; Firebase remains the authority for writes.
 document.addEventListener('click',event=>{
   const button=event.target.closest?.('button');
-  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle'].includes(button.id))return;
+  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','currentFlowAdd','currentFlowPlace','currentFlowDelete'].includes(button.id))return;
   if(!cloudBusy&&!communityOcean?.busy&&((button.id==='placeOrca'&&orca)||(button.id==='placeWhale'&&whale)))return;
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
   if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
-  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle']){
+  for(const id of ['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','currentFlowAdd','currentFlowPlace','currentFlowDelete']){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
-  cloudWorldName.readOnly=!canEditCurrentWorld();
+  const flowReadOnly=!canEditCurrentWorld();
+  for(const control of [currentFlowEnabled,currentFlowCategory,currentFlowStrength,currentFlowWidth,currentFlowHeight,currentFlowDepth,currentFlowHeading,currentFlowLength,currentFlowBend,currentFlowTurbulence,currentFlowRockBoost]){
+    if(control)control.disabled=flowReadOnly||!selectedCurrentFlow();
+  }
+  cloudWorldName.readOnly=flowReadOnly;
   communityOcean?.refreshHUD();
 }
 function setCloudBusy(busy){
