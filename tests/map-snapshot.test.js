@@ -25,3 +25,10 @@ test('invalid or oversized atlas map data is safely bounded',()=>{
   assert.deepEqual(value,{version:1,terrain:[[0,0,-4]],cells:[[0,0,3]],overload:[[0,0,1]]});
   assert.deepEqual(normalizeWorldMapSnapshot({version:1,cells:Array(1001).fill([0,0,1]),overload:[]}).cells,[]);
 });
+
+
+test('atlas snapshot preserves deep terrain offsets for stacked depth worlds',()=>{
+  const map=createWorldMapSnapshot({terrain:[{key:'0,0',offset:-180}],cells:[]},[]);
+  assert.deepEqual(map.terrain,[[0,0,-180]]);
+  assert.deepEqual(normalizeWorldMapSnapshot({version:1,terrain:[[0,0,-180]],cells:[],overload:[]}).terrain,[[0,0,-180]]);
+});
