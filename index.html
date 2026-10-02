@@ -6154,7 +6154,7 @@ const jellyfishSwarm=createJellyfishSwarm({
 });
 jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
 jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
-addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();rockFormationMeshes.dispose();},{once:true});
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();rockFormationMeshes.dispose();rockFormationMeshes.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
