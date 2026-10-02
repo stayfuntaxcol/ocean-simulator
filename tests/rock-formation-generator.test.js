@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SCULPT_FORMAT,SCULPT_CELL_SIZE} from '../worlds/VolumeSculpt.js';
-import {splitSculptFormations,surfaceCellsForFormation,normalizeRockFormationDescriptor} from '../worlds/RockFormationGenerator.js';
+import {splitSculptFormations,surfaceCellsForFormation,buildContinuousRockSurface,normalizeRockFormationDescriptor} from '../worlds/RockFormationGenerator.js';
 
 function sculptFromCells(cells){
   return {format:SCULPT_FORMAT,cellSize:SCULPT_CELL_SIZE,cells:cells.map(([ix,iy,iz,density=1])=>({ix,iy,iz,density}))};
@@ -58,4 +58,38 @@ test('formation descriptor only preserves skin lock and transform',()=>{
   assert.equal('seed' in value,false);
   assert.equal('deviation' in value,false);
   assert.deepEqual(value.transform.scale,[4,.25,2]);
+});
+
+
+test('continuous surface shares vertices across neighboring sculpt cells',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-2,2,-2,2,-2,2)))[0];
+  const surface=buildContinuousRockSurface(formation,{smooth:false});
+  assert.ok(surface.positions.length>0);
+  assert.ok(surface.indices.length>0);
+  assert.ok(surface.stats.vertices<surface.stats.exposedFaces*4);
+  assert.equal(surface.stats.triangles,surface.stats.exposedFaces*2);
+});
+
+test('carved tunnel creates inner rock walls without filling the opening',()=>{
+  const cells=[];
+  for(let x=-3;x<=3;x++)for(let y=-3;y<=3;y++)for(let z=-4;z<=4;z++){
+    if(Math.abs(x)<=1&&Math.abs(y)<=1)continue; // tunnel along Z
+    cells.push([x,y,z,1]);
+  }
+  const formation=splitSculptFormations(sculptFromCells(cells))[0];
+  const surface=buildContinuousRockSurface(formation,{smooth:false});
+  assert.ok(surface.stats.exposedFaces>0);
+  // A tunnel adds internal wall faces, so it must expose more than only the outside box.
+  const outsideOnly=2*((7*7)+(7*9)+(7*9));
+  assert.ok(surface.stats.exposedFaces>outsideOnly);
+  assert.ok(surface.indices.every(Number.isSafeInteger));
+});
+
+test('continuous smoothing keeps topology unchanged',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-3,3,-3,3,-3,3)))[0];
+  const raw=buildContinuousRockSurface(formation,{smooth:false});
+  const smooth=buildContinuousRockSurface(formation,{smooth:true});
+  assert.equal(smooth.indices.length,raw.indices.length);
+  assert.equal(smooth.positions.length,raw.positions.length);
+  assert.notDeepEqual(smooth.positions,raw.positions);
 });
