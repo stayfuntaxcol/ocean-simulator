@@ -98,7 +98,7 @@ export function createRockFormationMeshSystem({parent,caustics=null}={}){
     parent.add(root);
 
     const record={
-      id,root,mesh:highMesh||lowMesh,highMesh,lowMesh,collisionProxy,
+      id,root,mesh:highMesh||lowMesh,geometry:highGeometry,highMesh,lowMesh,collisionProxy,
       highGeometry,lowGeometry,center:{...formation.center},
       surfaceCount:highSurface.stats.exposedFaces??lowSurface.stats.quads,
       totalCells:formation.cells.length,
