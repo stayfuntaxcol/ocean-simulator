@@ -1222,7 +1222,7 @@ function addFormationRock(x,z,radius=3,rockSeed=1){
     new THREE.DodecahedronGeometry(1,0),
     reefMat(rockColors[Math.floor(random()*rockColors.length)])
   );
-  m.scale.set(.82+random()*.48,.68+random()*.45,.82+random()*.48);
+  m.scale.set(.90+random()*.22,.78+random()*.22,.90+random()*.22);
   m.rotation.set((random()-.5)*.32,random()*Math.PI*2,(random()-.5)*.32);
   rockLibrary.decorate(m,Math.max(.8,radius),Number(rockSeed)>>>0);
   g.add(m);
