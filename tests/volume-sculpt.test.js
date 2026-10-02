@@ -35,3 +35,17 @@ test('volume sculpt validation clamps density and rejects oversized or outside d
   assert.throws(()=>normalizeVolumeSculpt({format:SCULPT_FORMAT,cellSize:3,cells:[{ix:999,iy:0,iz:0,density:1}]}),/buiten de wereld/);
   assert.throws(()=>normalizeVolumeSculpt({format:SCULPT_FORMAT,cellSize:3,cells:Array(12001).fill({ix:0,iy:0,iz:0,density:1})}),/meer dan/);
 });
+
+
+test('a small carve brush can refine volume created by a much larger build brush',()=>{
+  const cells=new Map();
+  applyVolumeBrush(cells,{x:0,y:-6,z:0},{mode:'add',radius:15,strength:1,accept:()=>true});
+  const beforeCount=cells.size;
+  const beforeDensity=[...cells.values()].reduce((sum,value)=>sum+value,0);
+  assert.ok(beforeCount>20);
+  applyVolumeBrush(cells,{x:0,y:-6,z:0},{mode:'remove',radius:3,strength:1,accept:()=>true});
+  const afterDensity=[...cells.values()].reduce((sum,value)=>sum+value,0);
+  assert.ok(afterDensity<beforeDensity);
+  assert.ok(cells.size<=beforeCount);
+  assert.ok((cells.get(sculptKey(0,-2,0))??0)<1);
+});
