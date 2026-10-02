@@ -1198,6 +1198,25 @@ function addRockCluster(x,z,scale=1,layerSeed=0){
   }
   g.position.set(x,-17.7,z); g.userData.editorKind='rots'; reef.add(g); return g;
 }
+
+function addFormationRock(x,z,radius=3,rockSeed=1){
+  const random=seededRandom(Number(rockSeed)>>>0);
+  const g=new THREE.Group();
+  g.userData.orcaRock=true;
+  g.userData.generatedRock=true;
+  const m=new THREE.Mesh(
+    new THREE.DodecahedronGeometry(1,0),
+    reefMat(rockColors[Math.floor(random()*rockColors.length)])
+  );
+  m.scale.set(.82+random()*.48,.68+random()*.45,.82+random()*.48);
+  m.rotation.set((random()-.5)*.32,random()*Math.PI*2,(random()-.5)*.32);
+  rockLibrary.decorate(m,Math.max(.8,radius),Number(rockSeed)>>>0);
+  g.add(m);
+  g.position.set(x,-17.7,z);
+  g.userData.editorKind='formatie-rots';
+  reef.add(g);
+  return g;
+}
 function addBranchCoral(x,z,scale=1,color=0xff7f6e){
   const g=new THREE.Group(), mat=reefMat(color,.82);
   const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.22*scale,.34*scale,3.8*scale,7),mat);
@@ -2044,6 +2063,9 @@ function markLayerRoots(before,key,layerId,type,supportRoots){
     root.userData.editorLayerId=layerId;
     root.userData.editorLayerType=type;
     root.userData.editorObjectIndex=roots.length;
+    root.userData.generatedRock=layer?.generatedRock===true;
+    root.userData.editorLocked=layer?.locked===true;
+    root.userData.formationId=layer?.formationId||null;
     root.userData.isSolidRock = type==='rocks'||Boolean(root.userData.orcaRock);
     if(root.userData.isSolidRock){rockCollisionRoots.add(root);rockCollisionRevision++;}
     roots.push(root);
@@ -2053,7 +2075,12 @@ function markLayerRoots(before,key,layerId,type,supportRoots){
   for(const root of roots){
     if(layer?.precision&&Number.isFinite(layer.placement?.y)){
       root.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(root);
-      if(!box.isEmpty())root.position.y+=layer.placement.y-box.min.y;
+      if(!box.isEmpty()){
+        if(layer.placementMode==='center'){
+          const center=box.getCenter(new THREE.Vector3());
+          root.position.y+=layer.placement.y-center.y;
+        }else root.position.y+=layer.placement.y-box.min.y;
+      }
     }
     const edit=layer?.objectEdits?.[root.userData.editorObjectIndex];
     if(edit?.deleted){removeReefRoot(root);continue;}
@@ -2225,7 +2252,8 @@ function instantiateLayerVisual(ix,iz,layer){
 
   if(layer.precision&&layer.placement){
     const x=layer.placement.x,z=layer.placement.z;
-    if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
+    if(type==='rocks'&&layer.generatedRock)addFormationRock(x,z,layer.rockRadius||3,layer.rockSeed||layerSeed);
+    else if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
     else if(type==='coral')addBranchCoral(x,z,.85,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
     else if(type==='anemone')addAnemone(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
     else if(type==='sponge')addSponge(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,5,layerSeed)*coralColors.length)]);
