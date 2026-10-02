@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { createRockSkinLibrary,ROCK_SKINS,applyRockSkinToGeometry } from './RockFormationSkins.js';
 import { buildContinuousRockSurface } from '../worlds/RockFormationGenerator.js';
 
-export function createRockFormationMeshSystem({parent}={}){
-  const records=new Map(),skins=createRockSkinLibrary();
+export function createRockFormationMeshSystem({parent,caustics=null}={}){
+  const records=new Map(),skins=createRockSkinLibrary(caustics);
 
   function remove(id){
     const record=records.get(id);if(!record)return false;
