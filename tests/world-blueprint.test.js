@@ -28,3 +28,26 @@ test('AI blueprint can provide the same editable volume sculpt used by the build
   assert.equal(plan.sculpt.cells.length,2);
   assert.equal(plan.sculpt.cells[0].density,.8);
 });
+
+
+test('AI blueprint can choose sculpt mesh style skin seed and deviation',()=>{
+  const plan=normalizeWorldBlueprint({
+    format:'ocean-world-blueprint-v1',objects:[],terrain:[],
+    sculpt:{format:'ocean-volume-sculpt-v1',cellSize:3,cells:[{ix:0,iy:-4,iz:0,density:1},{ix:1,iy:-4,iz:0,density:1}]},
+    rockFormations:[
+      {formationIndex:0,style:'flat_plates',skin:'tropical_limestone',seed:77,deviation:.08,accepted:true,locked:true},
+      {formationIndex:1,style:'lava_rock',skin:'dark_lava',seed:91,deviation:.06}
+    ]
+  });
+  assert.equal(plan.rockFormations.length,2);
+  assert.equal(plan.rockFormations[0].style,'flat_plates');
+  assert.equal(plan.rockFormations[0].skin,'tropical_limestone');
+  assert.equal(plan.rockFormations[0].deviation,.08);
+  assert.equal(plan.rockFormations[0].locked,true);
+});
+
+test('AI blueprint rejects unknown rock style and skin',()=>{
+  const base={format:'ocean-world-blueprint-v1',objects:[],terrain:[],rockFormations:[{formationIndex:0}]};
+  assert.throws(()=>normalizeWorldBlueprint({...base,rockFormations:[{formationIndex:0,style:'crystal'}]}),/vormstijl/);
+  assert.throws(()=>normalizeWorldBlueprint({...base,rockFormations:[{formationIndex:0,skin:'plastic'}]}),/skin/);
+});
