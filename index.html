@@ -4221,6 +4221,176 @@ let cachedHabitatRevision=-1;
 let habitatCells=[];
 let schoolThinkAccumulator=0;
 
+// -------- CURRENT FLOW SYSTEM -------------------------------------------------------
+// Currents are stored as a compact sector vector field. No water particles or
+// invisible physics meshes are rendered; only an optional editor route line exists.
+let currentRockFactorStamp='';
+const currentFlowWorldPos=new THREE.Vector3();
+function selectedCurrentFlow(){return currentFlow.get(currentFlowSelect.value);}
+
+function refreshCurrentFlowDebug(){
+  while(currentFlowDebug.children.length){
+    const child=currentFlowDebug.children.pop();
+    child.geometry?.dispose?.();child.material?.dispose?.();
+  }
+  currentFlowDebug.visible=currentFlowShow.checked;
+  if(!currentFlowShow.checked)return;
+  for(const flow of currentFlow.list()){
+    if(!flow.enabled||flow.points.length<2)continue;
+    const geometry=new THREE.BufferGeometry().setFromPoints(flow.points.map(p=>new THREE.Vector3(p.x,p.y,p.z)));
+    const material=new THREE.LineDashedMaterial({color:0x67e3ff,transparent:true,opacity:.72,dashSize:3,gapSize:2,depthWrite:false});
+    const line=new THREE.Line(geometry,material);line.computeLineDistances();
+    line.name=`Stroming · ${flow.name}`;line.frustumCulled=true;
+    currentFlowDebug.add(line);
+  }
+}
+
+function refreshCurrentFlowOutputs(){
+  currentFlowStrengthValue.textContent=`${(Number(currentFlowStrength.value)/100).toFixed(2)} m/s`;
+  currentFlowWidthValue.textContent=`${currentFlowWidth.value} m`;
+  currentFlowHeightValue.textContent=`${currentFlowHeight.value} m`;
+  currentFlowDepthValue.textContent=`${currentFlowDepth.value} m`;
+  currentFlowHeadingValue.textContent=`${currentFlowHeading.value}°`;
+  currentFlowLengthValue.textContent=`${currentFlowLength.value} m`;
+  currentFlowBendValue.textContent=`${currentFlowBend.value} m`;
+  currentFlowTurbulenceValue.textContent=`${currentFlowTurbulence.value}%`;
+  currentFlowRockBoostValue.textContent=`+${currentFlowRockBoost.value}%`;
+}
+
+function refreshCurrentFlowStatus(){
+  const flow=selectedCurrentFlow(),stats=currentFlow.stats();
+  if(!flow){
+    currentFlowStatus.textContent='Geen stroming actief. Maak een nieuwe stroming om sectoren te beïnvloeden.';
+    return;
+  }
+  const actual=classifyCurrent(flow),preset=CURRENT_CATEGORIES[flow.category]||actual;
+  currentFlowStatus.textContent=
+    `Categorie ${preset.id} · ${preset.name} · omvang ${actual.size} · impact ${actual.impact} · `+
+    `${stats.sectors} sectoren · ${stats.rockBoostedSectors} rotssectoren versneld · max ${stats.maxStrength.toFixed(2)} m/s.`;
+}
+
+function refreshCurrentFlowUi(preferId=null){
+  const flows=currentFlow.list(),previous=preferId||currentFlowSelect.value;
+  currentFlowSelect.replaceChildren();
+  for(const flow of flows){
+    const option=document.createElement('option');option.value=flow.id;
+    option.textContent=`${flow.name} · C${flow.category}`;currentFlowSelect.append(option);
+  }
+  if(flows.some(flow=>flow.id===previous))currentFlowSelect.value=previous;
+  else if(flows[0])currentFlowSelect.value=flows[0].id;
+  const flow=selectedCurrentFlow();
+  for(const control of [currentFlowEnabled,currentFlowCategory,currentFlowStrength,currentFlowWidth,currentFlowHeight,currentFlowDepth,currentFlowHeading,currentFlowLength,currentFlowBend,currentFlowTurbulence,currentFlowRockBoost,currentFlowPlace,currentFlowDelete]){
+    control.disabled=!flow;
+  }
+  if(flow){
+    currentFlowEnabled.checked=flow.enabled;
+    currentFlowCategory.value=String(flow.category);
+    currentFlowStrength.value=String(Math.round(flow.strength*100));
+    currentFlowWidth.value=String(Math.round(flow.width));
+    currentFlowHeight.value=String(Math.round(flow.height));
+    currentFlowDepth.value=String(Math.round(flow.depth));
+    currentFlowHeading.value=String(Math.round(flow.heading/5)*5%360);
+    currentFlowLength.value=String(Math.round(flow.length/12)*12);
+    currentFlowBend.value=String(Math.round(flow.bend/2)*2);
+    currentFlowTurbulence.value=String(Math.round(flow.turbulence*100/5)*5);
+    currentFlowRockBoost.value=String(Math.round(flow.rockAcceleration*100/5)*5);
+  }
+  refreshCurrentFlowOutputs();refreshCurrentFlowStatus();
+}
+
+function currentFlowChanged(id=currentFlowSelect.value){
+  refreshCurrentFlowUi(id);refreshCurrentFlowDebug();
+  // Currents transport food/nutrients, so force the cheap ecological sector map
+  // to be rebuilt after a setting changes.
+  foodSectorRevision=-1;ecosystemLastRevision=-1;
+}
+
+function updateSelectedCurrentFlow(){
+  if(!canEditCurrentWorld())return refreshCurrentFlowUi();
+  const id=currentFlowSelect.value;if(!id)return;
+  currentFlow.update(id,{
+    enabled:currentFlowEnabled.checked,
+    category:Number(currentFlowCategory.value),
+    strength:Number(currentFlowStrength.value)/100,
+    width:Number(currentFlowWidth.value),
+    height:Number(currentFlowHeight.value),
+    depth:Number(currentFlowDepth.value),
+    heading:Number(currentFlowHeading.value),
+    length:Number(currentFlowLength.value),
+    bend:Number(currentFlowBend.value),
+    turbulence:Number(currentFlowTurbulence.value)/100,
+    rockAcceleration:Number(currentFlowRockBoost.value)/100
+  });
+  currentFlowChanged(id);
+}
+
+function refreshCurrentRockFactors(force=false){
+  const stamp=`${habitatRevision}:${rockCollisionRevision}:${worldCells.size}`;
+  if(!force&&stamp===currentRockFactorStamp)return false;
+  currentRockFactorStamp=stamp;
+  const factors=new Map();
+  const add=(key,value)=>factors.set(key,Math.min(1,(factors.get(key)||0)+value));
+  for(const [key,layers] of worldCells){
+    let rock=0;
+    for(const layer of layers||[])if(layer.type==='rocks'||layer.type==='mixed')rock++;
+    if(rock)add(key,Math.min(.75,.22+rock*.18));
+  }
+  // Sculpt rocks and currently streamed rock clusters also contribute. Bounding
+  // boxes are calculated only when the world/rock revision changes, never per frame.
+  for(const root of rockCollisionRoots){
+    if(!root.parent)continue;
+    root.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(root);
+    if(box.isEmpty())continue;
+    const minX=Math.floor(box.min.x/CELL),maxX=Math.floor(box.max.x/CELL);
+    const minZ=Math.floor(box.min.z/CELL),maxZ=Math.floor(box.max.z/CELL);
+    for(let iz=minZ;iz<=maxZ;iz++)for(let ix=minX;ix<=maxX;ix++)add(cellKey(ix,iz),.48);
+  }
+  currentFlow.setRockFactors(factors);
+  refreshCurrentFlowStatus();
+  return true;
+}
+
+currentFlowSelect.addEventListener('change',()=>refreshCurrentFlowUi());
+currentFlowEnabled.addEventListener('change',updateSelectedCurrentFlow);
+currentFlowCategory.addEventListener('change',()=>{
+  if(!canEditCurrentWorld())return refreshCurrentFlowUi();
+  const id=currentFlowSelect.value;if(!id)return;
+  currentFlow.applyCategory(id,Number(currentFlowCategory.value));currentFlowChanged(id);
+});
+for(const control of [currentFlowStrength,currentFlowWidth,currentFlowHeight,currentFlowDepth,currentFlowHeading,currentFlowLength,currentFlowBend,currentFlowTurbulence,currentFlowRockBoost]){
+  control.addEventListener('input',refreshCurrentFlowOutputs);
+  control.addEventListener('change',updateSelectedCurrentFlow);
+}
+currentFlowShow.addEventListener('change',refreshCurrentFlowDebug);
+currentFlowAdd.addEventListener('click',()=>{
+  if(!canEditCurrentWorld())return;
+  const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  const heading=((Math.atan2(dir.z,dir.x)*180/Math.PI)%360+360)%360;
+  const created=currentFlow.add({
+    name:`Onderstroom ${currentFlow.list().length+1}`,category:3,
+    centerX:camera.position.x,centerZ:camera.position.z,
+    depth:THREE.MathUtils.clamp(depthFromWorldY(camera.position.y)+8,8,80),
+    heading,length:180,bend:24,turbulence:.18,rockAcceleration:.7
+  });
+  currentFlowChanged(created.id);
+});
+currentFlowPlace.addEventListener('click',()=>{
+  if(!canEditCurrentWorld())return;
+  const flow=selectedCurrentFlow();if(!flow)return;
+  const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  const heading=((Math.atan2(dir.z,dir.x)*180/Math.PI)%360+360)%360;
+  currentFlow.update(flow.id,{centerX:camera.position.x,centerZ:camera.position.z,heading});
+  currentFlowChanged(flow.id);
+});
+currentFlowDelete.addEventListener('click',()=>{
+  if(!canEditCurrentWorld())return;
+  const id=currentFlowSelect.value;if(!id)return;
+  currentFlow.remove(id);currentFlowChanged();
+});
+refreshCurrentFlowUi();
+refreshCurrentFlowDebug();
+
 function speciesFromName(name){
   return String(name||'fish').toLowerCase().replace(/\.glb$/i,'').replace(/[^a-z0-9_-]+/g,'-');
 }
