@@ -15,7 +15,7 @@ export function createVolumeSculptEditor({
   const cellGeometry=new THREE.IcosahedronGeometry(cellSize*.72,1);
   const cellMaterial=new THREE.MeshStandardMaterial({
     color:0x58cfe1,emissive:0x1b7f91,emissiveIntensity:.35,
-    transparent:true,opacity:.26,roughness:.62,metalness:0,depthWrite:false
+    transparent:true,opacity:.84,roughness:.78,metalness:0,depthWrite:true
   });
   const mesh=new THREE.InstancedMesh(cellGeometry,cellMaterial,maxCells);
   mesh.name='Volume sculpt cells';mesh.frustumCulled=false;mesh.count=0;mesh.userData.volumeSculpt=true;group.add(mesh);
