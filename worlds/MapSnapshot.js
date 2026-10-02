@@ -1,3 +1,4 @@
+import { TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX } from './DepthLayers.js';
 export const MAP_SNAPSHOT_VERSION=1;
 
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
@@ -29,7 +30,7 @@ export function createWorldMapSnapshot(world={},pressures=[]){
   const terrain=[];
   for(const item of world.terrain||[]){
     const match=/^(-?\d+),(-?\d+)$/.exec(String(item?.key));if(!match||!Number.isFinite(item?.offset))continue;
-    const offset=Math.round(clamp(Number(item.offset),-12,10)*2)/2;
+    const offset=Math.round(clamp(Number(item.offset),TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX)*2)/2;
     if(offset)terrain.push([Number(match[1]),Number(match[2]),offset]);
   }
   const cells=[];
@@ -53,5 +54,5 @@ export function normalizeWorldMapSnapshot(value){
       &&Number.isSafeInteger(row[0])&&Number.isSafeInteger(row[1])&&row[0]>=-20&&row[0]<=20&&row[1]>=-20&&row[1]<=20
       &&row[2]>=thirdMin&&row[2]<=thirdMax).map(row=>[row[0],row[1],row[2]]);
   };
-  return {version:MAP_SNAPSHOT_VERSION,terrain:clean(value.terrain||[],1000,-12,10),cells:clean(value.cells,1000,0,25),overload:clean(value.overload,100,1,3)};
+  return {version:MAP_SNAPSHOT_VERSION,terrain:clean(value.terrain||[],1000,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX),cells:clean(value.cells,1000,0,25),overload:clean(value.overload,100,1,3)};
 }

@@ -1,3 +1,4 @@
+import { WORLD_MIN_Y,SEA_LEVEL_Y } from './DepthLayers.js';
 export const SCULPT_FORMAT='ocean-volume-sculpt-v1';
 export const SCULPT_CELL_SIZE=3;
 export const SCULPT_MAX_CELLS=12000;
@@ -9,7 +10,7 @@ export function sculptKey(ix,iy,iz){return `${ix},${iy},${iz}`;}
 export function sculptIndexFromWorld(value,cellSize=SCULPT_CELL_SIZE){return Math.round(Number(value)/cellSize);}
 export function sculptWorldFromIndex(index,cellSize=SCULPT_CELL_SIZE){return Number(index)*cellSize;}
 
-export function normalizeVolumeSculpt(value,{worldHalf=144,minY=-24,maxY=18,maxCells=SCULPT_MAX_CELLS}={}){
+export function normalizeVolumeSculpt(value,{worldHalf=144,minY=WORLD_MIN_Y,maxY=SEA_LEVEL_Y,maxCells=SCULPT_MAX_CELLS}={}){
   if(value==null)return {format:SCULPT_FORMAT,cellSize:SCULPT_CELL_SIZE,cells:[]};
   if(!value||typeof value!=='object')throw Error('De volumesculptuur is ongeldig.');
   if(value.format!==SCULPT_FORMAT)throw Error('Onbekend volumesculptuur-formaat.');

@@ -107,6 +107,18 @@
       border:1px solid rgba(127,226,255,.55);font-size:13px;font-weight:700
     }
     #editBadge.on{display:block}
+    #buildDepthHud{
+      display:none;position:absolute;right:18px;top:18px;z-index:20;min-width:190px;
+      padding:9px 12px;border-radius:10px;background:rgba(4,24,34,.86);
+      border:1px solid rgba(70,218,242,.58);color:#e9fbff;font-size:11px;line-height:1.45;
+      backdrop-filter:blur(7px);pointer-events:none
+    }
+    #buildDepthHud.on{display:block}
+    #buildDepthHud strong{display:block;color:#72f0ff;font-size:12px}
+    #terrainFeatureTools{padding:8px;border:1px solid rgba(127,226,255,.18);border-radius:9px;background:rgba(4,42,55,.24)}
+    #terrainFeatureTools[hidden]{display:none}
+    #terrainFeatureTools label{display:grid;grid-template-columns:82px 1fr 46px;gap:7px;align-items:center;width:100%;font-size:11px;color:#d9f5ff}
+    #terrainFeatureTools input{width:100%}
 
 
     #minimapWrap{
@@ -332,9 +344,11 @@
           <option value="rocks">🪨 Rotsrif</option>
           <option value="seagrass">🌿 Zeegrasveld</option>
           <option value="sponge">🧽 Spons & anemoon</option>
-          <option value="terrainLower">⬇ Bodem verlagen / geul</option>
+          <option value="terrainLower">⬇ Bodem verlagen</option>
           <option value="terrainRaise">⬆ Bodem verhogen</option>
           <option value="terrainSmooth">〰 Bodem gladstrijken</option>
+          <option value="terrainCanyon">🏞 Canyon / ravijn</option>
+          <option value="terrainDropoff">🌊 Reef drop-off</option>
           <option value="lavaVent">🌋 Lava-bron plaatsen</option>
           <option value="removeTop">↩ Verwijder bovenste laag</option>
           <option value="clear">🧹 Vak helemaal leegmaken</option>
@@ -382,7 +396,7 @@
         <div class="toolrow">
           <label>Sterkte <input id="sculptStrength" type="range" min="5" max="100" step="5" value="45"><output id="sculptStrengthValue">45%</output></label>
         </div>
-        <div id="volumeSculptStatus">Blauwe transparante massa = blueprintvolume. Houd de muisknop ingedrukt en beweeg je blik om te boetseren. Deze laag is nog geen echte rots.</div>
+        <div id="volumeSculptStatus">Blauwgroene kleimassa = blueprintvolume. Houd de muisknop ingedrukt en beweeg je blik om te boetseren. De zichtbare zeespiegel en depth layers blijven je referentie.</div>
       </div>
       <div class="toolrow" id="autoLandscapeTools">
         <select id="landscapeDensity" aria-label="Dichtheid automatisch landschap">
@@ -404,6 +418,15 @@
         <button id="randomTerrainBtn" type="button">🎲 Random bodem</button>
         <button id="flatTerrainBtn" type="button">▭ Bodem vlak</button>
         <span style="font-size:11px;color:#9cc9d8;align-self:center">Alleen hoogte/diepte · geen rotsen of begroeiing</span>
+      </div>
+      <div id="terrainFeatureTools" hidden>
+        <div class="toolrow">
+          <label>Doeldiepte <input id="terrainTargetDepth" type="range" min="20" max="520" step="10" value="80"><output id="terrainTargetDepthValue">80 m</output></label>
+        </div>
+        <div class="toolrow">
+          <label>Breedte <input id="terrainFeatureWidth" type="range" min="12" max="84" step="6" value="36"><output id="terrainFeatureWidthValue">36 m</output></label>
+        </div>
+        <span style="font-size:11px;color:#9cc9d8">Canyon: sleep langs de as van het ravijn. Drop-off: sleep van de ondiepe kant naar de diepe kant.</span>
       </div>
       <div class="toolrow">
         <button id="saveWorldBtn" type="button">💾 Opslaan</button>
@@ -508,6 +531,7 @@
   </div>
 
   <div id="editBadge">BOUWMODUS · sleep over de zeebodem om een groot gebied te vullen</div>
+  <div id="buildDepthHud"><strong>🌊 SEA LEVEL · 0 m</strong><span id="buildDepthReadout">Diepte 0 m · laag 0</span><br><span id="buildLayerReadout">Laag 0: 0–288 m</span></div>
   <div id="crosshair"></div>
   <div id="hint">Klik op “Start verkennen”. Druk ESC om de muis vrij te geven.</div>
 </div>
@@ -545,6 +569,9 @@ import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './gra
 import { createNightFlashlight } from './graphics/NightLighting.js';
 import { createJellyfishSwarm } from './graphics/JellyfishSwarm.js';
 import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
+import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
+import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
+import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -647,6 +674,14 @@ const landscapeDensity = document.getElementById('landscapeDensity');
 const terrainInspectToggle = document.getElementById('terrainInspectToggle');
 const randomTerrainBtn = document.getElementById('randomTerrainBtn');
 const flatTerrainBtn = document.getElementById('flatTerrainBtn');
+const terrainFeatureTools=document.getElementById('terrainFeatureTools');
+const terrainTargetDepth=document.getElementById('terrainTargetDepth');
+const terrainTargetDepthValue=document.getElementById('terrainTargetDepthValue');
+const terrainFeatureWidth=document.getElementById('terrainFeatureWidth');
+const terrainFeatureWidthValue=document.getElementById('terrainFeatureWidthValue');
+const buildDepthHud=document.getElementById('buildDepthHud');
+const buildDepthReadout=document.getElementById('buildDepthReadout');
+const buildLayerReadout=document.getElementById('buildLayerReadout');
 const saveWorldBtn = document.getElementById('saveWorldBtn');
 const loadWorldBtn = document.getElementById('loadWorldBtn');
 const exportWorldBtn = document.getElementById('exportWorldBtn');
@@ -857,7 +892,8 @@ const terrainInspectSun = new THREE.DirectionalLight(0xffffff, 0);
 terrainInspectSun.position.set(45, 70, 30);
 scene.add(terrainInspectSun);
 
-// Zeebodem + lichte bewerkbare heightmap
+// Zeebodem + bewerkbare heightmap. De simulation-Y blijft compatibel met bestaande werelden;
+// in de editor wordt SEA_LEVEL_Y als 0 meter diepte gepresenteerd.
 const TERRAIN_BASE_Y = -18;
 const TERRAIN_CELL = 12;
 const terrainOffsets = new Map();
@@ -867,7 +903,6 @@ function terrainBaseNoise(x,z){
   return Math.sin(x*.035)*1.0 + Math.cos(z*.028)*1.3 + Math.sin((x-z)*.017)*.9;
 }
 function terrainOffsetAt(x,z){
-  // Zelfstandig initialiseerbaar: gebruikt niet CELL/WORLD_HALF die later in de module worden gedeclareerd.
   const gx=x/TERRAIN_CELL;
   const gz=z/TERRAIN_CELL;
   const ix=Math.floor(gx), iz=Math.floor(gz);
@@ -881,10 +916,17 @@ function terrainHeightAt(x,z){
   return communityOcean?.sample(x,z) ?? rawTerrainHeightAt(x,z);
 }
 function rawTerrainHeightAt(x,z){
-  return TERRAIN_BASE_Y + terrainBaseNoise(x,z) + terrainOffsetAt(x,z);
+  return THREE.MathUtils.clamp(
+    TERRAIN_BASE_Y + terrainBaseNoise(x,z) + terrainOffsetAt(x,z),
+    WORLD_MIN_Y+.75,
+    SEA_LEVEL_Y-2
+  );
+}
+function terrainOffsetForWorldY(x,z,worldY){
+  return THREE.MathUtils.clamp(worldY-TERRAIN_BASE_Y-terrainBaseNoise(x,z),TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX);
 }
 
-const floorGeo = new THREE.PlaneGeometry(800,800,80,80);
+const floorGeo = new THREE.PlaneGeometry(800,800,120,120);
 const floorPos = floorGeo.attributes.position;
 const floorXY = [];
 for(let i=0;i<floorPos.count;i++) floorXY.push([floorPos.getX(i),floorPos.getY(i)]);
@@ -899,18 +941,18 @@ function rebuildTerrainMesh(){
   for(let i=0;i<floorPos.count;i++){
     const [x,y]=floorXY[i];
     const worldZ=-y;
-    const h=terrainBaseNoise(x,worldZ)+terrainOffsetAt(x,worldZ);
-    floorPos.setZ(i,h);
+    const worldY=rawTerrainHeightAt(x,worldZ);
+    floorPos.setZ(i,worldY-TERRAIN_BASE_Y);
 
-    const worldY=TERRAIN_BASE_Y+h;
     if(terrainInspectActive){
-      const t=THREE.MathUtils.clamp((worldY+31)/24,0,1);
-      if(t<.5){
-        const u=t*2;
-        c.setRGB(.08+.10*u,.22+.18*u,.30+.16*u);
+      const depth=depthFromWorldY(worldY);
+      const t=THREE.MathUtils.clamp(depth/320,0,1);
+      if(t<.18){
+        const u=t/.18;
+        c.setRGB(.40-.18*u,.63-.16*u,.48+.05*u);
       }else{
-        const u=(t-.5)*2;
-        c.setRGB(.18+.36*u,.40+.28*u,.40+.14*u);
+        const u=(t-.18)/.82;
+        c.setRGB(.22-.16*u,.47-.30*u,.53-.24*u);
       }
     }else{
       c.setRGB(.19,.35,.31);
@@ -929,6 +971,8 @@ const floor = new THREE.Mesh(floorGeo,floorMat);
 floor.rotation.x=-Math.PI/2;
 floor.position.y=TERRAIN_BASE_Y;
 scene.add(floor);
+
+const depthLayerGuide=createDepthLayerGuide({scene,radius:HEX.radius*HEX.innerScale});
 
 const terrainContourGroup = new THREE.Group();
 scene.add(terrainContourGroup);
@@ -966,7 +1010,7 @@ function setTerrainInspectMode(active){
     scene.fog.color.copy(terrainInspectActive ? new THREE.Color(0x4a8793) : normalFogColor);
   }
   if(!landscapeEditorActive){
-    camera.far=terrainInspectActive ? 260 : 120;
+    camera.far=terrainInspectActive ? Math.max(700,DEPTH_LAYER_HEIGHT*2.4) : 120;
     camera.updateProjectionMatrix();
   }
   terrainInspectLight.intensity=terrainInspectActive ? 1.15 : 0;
@@ -1437,7 +1481,7 @@ function appendAtlasWorldMap(group,world,point,index){
   clip.append(createSvgElement('polygon',{points:svgPoints(flatTopHexPoints(point.x,point.y,radius-1))}));defs.append(clip);group.append(defs);
   const map=createSvgElement('g',{'clip-path':`url(#${clipId})`,'aria-hidden':'true'});
   for(const [ix,iz,offset] of snapshot.terrain){
-    const raised=offset>0,t=Math.min(1,Math.abs(offset)/12);
+    const raised=offset>0,t=Math.min(1,Math.log1p(Math.abs(offset))/Math.log1p(220));
     map.append(createSvgElement('rect',{class:'atlas-map-terrain',x:point.x+ix*TERRAIN_CELL*scale,y:point.y+iz*TERRAIN_CELL*scale,
       width:TERRAIN_CELL*scale+.3,height:TERRAIN_CELL*scale+.3,fill:raised?`rgba(131,145,111,${.22+.38*t})`:`rgba(21,75,91,${.20+.42*t})`}));
   }
@@ -1659,7 +1703,7 @@ function drawMinimap(){
   for(const [key,offset] of terrainOffsets.entries()){
     const [ix,iz]=key.split(',').map(Number),x0=ix*TERRAIN_CELL,z0=iz*TERRAIN_CELL,x1=x0+TERRAIN_CELL,z1=z0+TERRAIN_CELL;
     if(x1<minX||x0>maxX||z1<minZ||z0>maxZ)continue;
-    const t=Math.min(1,Math.abs(offset)/12),a=mapPoint({x:x0,z:z0},bounds,w,h),b=mapPoint({x:x1,z:z1},bounds,w,h);
+    const t=Math.min(1,Math.log1p(Math.abs(offset))/Math.log1p(220)),a=mapPoint({x:x0,z:z0},bounds,w,h),b=mapPoint({x:x1,z:z1},bounds,w,h);
     ctx.fillStyle=offset>0?`rgba(131,145,111,${.22+.38*t})`:`rgba(21,75,91,${.20+.42*t})`;
     ctx.fillRect(a.x,Math.min(a.y,b.y),Math.max(1,b.x-a.x),Math.max(1,Math.abs(b.y-a.y)));
   }
@@ -1811,8 +1855,8 @@ function isCellInsideBuildHex(ix, iz) {
 const volumeSculpt=createVolumeSculptEditor({
   scene,
   worldHalf:hexWorldState.outerRadius*hexWorldState.innerScale,
-  minY:-24,
-  maxY:18,
+  minY:WORLD_MIN_Y,
+  maxY:SEA_LEVEL_Y,
   terrain:terrainHeightAt,
   contains:isPointInsideBuildHex
 });
@@ -1889,8 +1933,8 @@ function seededJitter(ix,iz,n=0,layerSeed=0){
 
 function supportHeightAt(x,z,supportRoots){
   if(!supportRoots.length) return terrainHeightAt(x,z);
-  supportRaycaster.set(new THREE.Vector3(x,80,z),new THREE.Vector3(0,-1,0));
-  supportRaycaster.near=0; supportRaycaster.far=140;
+  supportRaycaster.set(new THREE.Vector3(x,SEA_LEVEL_Y+70,z),new THREE.Vector3(0,-1,0));
+  supportRaycaster.near=0; supportRaycaster.far=(SEA_LEVEL_Y-WORLD_MIN_Y)+160;
   const hits=supportRaycaster.intersectObjects(supportRoots,true);
   return hits.length ? Math.max(terrainHeightAt(x,z),hits[0].point.y) : terrainHeightAt(x,z);
 }
@@ -1965,8 +2009,7 @@ const collisionTmp2 = new THREE.Vector3();
 const collisionBox = new THREE.Box3();
 const CAMERA_RADIUS = 0.46;
 const FISH_RADIUS = 0.38;
-const SEABED_Y = -18;
-const MIN_SWIM_Y = SEABED_Y + 0.65;
+const MIN_SWIM_Y = WORLD_MIN_Y + 0.65;
 
 function activeRockRoots(){
   // Set bevat uitsluitend momenteel gerenderde rotslagen; streaming houdt dit klein.
@@ -2398,22 +2441,51 @@ function applyTerrainBrush(a,b,type){
         if(dx===0&&dz===0) continue;
         sum+=terrainCellOffset(c.ix+dx,c.iz+dz); n++;
       }
-      next.set(c.key,THREE.MathUtils.clamp(sum/n,-12,10));
+      next.set(c.key,THREE.MathUtils.clamp(sum/n,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX));
     }
     for(const [k,v] of next) terrainOffsets.set(k,v);
   }else{
-    const delta=type==='terrainLower' ? -1.75 : 1.75;
+    const delta=type==='terrainLower' ? -4 : 3;
     for(const c of cells){
       const cur=terrainOffsets.get(c.key)||0;
-      terrainOffsets.set(c.key,THREE.MathUtils.clamp(cur+delta,-12,10));
+      terrainOffsets.set(c.key,THREE.MathUtils.clamp(cur+delta,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX));
     }
   }
   rebuildWorldAfterTerrainEdit(cells.map(c=>c.key),false);
+  const center=cells[Math.floor(cells.length/2)];
+  const depth=center?Math.round(depthFromWorldY(terrainHeightAt(center.ix*TERRAIN_CELL+TERRAIN_CELL/2,center.iz*TERRAIN_CELL+TERRAIN_CELL/2))):0;
   editorInfo.textContent=type==='terrainLower'
-    ? `Geul verdiept in ${cells.length} vakken. Herhaal voor extra diepte.`
+    ? `Bodem verlaagd in ${cells.length} vakken · circa ${depth} m diep. Herhaal om verder af te dalen.`
     : type==='terrainRaise'
       ? `Bodem verhoogd in ${cells.length} vakken.`
       : `Bodem gladgestreken over ${cells.length} vakken.`;
+}
+
+function applyTerrainFeature(a,b,type){
+  const width=Number(terrainFeatureWidth.value)||36;
+  const targetDepth=Number(terrainTargetDepth.value)||80;
+  const targetY=Math.max(WORLD_MIN_Y+.75,worldYFromDepth(targetDepth));
+  const cells=terrainFeatureCells(a,b,{cellSize:TERRAIN_CELL,width,contains:isPointInsideBuildHex});
+  if(!cells.length){editorInfo.textContent='Teken de terreinfeature binnen het bouwhexagon.';return;}
+  if(cells.length>360){editorInfo.textContent=`Feature te groot (${cells.length} terreinpunten). Verklein breedte of lengte.`;return;}
+  const changed=[];
+  for(const c of cells){
+    const currentY=rawTerrainHeightAt(c.x,c.z);
+    const nextY=type==='terrainCanyon'
+      ? canyonWorldY(currentY,{targetY,lateral:c.lateral})
+      : dropoffWorldY(currentY,{targetY,t:c.t,lateral:c.lateral});
+    if(nextY>=currentY-.01)continue;
+    const key=cellKey(c.ix,c.iz);
+    terrainOffsets.set(key,terrainOffsetForWorldY(c.x,c.z,nextY));
+    changed.push(key);
+  }
+  if(!changed.length){editorInfo.textContent='De geselecteerde bodem ligt al op of onder deze doeldiepte.';return;}
+  rebuildWorldAfterTerrainEdit(changed,false);
+  const deepest=Math.max(...cells.map(c=>depthFromWorldY(rawTerrainHeightAt(c.x,c.z))));
+  const layer=depthLayerForY(worldYFromDepth(deepest));
+  editorInfo.textContent=type==='terrainCanyon'
+    ? `🏞 Canyon geboetseerd: ${changed.length} punten · doel ${targetDepth} m · breedte ${width} m · diepste layer ${layer}.`
+    : `🌊 Drop-off geboetseerd van ondiep naar diep: ${changed.length} punten · doel ${targetDepth} m · breedte ${width} m · diepste layer ${layer}.`;
 }
 
 
@@ -2518,6 +2590,10 @@ function fillSelection(a,b){
     applyTerrainBrush(a,b,type);
     return;
   }
+  if(type==='terrainCanyon'||type==='terrainDropoff'){
+    applyTerrainFeature(a,b,type);
+    return;
+  }
   if(type==='lavaVent'){
     const cells=terrainSelectionCells(a,b);
     const c=cells[Math.floor(cells.length/2)];
@@ -2619,6 +2695,13 @@ function useDetailEditor(event){
   const root=addPrecisionObject(precisionTool.value,hit.point);
   if(root)selectEditorObject(root);
 }
+function updateBuildDepthHud(){
+  if(!editMode)return;
+  const info=depthLayerGuide.describe(camera.position.y);
+  buildDepthReadout.textContent=`Camera: ${Math.round(info.depth)} m diep · depth layer ${info.layer}`;
+  const top=Math.round(depthFromWorldY(info.layerTop)),bottom=Math.round(depthFromWorldY(info.layerBottom));
+  buildLayerReadout.textContent=`Laag ${info.layer}: ${top}–${bottom} m · modulehoogte ${DEPTH_LAYER_HEIGHT} m`;
+}
 function setEditorView(view){
   if(!editMode)return;
   const leavingFlight=editorView==='detail'||editorView==='sculpt';
@@ -2673,6 +2756,7 @@ function setEditMode(on){
     editorViewTools.hidden=false;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
     editorOverviewBtn.classList.add('active');editorDetailBtn.classList.remove('active');editorSculptBtn.classList.remove('active');
     volumeSculpt.setVisible(false);
+    depthLayerGuide.setVisible(true);buildDepthHud.classList.add('on');updateBuildDepthHud();
     document.getElementById('crosshair').style.display='none';
     hint.textContent='LANDSCHAPSEDITOR · noord boven · A links / D rechts · W noord / S zuid · Q/E hoogte · klik op kaart om te reizen';
     setTerrainInspectMode(terrainInspectToggle.checked);
@@ -2684,6 +2768,7 @@ function setEditMode(on){
     editModeBtn.textContent='🧱 Wereld bouwen';
     editorViewTools.hidden=true;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
     sculptPainting=false;volumeSculpt.endStroke();volumeSculpt.setVisible(false);
+    depthLayerGuide.setVisible(false);buildDepthHud.classList.remove('on');
     document.getElementById('crosshair').style.display='';
     camera.up.set(0,1,0);
     if(savedCamPos){camera.position.copy(savedCamPos);camera.quaternion.copy(savedCamQuat);}
@@ -2730,16 +2815,22 @@ worldBrush.addEventListener('change',()=>{
   const auto=worldBrush.value==='auto';
   landscapeDensity.disabled=!auto;
   landscapeDensity.style.opacity=auto?'1':'.55';
-  const terrainTool=['terrainLower','terrainRaise','terrainSmooth'].includes(worldBrush.value);
+  const terrainTool=['terrainLower','terrainRaise','terrainSmooth','terrainCanyon','terrainDropoff'].includes(worldBrush.value);
+  const terrainFeature=['terrainCanyon','terrainDropoff'].includes(worldBrush.value);
+  terrainFeatureTools.hidden=!terrainFeature;
   editorInfo.textContent=auto
     ? `Automatisch landschap: kies Light, Medium, Heavy of Extreme en sleep over het gewenste gebied.`
     : terrainTool
-      ? `${worldBrush.options[worldBrush.selectedIndex].text}: sleep over een gebied. Alleen de bodem wordt aangepast.`
+      ? terrainFeature
+        ? `${worldBrush.options[worldBrush.selectedIndex].text}: sleep een richting. Stel doeldiepte en breedte hieronder in.`
+        : `${worldBrush.options[worldBrush.selectedIndex].text}: sleep over een gebied. Alleen de bodem wordt aangepast.`
       : `Handmatige laag: ${worldBrush.options[worldBrush.selectedIndex].text}. Sleep over het gewenste gebied.`;
 });
 landscapeDensity.addEventListener('change',()=>{
   if(worldBrush.value==='auto') editorInfo.textContent=`Automatisch landschap ${landscapeDensity.value.toUpperCase()}: sleep over het gebied dat je wilt genereren.`;
 });
+terrainTargetDepth.addEventListener('input',()=>terrainTargetDepthValue.textContent=`${terrainTargetDepth.value} m`);
+terrainFeatureWidth.addEventListener('input',()=>terrainFeatureWidthValue.textContent=`${terrainFeatureWidth.value} m`);
 worldBrush.dispatchEvent(new Event('change'));
 
 
@@ -2842,7 +2933,7 @@ function restoreWorld(data){
   volumeSculpt.load(data.sculpt||null);
   if(Array.isArray(data.terrain)){
     for(const item of data.terrain){
-      if(item?.key && Number.isFinite(item.offset)) terrainOffsets.set(String(item.key),THREE.MathUtils.clamp(item.offset,-12,10));
+      if(item?.key && Number.isFinite(item.offset)) terrainOffsets.set(String(item.key),THREE.MathUtils.clamp(item.offset,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX));
     }
   }
   rebuildTerrainMesh();
@@ -2866,7 +2957,7 @@ function restoreWorld(data){
       const placement=layer.placement;
       if(layer.precision===true&&placement&&Number.isFinite(placement.x)&&Number.isFinite(placement.y)&&Number.isFinite(placement.z)){
         cleanLayer.precision=true;
-        cleanLayer.placement={x:THREE.MathUtils.clamp(placement.x,-WORLD_HALF,WORLD_HALF),y:THREE.MathUtils.clamp(placement.y,-40,40),z:THREE.MathUtils.clamp(placement.z,-WORLD_HALF,WORLD_HALF)};
+        cleanLayer.placement={x:THREE.MathUtils.clamp(placement.x,-WORLD_HALF,WORLD_HALF),y:THREE.MathUtils.clamp(placement.y,WORLD_MIN_Y,SEA_LEVEL_Y+20),z:THREE.MathUtils.clamp(placement.z,-WORLD_HALF,WORLD_HALF)};
       }
       if(layer.objectEdits&&typeof layer.objectEdits==='object'){
         const edits={};
@@ -2876,7 +2967,7 @@ function restoreWorld(data){
             const items=Array.isArray(value)?value:[value?.[0],value?.[1],value?.[2]];
             return items.length>=3&&items.slice(0,3).every(Number.isFinite)?items.slice(0,3).map(v=>THREE.MathUtils.clamp(v,min,max)):null;
           };
-          const position=vector(edit.position,-400,400),rotation=vector(edit.rotation,-100,100),scale=vector(edit.scale,.12,8);
+          const position=vector(edit.position,WORLD_MIN_Y-40,SEA_LEVEL_Y+80),rotation=vector(edit.rotation,-100,100),scale=vector(edit.scale,.12,8);
           edits[editIndex]={...(position?{position}:{}),...(rotation?{rotation}:{}),...(scale?{scale}:{}),...(edit.deleted===true?{deleted:true}:{})};
         }
         if(Object.keys(edits).length)cleanLayer.objectEdits=edits;
@@ -4550,8 +4641,13 @@ function spawnImportedSchool(source,fileName,count,profile=oceanPreset('balanced
     fish.scale.multiplyScalar(.76+oceanRandom()*.28);
     const a=oceanRandom()*Math.PI*2, r=Math.sqrt(oceanRandom())*(2.2+Math.sqrt(count)*.55);
     fish.position.copy(spawnCenter).addScaledVector(rightVec,Math.cos(a)*r);
-    fish.position.y=THREE.MathUtils.clamp(spawnCenter.y+Math.sin(a)*r*.45+(oceanRandom()-.5)*2,-12,16);
     fish.position.z+=(oceanRandom()-.5)*r;
+    const spawnFloor=terrainHeightAt(fish.position.x,fish.position.z)+.85;
+    fish.position.y=THREE.MathUtils.clamp(
+      spawnCenter.y+Math.sin(a)*r*.45+(oceanRandom()-.5)*2,
+      Math.max(MIN_SWIM_Y,spawnFloor),
+      SEA_LEVEL_Y-4
+    );
     const dir=new THREE.Vector3(forward.x+(oceanRandom()-.5)*.22,(oceanRandom()-.5)*.06,forward.z+(oceanRandom()-.5)*.22).normalize();
     fish.userData.velocity=dir.multiplyScalar(.95+oceanRandom()*.65);
     fish.userData.speed=fish.userData.velocity.length(); fish.userData.tail=fish.getObjectByName('Tail')||null;
@@ -5432,7 +5528,8 @@ function updateMovement(dt){
       camera.position.x=inside.x;camera.position.z=inside.z;
       camera.position.y=THREE.MathUtils.clamp(camera.position.y,terrainHeightAt(camera.position.x,camera.position.z)+.65,18.7);
       savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();
-      depthText.textContent=`bouw ${Math.max(0,Math.round(20-camera.position.y))}m`;
+      depthText.textContent=`bouw ${Math.round(depthFromWorldY(camera.position.y))}m`;
+      updateBuildDepthHud();
       return;
     }
     const editorMove=new THREE.Vector3();
@@ -5462,7 +5559,8 @@ function updateMovement(dt){
     camera.position.y=THREE.MathUtils.clamp(camera.position.y,35,260);
     orientEditorCamera();
 
-    depthText.textContent=`editor ${Math.round(camera.position.y)}m`;
+    depthText.textContent=`editor · ${Math.round(depthFromWorldY(camera.position.y))}m diep`;
+    updateBuildDepthHud();
     return;
   }
 
@@ -5504,7 +5602,7 @@ function updateMovement(dt){
     camera.position.z*=s;
   }
 
-  depthText.textContent = Math.max(0,Math.round(20-camera.position.y));
+  depthText.textContent = Math.round(depthFromWorldY(camera.position.y));
 }
 
 function updateBubbles(){
@@ -5557,7 +5655,7 @@ const jellyfishSwarm=createJellyfishSwarm({
 });
 jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
 jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
-addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();},{once:true});
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
@@ -5581,6 +5679,7 @@ function animate(){
     updateBubbles();
   }
   if(streamingTime-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=streamingTime; }
+  if(editMode)updateBuildDepthHud();
   if(editMode&&editorView==='sculpt'&&streamingTime-lastSculptPreviewAt>.08){updateSculptPreview();lastSculptPreviewAt=streamingTime;}
 
   glow.position.x = Math.sin(t*.18)*35;
