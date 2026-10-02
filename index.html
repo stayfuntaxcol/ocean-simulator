@@ -2724,10 +2724,19 @@ function editorRootFromObject(object){
   while(root&&root.parent!==reef)root=root.parent;
   return root?.parent===reef&&root.userData.editorCell?root:null;
 }
+function refreshPrecisionLockUi(){
+  const generated=selectedEditorRoot?.userData?.generatedRock===true;
+  precisionLock.disabled=!generated;
+  if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Alleen gegenereerde formatierotsen kunnen tegen regenereren worden beschermd.';return;}
+  const locked=selectedEditorRoot.userData.editorLocked===true;
+  precisionLock.textContent=locked?'🔒 Locked':'🔓 Lock';
+  precisionLock.title=locked?'Deze rots blijft staan bij Generate Rock Formation.':'Bescherm deze rots bij regenereren.';
+}
 function clearEditorSelection(){
   selectedEditorRoot=null;
   if(selectedEditorHelper){scene.remove(selectedEditorHelper);selectedEditorHelper.geometry?.dispose?.();selectedEditorHelper.material?.dispose?.();selectedEditorHelper=null;}
   precisionSelection.innerHTML='Geen object geselecteerd. Richt het vizier en klik op een object.';
+  refreshPrecisionLockUi();
 }
 function selectEditorObject(root){
   clearEditorSelection();
@@ -2735,7 +2744,9 @@ function selectEditorObject(root){
   selectedEditorRoot=root;
   selectedEditorHelper=new THREE.BoxHelper(root,0x7fe2ff);scene.add(selectedEditorHelper);
   const kind=root.userData.editorKind||root.userData.editorLayerType||'object';
-  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong> · muiswiel of knoppen wijzigen de grootte.`;
+  const lockText=root.userData.generatedRock?(root.userData.editorLocked?' · 🔒 beschermd':' · 🔓 regenereerbaar'):'';
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong>${lockText} · schaal, draai of verplaats met de knoppen.`;
+  refreshPrecisionLockUi();
 }
 function saveSelectedObjectEdit({deleted=false}={}){
   const root=selectedEditorRoot;if(!root)return false;
@@ -2762,9 +2773,25 @@ function rotateSelectedEditorObject(angle){
   const root=selectedEditorRoot;if(!root?.parent)return;
   root.rotation.y+=angle;root.updateMatrixWorld(true);selectedEditorHelper?.update();saveSelectedObjectEdit();
 }
+function moveSelectedEditorObject(dx=0,dy=0,dz=0){
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  const next=root.position.clone().add(new THREE.Vector3(dx,dy,dz));
+  if(!isPointInsideBuildHex(next.x,next.z))return;
+  next.y=THREE.MathUtils.clamp(next.y,WORLD_MIN_Y,SEA_LEVEL_Y+20);
+  root.position.copy(next);root.updateMatrixWorld(true);selectedEditorHelper?.update();saveSelectedObjectEdit();
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'object'}</strong> · x ${next.x.toFixed(1)} · y ${next.y.toFixed(1)} · z ${next.z.toFixed(1)}`;
+}
+function toggleSelectedEditorLock(){
+  const root=selectedEditorRoot;if(!root?.parent||root.userData.generatedRock!==true)return;
+  const layer=layerRecord(root.userData.editorCell,root.userData.editorLayerId);if(!layer?.generatedRock)return;
+  layer.locked=!layer.locked;root.userData.editorLocked=layer.locked;
+  refreshPrecisionLockUi();
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'formatie-rots'}</strong> · ${layer.locked?'🔒 beschermd bij regenereren':'🔓 wordt opnieuw berekend bij regenereren'}`;
+}
 function deleteSelectedEditorObject(){
   const root=selectedEditorRoot;if(!root?.parent)return;
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,type=root.userData.editorLayerType;
+  const layer=layerRecord(key,layerId);if(layer?.generatedRock)layer.locked=false;
   saveSelectedObjectEdit({deleted:true});removeReefRoot(root);clearEditorSelection();refreshLayerHabitat(key,layerId,type);
   editorInfo.textContent='Object verwijderd. Deze precieze verwijdering wordt met de wereld opgeslagen.';
 }
@@ -2904,7 +2931,15 @@ precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
 precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
 precisionRotateLeft.addEventListener('click',()=>rotateSelectedEditorObject(-Math.PI/12));
 precisionRotateRight.addEventListener('click',()=>rotateSelectedEditorObject(Math.PI/12));
+precisionLock.addEventListener('click',toggleSelectedEditorLock);
+precisionMoveXMinus.addEventListener('click',()=>moveSelectedEditorObject(-.5,0,0));
+precisionMoveXPlus.addEventListener('click',()=>moveSelectedEditorObject(.5,0,0));
+precisionMoveYMinus.addEventListener('click',()=>moveSelectedEditorObject(0,-.5,0));
+precisionMoveYPlus.addEventListener('click',()=>moveSelectedEditorObject(0,.5,0));
+precisionMoveZMinus.addEventListener('click',()=>moveSelectedEditorObject(0,0,-.5));
+precisionMoveZPlus.addEventListener('click',()=>moveSelectedEditorObject(0,0,.5));
 precisionDelete.addEventListener('click',deleteSelectedEditorObject);
+refreshPrecisionLockUi();
 terrainInspectToggle.addEventListener('change',()=>{
   if(editMode) setTerrainInspectMode(terrainInspectToggle.checked);
 });
