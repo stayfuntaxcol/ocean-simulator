@@ -1974,7 +1974,7 @@ const volumeSculpt=createVolumeSculptEditor({
   terrain:terrainHeightAt,
   contains:isPointInsideBuildHex
 });
-let sculptPainting=false,sculptPreviewMode=false,lastSculptPaintAt=0,lastSculptPreviewAt=0;
+let sculptPainting=false,sculptPreviewMode=false,rockMeshPreviewOnly=false,lastSculptPaintAt=0,lastSculptPreviewAt=0;
 let sculptStrokeDistance=null;
 function sculptRayHit(){
   raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
@@ -2039,10 +2039,16 @@ function updateSculptPreview(){
 }
 function setSculptPreviewMode(value){
   sculptPreviewMode=Boolean(value);
-  if(sculptPreviewMode){endSculptStroke();volumeSculpt.setBrushPreview(null);}
+  if(sculptPreviewMode){
+    endSculptStroke();volumeSculpt.setBrushPreview(null);
+    if(rockMeshPreviewOnly)volumeSculpt.setVisible(false);
+  }else{
+    rockMeshPreviewOnly=false;
+    volumeSculpt.setVisible(editMode&&editorView==='sculpt');
+  }
   sculptPreviewBtn.classList.toggle('active',sculptPreviewMode);
   sculptPreviewBtn.textContent=sculptPreviewMode?'✏ Terug naar Edit':'👁 Preview';
-  updateSculptStatus(sculptPreviewMode?'Vrij rondvliegen · sculpting gepauzeerd':'Bewerken hervat');
+  updateSculptStatus(sculptPreviewMode?(rockMeshPreviewOnly?'Meshpreview · sculpt tijdelijk verborgen':'Vrij rondvliegen · sculpting gepauzeerd'):'Bewerken hervat');
 }
 
 
@@ -3042,7 +3048,7 @@ function generateSelectedRockVariant({seed=null,descriptor=null,recordHistory=tr
     if(history.items.length>12)history.items.shift();
     history.index=history.items.length-1;
   }
-  sculptViewMode.value='ghost';volumeSculpt.setViewMode('ghost');setSculptPreviewMode(true);
+  rockMeshPreviewOnly=true;setSculptPreviewMode(true);
   updateFormationControls();
   editorInfo.textContent=`🪨 ${ROCK_FORMATION_STYLES[next.style].name} · ${ROCK_SKINS[next.skin].name} · seed ${next.seed} · max. afwijking ${Math.round(next.deviation*100)}% · ${rendered.meshData.stats.triangles} driehoeken.`;
   return rendered.root;
