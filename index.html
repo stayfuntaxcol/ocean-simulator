@@ -2769,7 +2769,7 @@ function refreshPrecisionLockUi(){
   if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Selecteer een gegenereerde rotspartij om hem te locken.';return;}
   const locked=selectedEditorRoot.userData.editorLocked===true;
   precisionLock.textContent=locked?'🔒 Locked':'🔓 Lock';
-  precisionLock.title=locked?'Deze vormvariant is vastgezet; de skin blijft wijzigbaar.':'Accepteer en lock deze vormvariant.';
+  precisionLock.title=locked?'Deze sculpt-rotsformatie is vastgezet; de skin blijft wijzigbaar.':'Zet deze sculpt-rotsformatie vast.';
 }
 function clearEditorSelection(){
   selectedEditorRoot=null;
@@ -2794,13 +2794,10 @@ function selectEditorObject(root){
 function saveSelectedObjectEdit({deleted=false}={}){
   const root=selectedEditorRoot;if(!root)return false;
   if(root.userData.generatedFormationMesh&&root.userData.formationId){
-    const id=root.userData.formationId,history=historyForFormation(id);
-    let descriptor=activeFormationDescriptor(id)||rockFormationDescriptors.get(id);
-    if(!descriptor)return false;
-    descriptor=structuredClone(descriptor);
+    const id=root.userData.formationId;
+    const descriptor=descriptorForFormation(id);
     descriptor.transform=rockFormationMeshes.transformFor(id);
-    if(history.index>=0)history.items[history.index]=structuredClone(descriptor);
-    if(descriptor.accepted)rockFormationDescriptors.set(id,structuredClone(descriptor));
+    rockFormationDescriptors.set(id,structuredClone(descriptor));
     rockCollisionRevision++;return true;
   }
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,index=root.userData.editorObjectIndex;
@@ -2839,7 +2836,7 @@ function toggleSelectedEditorLock(){
   if(root.userData.generatedFormationMesh&&root.userData.formationId){
     refreshRockFormationOptions(root.userData.formationId);
     toggleCurrentRockFormationLock();
-    root.userData.editorLocked=activeFormationDescriptor(root.userData.formationId)?.locked===true;
+    root.userData.editorLocked=descriptorForFormation(root.userData.formationId).locked===true;
     refreshPrecisionLockUi();return;
   }
   if(root.userData.generatedRock!==true)return;
@@ -2855,7 +2852,7 @@ function deleteSelectedEditorObject(){
     if(rockCollisionRoots.delete(root))rockCollisionRevision++;
     rockFormationMeshes.remove(id);rockFormationDescriptors.delete(id);
     clearEditorSelection();refreshRockFormationOptions(id);
-    editorInfo.textContent='Rotspartij-mesh verwijderd. De sculpt blijft bestaan en kan opnieuw worden gegenereerd.';
+    editorInfo.textContent='Rotsweergave verwijderd. De sculpt blijft bestaan en kan opnieuw van een skin worden voorzien.';
     return;
   }
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,type=root.userData.editorLayerType;
