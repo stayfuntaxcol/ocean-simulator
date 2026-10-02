@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SCULPT_FORMAT,SCULPT_CELL_SIZE} from '../worlds/VolumeSculpt.js';
-import {splitSculptFormations,surfaceCellsForFormation,buildContinuousRockSurface,normalizeRockFormationDescriptor} from '../worlds/RockFormationGenerator.js';
+import {splitSculptFormations,surfaceCellsForFormation,buildContinuousRockSurface,buildGreedyRockSurface,normalizeRockFormationDescriptor} from '../worlds/RockFormationGenerator.js';
 
 function sculptFromCells(cells){
   return {format:SCULPT_FORMAT,cellSize:SCULPT_CELL_SIZE,cells:cells.map(([ix,iy,iz,density=1])=>({ix,iy,iz,density}))};
@@ -53,6 +53,7 @@ test('formation descriptor only preserves skin lock and transform',()=>{
   });
   assert.equal(value.formationId,'reef-1');
   assert.equal(value.skin,'grey_reef');
+  assert.equal(value.shapeLevel,3);
   assert.equal(value.locked,true);
   assert.equal('style' in value,false);
   assert.equal('seed' in value,false);
@@ -117,4 +118,45 @@ test('large rounded rock stays within a bounded one-level subdivision budget',()
   assert.equal(raw.stats.triangles,2700);
   assert.equal(rounded.stats.triangles,10800);
   assert.ok(rounded.stats.vertices<8000);
+});
+
+
+test('shape level is clamped to five discrete steps',()=>{
+  assert.equal(normalizeRockFormationDescriptor({formationId:'a',shapeLevel:-2}).shapeLevel,1);
+  assert.equal(normalizeRockFormationDescriptor({formationId:'a',shapeLevel:2.4}).shapeLevel,2);
+  assert.equal(normalizeRockFormationDescriptor({formationId:'a',shapeLevel:4.6}).shapeLevel,5);
+  assert.equal(normalizeRockFormationDescriptor({formationId:'a',shapeLevel:99}).shapeLevel,5);
+});
+
+test('greedy collision mesh collapses a solid block to six quads',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(0,14,-14,0,0,14)))[0];
+  const greedy=buildGreedyRockSurface(formation);
+  assert.equal(formation.cells.length,3375);
+  assert.equal(greedy.stats.quads,6);
+  assert.equal(greedy.stats.triangles,12);
+});
+
+test('five shape levels trade triangles for roundness only at levels four and five',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-4,4,-4,4,-4,4)))[0];
+  const levels=[1,2,3,4,5].map(shapeLevel=>buildContinuousRockSurface(formation,{shapeLevel}));
+  assert.equal(levels[0].stats.shapeLevel,undefined); // level 1 uses the greedy surface
+  assert.equal(levels[1].stats.subdivision,0);
+  assert.equal(levels[2].stats.subdivision,0);
+  assert.equal(levels[3].stats.subdivision,1);
+  assert.equal(levels[4].stats.subdivision,1);
+  assert.ok(levels[0].stats.triangles<levels[1].stats.triangles);
+  assert.equal(levels[3].stats.triangles,levels[2].stats.triangles*4);
+  assert.equal(levels[4].stats.triangles,levels[3].stats.triangles);
+});
+
+test('greedy collision mesh preserves a carved tunnel as an opening',()=>{
+  const cells=[];
+  for(let x=-4;x<=4;x++)for(let y=-4;y<=4;y++)for(let z=-5;z<=5;z++){
+    if(Math.abs(x)<=1&&Math.abs(y)<=1)continue;
+    cells.push([x,y,z,1]);
+  }
+  const formation=splitSculptFormations(sculptFromCells(cells))[0];
+  const greedy=buildGreedyRockSurface(formation);
+  assert.ok(greedy.stats.quads>6);
+  assert.ok(greedy.stats.triangles<200);
 });
