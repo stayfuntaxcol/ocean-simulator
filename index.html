@@ -379,6 +379,14 @@
           <button id="precisionLock" type="button" title="Bescherm gegenereerde rots bij regenereren">🔓 Lock</button>
           <button id="precisionDelete" type="button" title="Verwijder geselecteerd object">🗑</button>
         </div>
+        <div class="toolrow">
+          <button id="precisionMoveXMinus" type="button" title="Verplaats 0,5 m naar -X">X−</button>
+          <button id="precisionMoveXPlus" type="button" title="Verplaats 0,5 m naar +X">X+</button>
+          <button id="precisionMoveYMinus" type="button" title="Verplaats 0,5 m omlaag">Y−</button>
+          <button id="precisionMoveYPlus" type="button" title="Verplaats 0,5 m omhoog">Y+</button>
+          <button id="precisionMoveZMinus" type="button" title="Verplaats 0,5 m naar -Z">Z−</button>
+          <button id="precisionMoveZPlus" type="button" title="Verplaats 0,5 m naar +Z">Z+</button>
+        </div>
         <div id="precisionSelection">Klik op <strong>Detailvlucht</strong>, richt het vizier en klik om nauwkeurig te bouwen.</div>
       </div>
       <div id="volumeSculptTools" hidden>
@@ -735,6 +743,12 @@ const precisionRotateLeft = document.getElementById('precisionRotateLeft');
 const precisionRotateRight = document.getElementById('precisionRotateRight');
 const precisionLock = document.getElementById('precisionLock');
 const precisionDelete = document.getElementById('precisionDelete');
+const precisionMoveXMinus=document.getElementById('precisionMoveXMinus');
+const precisionMoveXPlus=document.getElementById('precisionMoveXPlus');
+const precisionMoveYMinus=document.getElementById('precisionMoveYMinus');
+const precisionMoveYPlus=document.getElementById('precisionMoveYPlus');
+const precisionMoveZMinus=document.getElementById('precisionMoveZMinus');
+const precisionMoveZPlus=document.getElementById('precisionMoveZPlus');
 const importBlueprintBtn = document.getElementById('importBlueprintBtn');
 const blueprintFile = document.getElementById('blueprintFile');
 const minimapWrap = document.getElementById('minimapWrap');
