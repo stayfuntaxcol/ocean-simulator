@@ -1855,8 +1855,8 @@ function isCellInsideBuildHex(ix, iz) {
 const volumeSculpt=createVolumeSculptEditor({
   scene,
   worldHalf:hexWorldState.outerRadius*hexWorldState.innerScale,
-  minY:-24,
-  maxY:18,
+  minY:WORLD_MIN_Y,
+  maxY:SEA_LEVEL_Y,
   terrain:terrainHeightAt,
   contains:isPointInsideBuildHex
 });
@@ -1933,8 +1933,8 @@ function seededJitter(ix,iz,n=0,layerSeed=0){
 
 function supportHeightAt(x,z,supportRoots){
   if(!supportRoots.length) return terrainHeightAt(x,z);
-  supportRaycaster.set(new THREE.Vector3(x,80,z),new THREE.Vector3(0,-1,0));
-  supportRaycaster.near=0; supportRaycaster.far=140;
+  supportRaycaster.set(new THREE.Vector3(x,SEA_LEVEL_Y+70,z),new THREE.Vector3(0,-1,0));
+  supportRaycaster.near=0; supportRaycaster.far=(SEA_LEVEL_Y-WORLD_MIN_Y)+160;
   const hits=supportRaycaster.intersectObjects(supportRoots,true);
   return hits.length ? Math.max(terrainHeightAt(x,z),hits[0].point.y) : terrainHeightAt(x,z);
 }
@@ -2009,8 +2009,7 @@ const collisionTmp2 = new THREE.Vector3();
 const collisionBox = new THREE.Box3();
 const CAMERA_RADIUS = 0.46;
 const FISH_RADIUS = 0.38;
-const SEABED_Y = -18;
-const MIN_SWIM_Y = SEABED_Y + 0.65;
+const MIN_SWIM_Y = WORLD_MIN_Y + 0.65;
 
 function activeRockRoots(){
   // Set bevat uitsluitend momenteel gerenderde rotslagen; streaming houdt dit klein.
@@ -2663,6 +2662,13 @@ function useDetailEditor(event){
   const root=addPrecisionObject(precisionTool.value,hit.point);
   if(root)selectEditorObject(root);
 }
+function updateBuildDepthHud(){
+  if(!editMode)return;
+  const info=depthLayerGuide.describe(camera.position.y);
+  buildDepthReadout.textContent=`Camera: ${Math.round(info.depth)} m diep · depth layer ${info.layer}`;
+  const top=Math.round(depthFromWorldY(info.layerTop)),bottom=Math.round(depthFromWorldY(info.layerBottom));
+  buildLayerReadout.textContent=`Laag ${info.layer}: ${top}–${bottom} m · modulehoogte ${DEPTH_LAYER_HEIGHT} m`;
+}
 function setEditorView(view){
   if(!editMode)return;
   const leavingFlight=editorView==='detail'||editorView==='sculpt';
@@ -2717,6 +2723,7 @@ function setEditMode(on){
     editorViewTools.hidden=false;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
     editorOverviewBtn.classList.add('active');editorDetailBtn.classList.remove('active');editorSculptBtn.classList.remove('active');
     volumeSculpt.setVisible(false);
+    depthLayerGuide.setVisible(true);buildDepthHud.classList.add('on');updateBuildDepthHud();
     document.getElementById('crosshair').style.display='none';
     hint.textContent='LANDSCHAPSEDITOR · noord boven · A links / D rechts · W noord / S zuid · Q/E hoogte · klik op kaart om te reizen';
     setTerrainInspectMode(terrainInspectToggle.checked);
@@ -2728,6 +2735,7 @@ function setEditMode(on){
     editModeBtn.textContent='🧱 Wereld bouwen';
     editorViewTools.hidden=true;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
     sculptPainting=false;volumeSculpt.endStroke();volumeSculpt.setVisible(false);
+    depthLayerGuide.setVisible(false);buildDepthHud.classList.remove('on');
     document.getElementById('crosshair').style.display='';
     camera.up.set(0,1,0);
     if(savedCamPos){camera.position.copy(savedCamPos);camera.quaternion.copy(savedCamQuat);}
