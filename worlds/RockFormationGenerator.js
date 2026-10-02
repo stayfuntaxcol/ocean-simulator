@@ -15,12 +15,11 @@ const hash=(x,y,z,seed=1)=>{
   let n=(Math.imul(Math.round(x*1000),73856093)^Math.imul(Math.round(y*1000),19349663)^Math.imul(Math.round(z*1000),83492791)^Math.imul(seed|0,2654435761))>>>0;
   n^=n>>>13;n=Math.imul(n,1274126177)>>>0;n^=n>>>16;return n>>>0;
 };
-const rand=(x,y,z,seed=1)=>(hash(x,y,z,seed)%1000003)/1000003;
 const noise=(x,y,z,seed=1)=>{
   const a=Math.sin(x*.173+y*.117+z*.139+seed*1.137);
   const b=Math.sin(x*.071-y*.193+z*.089+seed*.731);
   const c=Math.cos(x*.251+y*.053-z*.161+seed*.413);
-  return (a*.48+b*.31+c*.21);
+  return a*.48+b*.31+c*.21;
 };
 
 const NEIGHBORS=[];
@@ -67,91 +66,69 @@ export function splitSculptFormations(data,{densityThreshold=.18,minCells=2}={})
   return formations;
 }
 
-const CUBE=[
-  [0,0,0],[1,0,0],[1,1,0],[0,1,0],
-  [0,0,1],[1,0,1],[1,1,1],[0,1,1]
-];
-const TETS=[
-  [0,5,1,6],[0,1,2,6],[0,2,3,6],
-  [0,3,7,6],[0,7,4,6],[0,4,5,6]
+// Fast closed voxel-surface extraction. Only the six exposed faces of occupied
+// sculpt cells become geometry. This is linear in sculpt cell count and avoids
+// rebuilding tens of thousands of temporary tetrahedra for every variant.
+const FACES=[
+  {d:[ 1,0,0],c:[[ 1,-1,-1],[ 1, 1,-1],[ 1, 1, 1],[ 1,-1, 1]]},
+  {d:[-1,0,0],c:[[-1,-1, 1],[-1, 1, 1],[-1, 1,-1],[-1,-1,-1]]},
+  {d:[0, 1,0],c:[[-1, 1,-1],[-1, 1, 1],[ 1, 1, 1],[ 1, 1,-1]]},
+  {d:[0,-1,0],c:[[-1,-1, 1],[-1,-1,-1],[ 1,-1,-1],[ 1,-1, 1]]},
+  {d:[0,0, 1],c:[[ 1,-1, 1],[ 1, 1, 1],[-1, 1, 1],[-1,-1, 1]]},
+  {d:[0,0,-1],c:[[-1,-1,-1],[-1, 1,-1],[ 1, 1,-1],[ 1,-1,-1]]}
 ];
 
-function fieldMap(formation){
-  return new Map(formation.cells.map(c=>[sculptKey(c.ix,c.iy,c.iz),c.density]));
-}
-function fieldValue(map,x,y,z){return map.get(sculptKey(x,y,z))||0;}
-function edgePoint(a,b,va,vb,iso,cellSize,center){
-  const denom=vb-va,t=Math.abs(denom)<1e-8?.5:clamp((iso-va)/denom,0,1);
-  return [
-    (a[0]+(b[0]-a[0])*t)*cellSize-center.x,
-    (a[1]+(b[1]-a[1])*t)*cellSize-center.y,
-    (a[2]+(b[2]-a[2])*t)*cellSize-center.z
-  ];
-}
-function polygonizeTet(points,values,iso,cellSize,center){
-  const inside=[],outside=[];
-  for(let i=0;i<4;i++)(values[i]>=iso?inside:outside).push(i);
-  if(!inside.length||inside.length===4)return [];
-  const lerp=(i,j)=>edgePoint(points[i],points[j],values[i],values[j],iso,cellSize,center);
-  if(inside.length===1){
-    const a=inside[0];return [[lerp(a,outside[0]),lerp(a,outside[1]),lerp(a,outside[2])]];
-  }
-  if(inside.length===3){
-    const o=outside[0];return [[lerp(o,inside[0]),lerp(o,inside[2]),lerp(o,inside[1])]];
-  }
-  const a=inside[0],b=inside[1],c=outside[0],d=outside[1];
-  const ac=lerp(a,c),ad=lerp(a,d),bc=lerp(b,c),bd=lerp(b,d);
-  return [[ac,bc,ad],[ad,bc,bd]];
-}
-function vertexKey(p){return `${Math.round(p[0]*10000)},${Math.round(p[1]*10000)},${Math.round(p[2]*10000)}`;}
+const BASE_CACHE=new WeakMap();
 
-export function buildFormationBaseMesh(formation,{iso=.20}={}){
-  const map=fieldMap(formation),candidateCubes=new Set(),cellSize=formation.cellSize;
+export function buildFormationBaseMesh(formation,{densityThreshold=.18}={}){
+  const occupied=new Set(formation.cells.filter(c=>c.density>=densityThreshold).map(c=>sculptKey(c.ix,c.iy,c.iz)));
+  const positions=[],indices=[],vertexMap=new Map(),half=formation.cellSize*.5;
+  const vertex=(gx,gy,gz)=>{
+    const key=`${gx},${gy},${gz}`;let id=vertexMap.get(key);
+    if(id!=null)return id;
+    id=positions.length/3;
+    positions.push(
+      gx*half-formation.center.x,
+      gy*half-formation.center.y,
+      gz*half-formation.center.z
+    );
+    vertexMap.set(key,id);return id;
+  };
   for(const c of formation.cells){
-    for(const ox of [-1,0])for(const oy of [-1,0])for(const oz of [-1,0]){
-      candidateCubes.add(`${c.ix+ox},${c.iy+oy},${c.iz+oz}`);
+    if(c.density<densityThreshold)continue;
+    for(const face of FACES){
+      const [dx,dy,dz]=face.d;
+      if(occupied.has(sculptKey(c.ix+dx,c.iy+dy,c.iz+dz)))continue;
+      const ids=face.c.map(([sx,sy,sz])=>vertex(c.ix*2+sx,c.iy*2+sy,c.iz*2+sz));
+      indices.push(ids[0],ids[1],ids[2],ids[0],ids[2],ids[3]);
     }
   }
-  const positions=[],indices=[],vertexMap=new Map();
-  const addVertex=p=>{
-    const key=vertexKey(p);let index=vertexMap.get(key);
-    if(index!=null)return index;
-    index=positions.length/3;positions.push(p[0],p[1],p[2]);vertexMap.set(key,index);return index;
+  const base={
+    formationId:formation.id,center:{...formation.center},cellSize:formation.cellSize,
+    positions,indices,
+    stats:{cells:formation.cells.length,vertices:positions.length/3,triangles:indices.length/3},
+    _adjacency:null,_styleCache:new Map()
   };
-  for(const key of candidateCubes){
-    const [x,y,z]=key.split(',').map(Number);
-    const pts=CUBE.map(([dx,dy,dz])=>[x+dx,y+dy,z+dz]);
-    const vals=pts.map(p=>fieldValue(map,p[0],p[1],p[2]));
-    const min=Math.min(...vals),max=Math.max(...vals);
-    if(min>=iso||max<iso)continue;
-    for(const tet of TETS){
-      const tp=tet.map(i=>pts[i]),tv=tet.map(i=>vals[i]);
-      for(const tri of polygonizeTet(tp,tv,iso,cellSize,formation.center)){
-        const ids=tri.map(addVertex);
-        if(new Set(ids).size===3)indices.push(...ids);
-      }
-    }
-  }
-  return {
-    formationId:formation.id,
-    center:{...formation.center},
-    cellSize,
-    positions,
-    indices,
-    stats:{cells:formation.cells.length,vertices:positions.length/3,triangles:indices.length/3}
-  };
+  return base;
 }
 
-function adjacency(vertexCount,indices){
-  const sets=Array.from({length:vertexCount},()=>new Set());
+function baseFor(formation){
+  let base=BASE_CACHE.get(formation);
+  if(!base){base=buildFormationBaseMesh(formation);BASE_CACHE.set(formation,base);}
+  return base;
+}
+function adjacency(base){
+  if(base._adjacency)return base._adjacency;
+  const sets=Array.from({length:base.positions.length/3},()=>new Set());
+  const indices=base.indices;
   for(let i=0;i<indices.length;i+=3){
     const a=indices[i],b=indices[i+1],c=indices[i+2];
     sets[a].add(b);sets[a].add(c);sets[b].add(a);sets[b].add(c);sets[c].add(a);sets[c].add(b);
   }
-  return sets;
+  base._adjacency=sets;return sets;
 }
-function smoothMesh(positions,indices,iterations=1,lambda=.22){
-  let current=positions.slice();const adj=adjacency(current.length/3,indices);
+function smoothMesh(base,positions,iterations=1,lambda=.08){
+  let current=positions.slice();const adj=adjacency(base);
   for(let pass=0;pass<iterations;pass++){
     const next=current.slice();
     for(let i=0;i<adj.length;i++){
@@ -159,9 +136,9 @@ function smoothMesh(positions,indices,iterations=1,lambda=.22){
       let x=0,y=0,z=0;
       for(const j of adj[i]){x+=current[j*3];y+=current[j*3+1];z+=current[j*3+2];}
       const n=adj[i].size;x/=n;y/=n;z/=n;
-      next[i*3]+= (x-current[i*3])*lambda;
-      next[i*3+1]+= (y-current[i*3+1])*lambda;
-      next[i*3+2]+= (z-current[i*3+2])*lambda;
+      next[i*3]+=(x-current[i*3])*lambda;
+      next[i*3+1]+=(y-current[i*3+1])*lambda;
+      next[i*3+2]+=(z-current[i*3+2])*lambda;
     }
     current=next;
   }
@@ -185,70 +162,69 @@ function normalsFor(positions,indices){
   return normals;
 }
 function meshExtent(positions){
-  let max=0;for(let i=0;i<positions.length;i+=3)max=Math.max(max,Math.hypot(positions[i],positions[i+1],positions[i+2]));return max||1;
+  let max=0;
+  for(let i=0;i<positions.length;i+=3)max=Math.max(max,Math.hypot(positions[i],positions[i+1],positions[i+2]));
+  return max||1;
+}
+function styleBase(base,style){
+  if(base._styleCache.has(style))return base._styleCache.get(style);
+  const preset=ROCK_FORMATION_STYLES[style]||ROCK_FORMATION_STYLES.rounded_reef;
+  const smoothIterations=Math.min(2,preset.smooth);
+  const positions=smoothIterations?smoothMesh(base,base.positions,smoothIterations,.075):base.positions.slice();
+  const value={positions,normals:normalsFor(positions,base.indices),extent:meshExtent(positions)};
+  base._styleCache.set(style,value);return value;
 }
 
 export function generateRockMeshVariant(formation,{
   style='rounded_reef',seed=1,deviation=.07
 }={}){
   if(!ROCK_FORMATION_STYLES[style])style='rounded_reef';
-  deviation=clamp(Number(deviation)||.07,.05,.10);
-  seed=(Number(seed)||1)|0;
-  const preset=ROCK_FORMATION_STYLES[style],base=buildFormationBaseMesh(formation);
-  let positions=smoothMesh(base.positions,base.indices,preset.smooth,.20);
-  let normals=normalsFor(positions,base.indices),extent=meshExtent(positions);
+  deviation=clamp(Number(deviation)||.07,.05,.10);seed=(Number(seed)||1)|0;
+  const preset=ROCK_FORMATION_STYLES[style],base=baseFor(formation),styled=styleBase(base,style);
+  const positions=styled.positions.slice(),normals=styled.normals,extent=styled.extent;
   const localLimit=Math.min(extent*deviation,formation.cellSize*12*deviation);
   const plateStep=Math.max(formation.cellSize*.72,1.2);
   for(let i=0;i<positions.length;i+=3){
     let x=positions[i],y=positions[i+1],z=positions[i+2];
     const nx=normals[i],ny=normals[i+1],nz=normals[i+2];
-    const low=noise(x*.22,y*.22,z*.22,seed);
-    const fine=noise(x*.73,y*.67,z*.71,seed+37);
-    let radial=low*preset.radial*deviation;
+    const low=noise(x*.22,y*.22,z*.22,seed),fine=noise(x*.73,y*.67,z*.71,seed+37);
+    const radial=low*preset.radial*deviation;
     x*=1+radial;y*=1+radial;z*=1+radial;
     let disp=(low*.62+fine*.38)*localLimit*preset.local;
     if(style==='flat_plates'){
       const worldY=y+formation.center.y;
       const snapped=Math.round(worldY/plateStep)*plateStep-formation.center.y;
-      const plateDelta=(snapped-y)*.18*(deviation/.10);
-      y+=clamp(plateDelta,-localLimit*.55,localLimit*.55);
-      disp+=Math.sin(worldY/plateStep*Math.PI*2+seed*.17)*localLimit*.18;
+      y+=clamp((snapped-y)*.16*(deviation/.10),-localLimit*.48,localLimit*.48);
+      disp+=Math.sin(worldY/plateStep*Math.PI*2+seed*.17)*localLimit*.15;
     }else if(style==='lava_rock'){
       const jag=Math.sign(fine)*Math.pow(Math.abs(fine),.55);
       disp=(low*.30+jag*.70)*localLimit*preset.local;
     }else if(style==='blocky_boulder'){
-      const snap=formation.cellSize*.42;
-      const qx=Math.round(x/snap)*snap,qy=Math.round(y/snap)*snap,qz=Math.round(z/snap)*snap;
-      const mix=.10*(deviation/.10);
-      x+=(qx-x)*mix;y+=(qy-y)*mix;z+=(qz-z)*mix;
+      const snap=formation.cellSize*.42,mix=.08*(deviation/.10);
+      x+=(Math.round(x/snap)*snap-x)*mix;
+      y+=(Math.round(y/snap)*snap-y)*mix;
+      z+=(Math.round(z/snap)*snap-z)*mix;
     }else if(style==='mixed_reef'){
-      const band=Math.sin((y+formation.center.y)*1.15+seed*.11);
-      disp+=band*localLimit*.16;
+      disp+=Math.sin((y+formation.center.y)*1.15+seed*.11)*localLimit*.14;
     }
     disp=clamp(disp,-localLimit,localLimit);
     positions[i]=x+nx*disp;positions[i+1]=y+ny*disp;positions[i+2]=z+nz*disp;
   }
-  if(style==='rounded_reef')positions=smoothMesh(positions,base.indices,1,.10);
-  normals=normalsFor(positions,base.indices);
   return {
-    formationId:formation.id,
-    center:{...formation.center},
-    style,seed,deviation,
-    positions,indices:base.indices.slice(),normals,
-    stats:{...base.stats,maxDeviation:Number(localLimit.toFixed(3))}
+    formationId:formation.id,center:{...formation.center},style,seed,deviation,
+    positions,indices:base.indices,
+    stats:{...base.stats,maxDeviation:Number(localLimit.toFixed(3)),cachedBase:true}
   };
 }
 
 export function normalizeRockFormationDescriptor(value={}){
   const style=ROCK_FORMATION_STYLES[value.style]?value.style:'rounded_reef';
   return {
-    formationId:String(value.formationId||'').slice(0,100),
-    style,
+    formationId:String(value.formationId||'').slice(0,100),style,
     skin:String(value.skin||'grey_reef').slice(0,60),
     seed:Number.isFinite(Number(value.seed))?Math.trunc(Number(value.seed)):1,
     deviation:clamp(Number(value.deviation)||.07,.05,.10),
-    accepted:value.accepted===true,
-    locked:value.locked===true,
+    accepted:value.accepted===true,locked:value.locked===true,
     transform:{
       position:Array.isArray(value.transform?.position)&&value.transform.position.length===3?value.transform.position.map(finite):[0,0,0],
       rotation:Array.isArray(value.transform?.rotation)&&value.transform.rotation.length===3?value.transform.rotation.map(finite):[0,0,0],

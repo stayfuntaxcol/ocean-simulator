@@ -36,15 +36,23 @@ export function createRockFormationMeshSystem({parent,caustics}={}){
   }
 
   function upsert(meshData,descriptor={}){
-    const id=meshData.formationId;remove(id);
+    const id=meshData.formationId,existing=records.get(id);
+    if(existing){
+      const position=existing.geometry.getAttribute('position');
+      const sameTopology=position?.count===meshData.positions.length/3&&existing.geometry.index?.count===meshData.indices.length;
+      if(sameTopology){
+        position.array.set(meshData.positions);position.needsUpdate=true;
+        existing.geometry.deleteAttribute('normal');existing.geometry.computeVertexNormals();
+        existing.geometry.computeBoundingBox();existing.geometry.computeBoundingSphere();
+        existing.center={...meshData.center};existing.meshData=meshData;
+        applyDescriptor(existing,descriptor);return existing.root;
+      }
+      remove(id);
+    }
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(meshData.positions),3));
-    if(Array.isArray(meshData.normals)&&meshData.normals.length===meshData.positions.length){
-      geometry.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(meshData.normals),3));
-    }
     geometry.setIndex(meshData.indices);
-    if(!geometry.getAttribute('normal'))geometry.computeVertexNormals();
-    geometry.computeBoundingBox();geometry.computeBoundingSphere();
+    geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
 
     const mesh=new THREE.Mesh(geometry,skins.get(descriptor.skin));
     mesh.name='Rock formation surface';mesh.castShadow=false;mesh.receiveShadow=false;
