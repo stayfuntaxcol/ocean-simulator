@@ -16,3 +16,15 @@ test('AI blueprint rejects unsupported, oversized and out-of-world input',()=>{
   assert.throws(()=>normalizeWorldBlueprint({format:'ocean-world-blueprint-v1',objects:[{type:'coral',x:145,z:0}]}),/buiten de wereld/);
   assert.throws(()=>normalizeWorldBlueprint({format:'ocean-world-blueprint-v1',objects:Array(1201).fill({type:'coral',x:0,z:0})}),/meer dan/);
 });
+
+
+test('AI blueprint can provide the same editable volume sculpt used by the builder',()=>{
+  const plan=normalizeWorldBlueprint({
+    format:'ocean-world-blueprint-v1',name:'Sculpt rif',objects:[],terrain:[],
+    sculpt:{format:'ocean-volume-sculpt-v1',cellSize:3,cells:[
+      {ix:1,iy:-4,iz:2,density:.8},{ix:2,iy:-4,iz:2,density:.5}
+    ]}
+  });
+  assert.equal(plan.sculpt.cells.length,2);
+  assert.equal(plan.sculpt.cells[0].density,.8);
+});

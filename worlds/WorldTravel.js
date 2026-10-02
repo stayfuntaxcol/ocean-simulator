@@ -1,3 +1,4 @@
+import { normalizeVolumeSculpt } from './VolumeSculpt.js';
 import { HEX, SIDES, neighborSide, arrivalPosition, parseWorldId } from './HexWorld.js';
 
 // RTDB omits empty lists and may return sparse indexed children as an object.
@@ -16,6 +17,7 @@ export function validateWorldRecord(record) {
   if(!record||typeof record!=='object'||!record.world||![1,2,3,4].includes(record.world.version))throw Error('Dit wereldbestand wordt nog niet ondersteund.');
   const w=record.world;
   const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents'),deathMarkers=readWorldList(w.deathMarkers,'deathMarkers');
+  const sculpt=normalizeVolumeSculpt(w.sculpt,{worldHalf:HEX.radius});
   if(w.worldHalf!=null&&w.worldHalf!==HEX.radius)throw Error('Deze wereld heeft een andere maat en kan nog niet aansluiten.');
   for(const [field,items] of [['cells',cells],['terrain',terrain]])for(const item of items)if(!item||!/^[-]?\d+,[-]?\d+$/.test(String(item.key)))throw Error(`Een terreincoördinaat in ${field} is ongeldig.`);
   if(terrain.some(t=>!Number.isFinite(t.offset)))throw Error('Een bodemhoogte is ongeldig.');
@@ -29,7 +31,7 @@ export function validateWorldRecord(record) {
     if(layers.some(l=>!l||typeof l.type!=='string'))throw Error(`Een landschapslaag in cells[${c.key}] is ongeldig.`);
     return {...c,layers};
   });
-  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers}};
+  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt}};
 }
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,

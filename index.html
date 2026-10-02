@@ -92,9 +92,12 @@
     }
     #worldTools button.active{background:#7fe2ff;color:#062231}
     #worldTools select option{color:#111}
-    #precisionBuildTools{padding:9px;border:1px solid rgba(127,226,255,.24);border-radius:10px;background:rgba(4,42,55,.34)}
-    #precisionBuildTools[hidden]{display:none}
-    #precisionBuildTools .toolrow+ .toolrow{margin-top:7px}
+    #precisionBuildTools,#volumeSculptTools{padding:9px;border:1px solid rgba(127,226,255,.24);border-radius:10px;background:rgba(4,42,55,.34)}
+    #precisionBuildTools[hidden],#volumeSculptTools[hidden]{display:none}
+    #precisionBuildTools .toolrow+ .toolrow,#volumeSculptTools .toolrow+ .toolrow{margin-top:7px}
+    #volumeSculptTools label{font-size:11px;color:#d8f5ff;display:grid;grid-template-columns:88px 1fr 42px;gap:7px;align-items:center;width:100%}
+    #volumeSculptTools input[type="range"]{width:100%}
+    #volumeSculptStatus{width:100%;font-size:11px;color:#bfe5f3;line-height:1.4}
     #precisionSelection{width:100%;font-size:11px;color:#bfe5f3;line-height:1.35}
     #precisionSelection strong{color:#fff}
     #editorInfo{font-size:12px;color:#bfe5f3;line-height:1.35}
@@ -340,6 +343,7 @@
       <div class="toolrow" id="editorViewTools" hidden>
         <button id="editorOverviewBtn" type="button" class="active">🗺 Bovenaanzicht</button>
         <button id="editorDetailBtn" type="button">🫧 Detailvlucht</button>
+        <button id="editorSculptBtn" type="button">🧊 Volume sculpt</button>
       </div>
       <div id="precisionBuildTools" hidden>
         <div class="toolrow">
@@ -361,6 +365,24 @@
           <button id="precisionDelete" type="button" title="Verwijder geselecteerd object">🗑</button>
         </div>
         <div id="precisionSelection">Klik op <strong>Detailvlucht</strong>, richt het vizier en klik om nauwkeurig te bouwen.</div>
+      </div>
+      <div id="volumeSculptTools" hidden>
+        <div class="toolrow">
+          <select id="sculptTool" aria-label="Volume sculpt gereedschap">
+            <option value="add">➕ Volume toevoegen</option>
+            <option value="remove">➖ Volume weghalen</option>
+            <option value="smooth">〰 Volume verzachten</option>
+          </select>
+          <button id="sculptUndo" type="button">↶ Undo</button>
+          <button id="sculptClear" type="button">🧹 Wis volume</button>
+        </div>
+        <div class="toolrow">
+          <label>Penseel <input id="sculptBrushSize" type="range" min="3" max="18" step="1" value="6"><output id="sculptBrushValue">6 m</output></label>
+        </div>
+        <div class="toolrow">
+          <label>Sterkte <input id="sculptStrength" type="range" min="5" max="100" step="5" value="45"><output id="sculptStrengthValue">45%</output></label>
+        </div>
+        <div id="volumeSculptStatus">Blauwe transparante massa = blueprintvolume. Houd de muisknop ingedrukt en beweeg je blik om te boetseren. Deze laag is nog geen echte rots.</div>
       </div>
       <div class="toolrow" id="autoLandscapeTools">
         <select id="landscapeDensity" aria-label="Dichtheid automatisch landschap">
@@ -522,6 +544,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
 import { createNightFlashlight } from './graphics/NightLighting.js';
 import { createJellyfishSwarm } from './graphics/JellyfishSwarm.js';
+import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -638,7 +661,17 @@ const editBadge = document.getElementById('editBadge');
 const editorViewTools = document.getElementById('editorViewTools');
 const editorOverviewBtn = document.getElementById('editorOverviewBtn');
 const editorDetailBtn = document.getElementById('editorDetailBtn');
+const editorSculptBtn = document.getElementById('editorSculptBtn');
 const precisionBuildTools = document.getElementById('precisionBuildTools');
+const volumeSculptTools = document.getElementById('volumeSculptTools');
+const sculptTool = document.getElementById('sculptTool');
+const sculptBrushSize = document.getElementById('sculptBrushSize');
+const sculptBrushValue = document.getElementById('sculptBrushValue');
+const sculptStrength = document.getElementById('sculptStrength');
+const sculptStrengthValue = document.getElementById('sculptStrengthValue');
+const sculptUndo = document.getElementById('sculptUndo');
+const sculptClear = document.getElementById('sculptClear');
+const volumeSculptStatus = document.getElementById('volumeSculptStatus');
 const precisionTool = document.getElementById('precisionTool');
 const precisionSelection = document.getElementById('precisionSelection');
 const precisionSmaller = document.getElementById('precisionSmaller');
@@ -1775,6 +1808,40 @@ function isCellInsideBuildHex(ix, iz) {
   return [-CELL/2,CELL/2].every(dx=>[-CELL/2,CELL/2].every(dz=>isPointInsideBuildHex(x+dx,z+dz)));
 }
 
+const volumeSculpt=createVolumeSculptEditor({
+  scene,
+  worldHalf:hexWorldState.outerRadius*hexWorldState.innerScale,
+  minY:-24,
+  maxY:18,
+  terrain:terrainHeightAt,
+  contains:isPointInsideBuildHex
+});
+let sculptPainting=false,lastSculptPaintAt=0,lastSculptPreviewAt=0;
+function sculptRayHit(){
+  raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+  const hits=raycaster.intersectObjects([volumeSculpt.mesh,floor],true);
+  return hits.find(hit=>isPointInsideBuildHex(hit.point.x,hit.point.z))||null;
+}
+function sculptBrushPoint(){
+  const hit=sculptRayHit();
+  return hit?volumeSculpt.brushPointFromHit(hit,sculptTool.value):null;
+}
+function updateSculptStatus(prefix=''){
+  volumeSculptStatus.textContent=`${prefix?prefix+' · ':''}${volumeSculpt.count} sculptcellen · grid ${volumeSculpt.cellSize} m · penseel ${volumeSculpt.brushRadius.toFixed(0)} m · ${Math.round(volumeSculpt.strength*100)}%`;
+}
+function applySculptBrush(){
+  const point=sculptBrushPoint();
+  if(!point){volumeSculpt.setBrushPreview(null);return false;}
+  volumeSculpt.setBrushPreview(point);
+  const changed=volumeSculpt.apply(point,sculptTool.value);
+  updateSculptStatus(changed?`${sculptTool.options[sculptTool.selectedIndex].text} toegepast`:'Geen volume gewijzigd');
+  return changed>0;
+}
+function updateSculptPreview(){
+  if(!editMode||editorView!=='sculpt'){volumeSculpt.setBrushPreview(null);return;}
+  const point=sculptBrushPoint();volumeSculpt.setBrushPreview(point);
+}
+
 const selectionMat = new THREE.MeshBasicMaterial({
   color:0x7fe2ff,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide
 });
@@ -2554,24 +2621,37 @@ function useDetailEditor(event){
 }
 function setEditorView(view){
   if(!editMode)return;
-  if(view==='detail'){
+  const leavingFlight=editorView==='detail'||editorView==='sculpt';
+  if(view==='detail'||view==='sculpt'){
     if(editorView==='overview')savedOverviewPos=camera.position.clone();
-    editorView='detail';camera.up.set(0,1,0);
+    if(leavingFlight){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
+    editorView=view;camera.up.set(0,1,0);
     if(savedDetailPos){camera.position.copy(savedDetailPos);camera.quaternion.copy(savedDetailQuat);}
     else{
       const source=savedCamPos||camera.position,floorY=terrainHeightAt(source.x,source.z);
       camera.position.set(source.x,THREE.MathUtils.clamp(source.y,floorY+2,16),source.z);
       camera.quaternion.copy(savedCamQuat||new THREE.Quaternion());
     }
-    editorOverviewBtn.classList.remove('active');editorDetailBtn.classList.add('active');precisionBuildTools.hidden=false;
-    document.getElementById('crosshair').style.display='';editBadge.textContent='DETAILBOUW · richt het vizier en klik';
-    hint.textContent='Klik op de wereld om de detailvlucht te activeren.';
+    editorOverviewBtn.classList.remove('active');
+    editorDetailBtn.classList.toggle('active',view==='detail');
+    editorSculptBtn.classList.toggle('active',view==='sculpt');
+    precisionBuildTools.hidden=view!=='detail';
+    volumeSculptTools.hidden=view!=='sculpt';
+    volumeSculpt.setVisible(view==='sculpt');
+    document.getElementById('crosshair').style.display='';
+    editBadge.textContent=view==='sculpt'?'VOLUME SCULPT · boetseer de AI-blueprint':'DETAILBOUW · richt het vizier en klik';
+    hint.textContent=view==='sculpt'
+      ? 'VOLUME SCULPT · klik om te activeren · houd links ingedrukt om volume te boetseren · WASD/Q/E bewegen'
+      : 'Klik op de wereld om de detailvlucht te activeren.';
+    if(view==='sculpt')updateSculptStatus('Blueprint actief');
   }else{
-    if(editorView==='detail'){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
+    if(leavingFlight){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
+    sculptPainting=false;volumeSculpt.endStroke();volumeSculpt.setVisible(false);
     controls.unlock();editorView='overview';camera.up.set(0,0,-1);
     const overview=savedOverviewPos||new THREE.Vector3(camera.position.x,Math.max(95,camera.position.y),camera.position.z);
     camera.position.copy(overview);camera.position.y=THREE.MathUtils.clamp(camera.position.y,45,260);orientEditorCamera();
-    editorDetailBtn.classList.remove('active');editorOverviewBtn.classList.add('active');precisionBuildTools.hidden=true;
+    editorDetailBtn.classList.remove('active');editorSculptBtn.classList.remove('active');editorOverviewBtn.classList.add('active');
+    precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
     document.getElementById('crosshair').style.display='none';editBadge.textContent='BOUWMODUS · sleep over de zeebodem om een groot gebied te vullen';
     hint.textContent='BOVENAANZICHT · A/D links/rechts · W/S noord/zuid · Q/E hoogte · sleep om gebieden te vullen';
   }
@@ -2590,7 +2670,9 @@ function setEditMode(on){
     renderAllWorldCellsForEditor();
     grid.visible=false; hexBoundaryGroup.visible=true; editBadge.classList.add('on'); editModeBtn.classList.add('active');
     editModeBtn.textContent='🌊 Terug naar zwemmen';
-    editorViewTools.hidden=false;precisionBuildTools.hidden=true;editorOverviewBtn.classList.add('active');editorDetailBtn.classList.remove('active');
+    editorViewTools.hidden=false;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
+    editorOverviewBtn.classList.add('active');editorDetailBtn.classList.remove('active');editorSculptBtn.classList.remove('active');
+    volumeSculpt.setVisible(false);
     document.getElementById('crosshair').style.display='none';
     hint.textContent='LANDSCHAPSEDITOR · noord boven · A links / D rechts · W noord / S zuid · Q/E hoogte · klik op kaart om te reizen';
     setTerrainInspectMode(terrainInspectToggle.checked);
@@ -2600,7 +2682,8 @@ function setEditMode(on){
     setTerrainInspectMode(false);
     grid.visible=false; hexBoundaryGroup.visible=false; selection.visible=false; editBadge.classList.remove('on'); editModeBtn.classList.remove('active');
     editModeBtn.textContent='🧱 Wereld bouwen';
-    editorViewTools.hidden=true;precisionBuildTools.hidden=true;
+    editorViewTools.hidden=true;precisionBuildTools.hidden=true;volumeSculptTools.hidden=true;
+    sculptPainting=false;volumeSculpt.endStroke();volumeSculpt.setVisible(false);
     document.getElementById('crosshair').style.display='';
     camera.up.set(0,1,0);
     if(savedCamPos){camera.position.copy(savedCamPos);camera.quaternion.copy(savedCamQuat);}
@@ -2614,6 +2697,13 @@ function setEditMode(on){
 editModeBtn.addEventListener('click',()=>setEditMode(!editMode));
 editorOverviewBtn.addEventListener('click',()=>setEditorView('overview'));
 editorDetailBtn.addEventListener('click',()=>setEditorView('detail'));
+editorSculptBtn.addEventListener('click',()=>setEditorView('sculpt'));
+sculptTool.addEventListener('change',()=>{volumeSculpt.setTool(sculptTool.value);updateSculptStatus();});
+sculptBrushSize.addEventListener('input',()=>{volumeSculpt.setBrushRadius(sculptBrushSize.value);sculptBrushValue.textContent=`${sculptBrushSize.value} m`;updateSculptStatus();});
+sculptStrength.addEventListener('input',()=>{volumeSculpt.setStrength(Number(sculptStrength.value)/100);sculptStrengthValue.textContent=`${sculptStrength.value}%`;updateSculptStatus();});
+sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();updateSculptStatus(ok?'Laatste penseelstreek teruggedraaid':'Niets om terug te draaien');});
+sculptClear.addEventListener('click',()=>{volumeSculpt.clear();updateSculptStatus('Volume gewist');});
+volumeSculpt.setTool(sculptTool.value);volumeSculpt.setBrushRadius(sculptBrushSize.value);volumeSculpt.setStrength(Number(sculptStrength.value)/100);
 precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
 precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
 precisionRotateLeft.addEventListener('click',()=>rotateSelectedEditorObject(-Math.PI/12));
@@ -2660,25 +2750,45 @@ renderer.domElement.addEventListener('pointerdown',e=>{
     useDetailEditor(e);
     return;
   }
+  if(editorView==='sculpt'){
+    if(!controls.isLocked){controls.lock();return;}
+    sculptPainting=true;volumeSculpt.beginStroke();lastSculptPaintAt=0;applySculptBrush();
+    return;
+  }
   dragStart=pointerGround(e); dragEnd=dragStart;
   if(dragStart){ updateSelection(dragStart,dragEnd); renderer.domElement.setPointerCapture(e.pointerId); }
 });
 renderer.domElement.addEventListener('pointermove',e=>{
-  if(!editMode || editorView!=='overview' || !dragStart) return;
+  if(!editMode)return;
+  if(editorView==='sculpt'&&sculptPainting&&controls.isLocked){
+    const now=performance.now();
+    if(now-lastSculptPaintAt>70){lastSculptPaintAt=now;applySculptBrush();}
+    return;
+  }
+  if(editorView!=='overview'||!dragStart)return;
   const p=pointerGround(e); if(p){dragEnd=p;updateSelection(dragStart,dragEnd);}
 });
 renderer.domElement.addEventListener('pointerup',e=>{
-  if(!editMode || editorView!=='overview' || !dragStart) return;
+  if(!editMode)return;
+  if(editorView==='sculpt'){
+    sculptPainting=false;volumeSculpt.endStroke();return;
+  }
+  if(editorView!=='overview'||!dragStart)return;
   const p=pointerGround(e)||dragEnd;
   if(p) fillSelection(dragStart,p);
   dragStart=null;dragEnd=null;selection.visible=false;
 });
+renderer.domElement.addEventListener('pointercancel',()=>{if(sculptPainting){sculptPainting=false;volumeSculpt.endStroke();}});
 renderer.domElement.addEventListener('wheel',e=>{
   if(!editMode)return;
   e.preventDefault();
   if(editorView==='detail'){
     if(selectedEditorRoot)scaleSelectedEditorObject(e.deltaY>0?.92:1.08);
     return;
+  }
+  if(editorView==='sculpt'){
+    const next=THREE.MathUtils.clamp(Number(sculptBrushSize.value)+(e.deltaY>0?-1:1),3,18);
+    sculptBrushSize.value=String(next);sculptBrushSize.dispatchEvent(new Event('input'));return;
   }
   camera.position.y=THREE.MathUtils.clamp(camera.position.y+Math.sign(e.deltaY)*18,70,380);
 },{passive:false});
@@ -2693,6 +2803,7 @@ function worldData(){
     megafaunaDisabled:{...megafaunaDisabled},
     reefVisitors:Object.fromEntries([...reefVisitors].map(([kind,a])=>[kind,{position:a.root.position.toArray(),heading:-a.root.rotation.y}])),
     terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
+    sculpt:volumeSculpt.serialize(),
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
     orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
       heading:Math.atan2(orca.root.userData.velocity.z,orca.root.userData.velocity.x),health:orca.root.userData.health} : null,
@@ -2728,6 +2839,7 @@ function restoreWorld(data){
   }
   clearAllWorldVisuals();clearDeathMarkers();
   worldCells.clear(); terrainOffsets.clear(); clearLavaVents(); nextLayerId=1;
+  volumeSculpt.load(data.sculpt||null);
   if(Array.isArray(data.terrain)){
     for(const item of data.terrain){
       if(item?.key && Number.isFinite(item.offset)) terrainOffsets.set(String(item.key),THREE.MathUtils.clamp(item.offset,-12,10));
@@ -2957,8 +3069,9 @@ blueprintFile.addEventListener('change',async()=>{
     if(plan.terrain.length)rebuildWorldAfterTerrainEdit(plan.terrain.map(item=>cellKey(item.ix,item.iz)),false);
     let placed=0;
     for(const item of plan.objects)if(addPrecisionObject(item.type,{x:item.x,y:terrainHeightAt(item.x,item.z),z:item.z},{scale:item.scale,rotation:item.rotation}))placed++;
+    if(plan.sculpt?.cells?.length)volumeSculpt.load(plan.sculpt);
     clearEditorSelection();
-    editorInfo.textContent=`✨ ${plan.name}: ${placed} nauwkeurige objecten en ${plan.terrain.length} terreinpunten geïmporteerd. Controleer het resultaat in Detailvlucht.`;
+    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
   }catch(error){editorInfo.textContent=`AI-wereldplan niet geïmporteerd: ${error.message}`;}
   blueprintFile.value='';
 });
@@ -5304,7 +5417,7 @@ function updateMovement(dt){
   if(followMode){ updateFollowCamera(dt); return; }
 
   if(editMode){
-    if(editorView==='detail'){
+    if(editorView==='detail'||editorView==='sculpt'){
       if(!controls.isLocked){speedText.textContent='0';return;}
       const editorMove=new THREE.Vector3();camera.getWorldDirection(tempDir);right.crossVectors(tempDir,camera.up).normalize();
       if(keys['KeyW'])editorMove.add(tempDir);
@@ -5444,7 +5557,7 @@ const jellyfishSwarm=createJellyfishSwarm({
 });
 jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
 jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
-addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();},{once:true});
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
@@ -5468,6 +5581,7 @@ function animate(){
     updateBubbles();
   }
   if(streamingTime-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=streamingTime; }
+  if(editMode&&editorView==='sculpt'&&streamingTime-lastSculptPreviewAt>.08){updateSculptPreview();lastSculptPreviewAt=streamingTime;}
 
   glow.position.x = Math.sin(t*.18)*35;
   glow.position.z = Math.cos(t*.15)*35;
