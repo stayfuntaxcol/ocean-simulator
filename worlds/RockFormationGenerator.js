@@ -100,6 +100,38 @@ function buildAdjacency(vertexCount,indices){
   return adjacency;
 }
 
+function subdivideSurface(positions,indices,levels=1){
+  let currentPositions=positions.slice(),currentIndices=indices.slice();
+  for(let level=0;level<levels;level++){
+    const edgeMidpoints=new Map(),nextIndices=[];
+    const midpoint=(a,b)=>{
+      const lo=Math.min(a,b),hi=Math.max(a,b),key=lo+','+hi;
+      const existing=edgeMidpoints.get(key);
+      if(existing!=null)return existing;
+      const ai=a*3,bi=b*3,index=currentPositions.length/3;
+      currentPositions.push(
+        (currentPositions[ai]+currentPositions[bi])*.5,
+        (currentPositions[ai+1]+currentPositions[bi+1])*.5,
+        (currentPositions[ai+2]+currentPositions[bi+2])*.5
+      );
+      edgeMidpoints.set(key,index);
+      return index;
+    };
+    for(let i=0;i<currentIndices.length;i+=3){
+      const a=currentIndices[i],b=currentIndices[i+1],c=currentIndices[i+2];
+      const ab=midpoint(a,b),bc=midpoint(b,c),ca=midpoint(c,a);
+      nextIndices.push(
+        a,ab,ca,
+        ab,b,bc,
+        ca,bc,c,
+        ab,bc,ca
+      );
+    }
+    currentIndices=nextIndices;
+  }
+  return {positions:currentPositions,indices:currentIndices};
+}
+
 function smoothPositions(positions,indices,cellSize,{
   iterations=5,lambda=.33,mu=-.34,inflate=.018,maxMove=cellSize*.20
 }={}){
@@ -184,26 +216,28 @@ export function buildContinuousRockSurface(formation,{densityThreshold=.18,smoot
     }
   }
 
+  const subdivided=smooth ? subdivideSurface(positions,indices,1) : {positions,indices};
   const finalPositions=smooth
-    ? smoothPositions(positions,indices,formation.cellSize,{
-        iterations:5,
-        lambda:.33,
-        mu:-.34,
+    ? smoothPositions(subdivided.positions,subdivided.indices,formation.cellSize,{
+        iterations:6,
+        lambda:.34,
+        mu:-.35,
         inflate:.018,
-        maxMove:formation.cellSize*.20
+        maxMove:formation.cellSize*.13
       })
-    : positions;
+    : subdivided.positions;
 
   return {
     formationId:formation.id,
     center:{...formation.center},
     positions:finalPositions,
-    indices,
+    indices:subdivided.indices,
     stats:{
       cells:formation.cells.length,
       exposedFaces,
       vertices:finalPositions.length/3,
-      triangles:indices.length/3
+      triangles:subdivided.indices.length/3,
+      subdivision:smooth?1:0
     }
   };
 }
