@@ -94,7 +94,7 @@ test('far LOD skins are simple FrontSide materials without custom stone shader w
     assert.equal(material.side,THREE.FrontSide);
     assert.equal(material.vertexColors,true);
     assert.equal(material.userData.simpleRockSkin,true);
-    assert.equal(material.customProgramCacheKey(),material.type);
+    assert.equal(material.onBeforeCompile,THREE.Material.prototype.onBeforeCompile);
     material.dispose();
   }
 });
