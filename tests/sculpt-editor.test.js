@@ -27,3 +27,17 @@ test('cell edit removes exactly one rendered sculpt cell and remains undoable',(
   assert.equal(editor.count,before);
   editor.dispose();
 });
+
+
+test('sculpt revision changes only when sculpt data changes',()=>{
+  const scene=new THREE.Scene();
+  const editor=createVolumeSculptEditor({scene,worldHalf:50,minY:-60,maxY:20,terrain:()=>-18,contains:()=>true,maxCells:1000});
+  const start=editor.revision;
+  editor.setViewMode('ghost');editor.setBrushRadius(9);editor.setStrength(.5);
+  assert.equal(editor.revision,start);
+  editor.beginStroke();editor.apply(new THREE.Vector3(0,-10,0),'add');editor.endStroke();
+  assert.ok(editor.revision>start);
+  const after=editor.revision;
+  editor.setViewMode('clay');assert.equal(editor.revision,after);
+  editor.dispose();
+});
