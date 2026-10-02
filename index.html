@@ -593,7 +593,7 @@ import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
-import { generateRockFormation } from './worlds/RockFormationGenerator.js';
+import { generateAllVolumeRockFills } from './worlds/RockFormationGenerator.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -1213,23 +1213,21 @@ function addRockCluster(x,z,scale=1,layerSeed=0){
   g.position.set(x,-17.7,z); g.userData.editorKind='rots'; reef.add(g); return g;
 }
 
-function addFormationRock(x,z,radius=3,rockSeed=1){
+function addFormationRock(x,z,clusterScale=1,rockSeed=1){
+  // Reuse the original, deliberately simple rock-cluster language.
+  // One generated object is one overlapping cluster and remains editable as a group.
   const random=seededRandom(Number(rockSeed)>>>0);
-  const g=new THREE.Group();
-  g.userData.orcaRock=true;
-  g.userData.generatedRock=true;
-  const m=new THREE.Mesh(
-    new THREE.DodecahedronGeometry(1,0),
-    reefMat(rockColors[Math.floor(random()*rockColors.length)])
-  );
-  m.scale.set(.90+random()*.22,.78+random()*.22,.90+random()*.22);
-  m.rotation.set((random()-.5)*.32,random()*Math.PI*2,(random()-.5)*.32);
-  rockLibrary.decorate(m,Math.max(.8,radius),Number(rockSeed)>>>0);
-  g.add(m);
-  g.position.set(x,-17.7,z);
-  g.userData.editorKind='formatie-rots';
-  reef.add(g);
-  return g;
+  const g=new THREE.Group();g.userData.orcaRock=true;g.userData.generatedRock=true;
+  const n=3+Math.floor(random()*4);
+  for(let i=0;i<n;i++){
+    const r=(1.45+random()*4.2)*clusterScale;
+    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),reefMat(rockColors[Math.floor(random()*rockColors.length)]));
+    m.scale.set(1+.65*random(),.62+random()*.62,.86+random()*.68);
+    m.position.set((random()-.5)*3.7*clusterScale,(r*.32)-.45,(random()-.5)*3.7*clusterScale);
+    m.rotation.set(random()*.7,random()*Math.PI,random()*.28);
+    rockLibrary.decorate(m,r,(Number(rockSeed)+i*83492791)>>>0);g.add(m);
+  }
+  g.position.set(x,-17.7,z);g.userData.editorKind='formatie-cluster';reef.add(g);return g;
 }
 function addBranchCoral(x,z,scale=1,color=0xff7f6e){
   const g=new THREE.Group(), mat=reefMat(color,.82);
@@ -2266,7 +2264,7 @@ function instantiateLayerVisual(ix,iz,layer){
 
   if(layer.precision&&layer.placement){
     const x=layer.placement.x,z=layer.placement.z;
-    if(type==='rocks'&&layer.generatedRock)addFormationRock(x,z,layer.rockRadius||3,layer.rockSeed||layerSeed);
+    if(type==='rocks'&&layer.generatedRock)addFormationRock(x,z,layer.clusterScale||1,layer.rockSeed||layerSeed);
     else if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
     else if(type==='coral')addBranchCoral(x,z,.85,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
     else if(type==='anemone')addAnemone(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
@@ -2830,16 +2828,18 @@ function useDetailEditor(event){
   const root=addPrecisionObject(precisionTool.value,hit.point);
   if(root)selectEditorObject(root);
 }
-const ROCK_FORMATION_ID='sculpt-main';
+const ROCK_FORMATION_PREFIX='sculpt-';
 
-function generatedFormationLayers(formationId=ROCK_FORMATION_ID){
+function generatedFormationLayers(formationId=null){
   const out=[];
   for(const [key,layers] of worldCells)for(const layer of layers){
-    if(layer?.generatedRock===true&&layer.formationId===formationId)out.push({key,layer});
+    if(layer?.generatedRock!==true)continue;
+    if(formationId&&layer.formationId!==formationId)continue;
+    out.push({key,layer});
   }
   return out;
 }
-function lockedFormationReservations(formationId=ROCK_FORMATION_ID){
+function lockedFormationReservations(formationId=null){
   const out=[];
   for(const {layer} of generatedFormationLayers(formationId)){
     if(layer.locked!==true||layer.objectEdits?.[0]?.deleted===true)continue;
@@ -2849,18 +2849,17 @@ function lockedFormationReservations(formationId=ROCK_FORMATION_ID){
       : {x:Number(layer.placement?.x),y:Number(layer.placement?.y),z:Number(layer.placement?.z)};
     if(![p.x,p.y,p.z].every(Number.isFinite))continue;
     const scale=Array.isArray(edit.scale)?Math.max(...edit.scale.map(Number).filter(Number.isFinite),1):1;
-    out.push({...p,radius:Math.max(.8,Number(layer.rockRadius)||3)*scale});
+    out.push({...p,radius:Math.max(1.2,Number(layer.rockRadius)||4)*scale,formationId:layer.formationId});
   }
   return out;
 }
-function removeUnlockedGeneratedFormation(formationId=ROCK_FORMATION_ID){
+function removeUnlockedGeneratedFormation(formationId=null){
   let removed=0;
   for(const [key,layers] of [...worldCells]){
     const keep=[];
     for(const layer of layers){
-      if(layer?.generatedRock===true&&layer.formationId===formationId&&layer.locked!==true){
-        removeLayerObjects(layer.id);removed++;continue;
-      }
+      const matches=layer?.generatedRock===true&&(!formationId||layer.formationId===formationId);
+      if(matches&&layer.locked!==true){removeLayerObjects(layer.id);removed++;continue;}
       keep.push(layer);
     }
     if(keep.length)worldCells.set(key,keep);else worldCells.delete(key);
@@ -2868,47 +2867,42 @@ function removeUnlockedGeneratedFormation(formationId=ROCK_FORMATION_ID){
   if(removed){habitatRevision++;rockCollisionRevision++;}
   return removed;
 }
-function placeGeneratedFormationRock(item,formationId=ROCK_FORMATION_ID){
+function placeGeneratedFormationRock(item,formationId){
   const terrainY=terrainHeightAt(item.x,item.z);
-  const y=THREE.MathUtils.clamp(Math.max(item.y,terrainY+Math.min(1.1,item.radius*.22)),WORLD_MIN_Y,SEA_LEVEL_Y-1);
+  const y=THREE.MathUtils.clamp(Math.max(item.y,terrainY+Math.min(1.1,item.radius*.18)),WORLD_MIN_Y,SEA_LEVEL_Y-1);
   const {ix,iz}=groundToCell({x:item.x,z:item.z});
   return addLayerToCell(ix,iz,'rocks',null,{
-    precision:true,
-    placementMode:'center',
-    generatedRock:true,
-    formationId,
-    locked:false,
-    rockRadius:Number(item.radius.toFixed(3)),
-    rockSeed:item.rockSeed,
-    rockKind:item.kind,
-    sourceSculpt:item.source,
+    precision:true,placementMode:'center',generatedRock:true,formationId,locked:false,
+    rockRadius:Number(item.radius.toFixed(3)),clusterScale:Number(item.clusterScale||1),
+    rockSeed:item.rockSeed,rockKind:item.kind,sourceSculpt:item.source,
     placement:{x:item.x,y:Number(y.toFixed(3)),z:item.z},
-    objectEdits:{0:{rotation:item.rotation,scale:item.scale}}
+    objectEdits:{0:{rotation:[0,item.rotation||0,0],scale:[1,1,1]}}
   });
 }
 function updateRockFormationButton(){
-  const layers=generatedFormationLayers();
+  const layers=generatedFormationLayers(),ids=new Set(layers.map(item=>item.layer.formationId));
   const locked=layers.filter(item=>item.layer.locked===true).length;
-  generateRockFormationBtn.textContent=layers.length?'🪨 Regenerate Rock Formation':'🪨 Generate Rock Formation';
-  if(layers.length)rockFormationStatus.textContent=`${layers.length} gegenereerde rotsen · ${locked} locked`;
+  generateRockFormationBtn.textContent=layers.length?'🪨 Regenerate Rock Formations':'🪨 Generate Rock Formations';
+  if(layers.length)rockFormationStatus.textContent=`${ids.size} formaties · ${layers.length} clusters · ${locked} locked`;
 }
 function generateCurrentRockFormation(){
   if(!editMode){editorInfo.textContent='Open eerst de bouwmodus.';return;}
   const sculpt=volumeSculpt.serialize();
-  if(!sculpt.cells.length){rockFormationStatus.textContent='Boetseer eerst een volume.';return;}
+  if(!sculpt.cells.length){rockFormationStatus.textContent='Boetseer eerst één of meer volumes.';return;}
   endSculptStroke();
   const reserved=lockedFormationReservations();
   const removed=removeUnlockedGeneratedFormation();
-  const result=generateRockFormation(sculpt,{maxRocks:220,seed:17,reserved});
+  const all=generateAllVolumeRockFills(sculpt,{maxClusters:70,targetCoverage:.86,minInside:.72,seed:17,reserved});
   let placed=0;
-  for(const item of result.placements){
-    if(placeGeneratedFormationRock(item))placed++;
+  for(const result of all.results){
+    for(const item of result.placements)if(placeGeneratedFormationRock(item,result.formationId))placed++;
   }
   clearEditorSelection();
   sculptViewMode.value='ghost';volumeSculpt.setViewMode('ghost');setSculptPreviewMode(true);
   updateRockFormationButton();
-  rockFormationStatus.textContent=`${placed} rotsen · groot ${result.stats.large}, middel ${result.stats.medium}, klein ${result.stats.small} · ${reserved.length} locked behouden · ${result.stats.protectedVoids} open ruimten beschermd`;
-  editorInfo.textContent=`🪨 Formatie gegenereerd: ${placed} nieuwe rotsen (${removed} oude niet-locked vervangen). Ga naar Detailvlucht → Object selecteren om stenen aan te passen of te locken.`;
+  const summary=all.results.map((r,i)=>`#${i+1}: ${r.placements.length} clusters / ~${Math.round(r.stats.estimatedCoverage*100)}%`).join(' · ');
+  rockFormationStatus.textContent=`${all.formations.length} losse sculptformaties → ${placed} overlappende rock clusters · ${reserved.length} locked behouden`;
+  editorInfo.textContent=`🪨 ${all.formations.length} formaties herkend. ${placed} clusters geplaatst (${removed} oude niet-locked vervangen). ${summary}`;
   habitatRevision++;rockCollisionRevision++;
 }
 
@@ -3144,10 +3138,11 @@ function worldData(){
         habitatPoint:l.habitatPoint ? {x:l.habitatPoint.x,y:l.habitatPoint.y,z:l.habitatPoint.z} : null,
         ...(l.generatedRock?{
           generatedRock:true,
-          formationId:String(l.formationId||ROCK_FORMATION_ID),
+          formationId:String(l.formationId||'sculpt-legacy'),
           locked:l.locked===true,
           placementMode:l.placementMode==='center'?'center':'bottom',
           rockRadius:Number(l.rockRadius)||3,
+          clusterScale:Number(l.clusterScale)||1,
           rockSeed:Number(l.rockSeed)||0,
           rockKind:String(l.rockKind||'medium'),
           sourceSculpt:l.sourceSculpt?{...l.sourceSculpt}:null
@@ -3202,10 +3197,11 @@ function restoreWorld(data){
       };
       if(layer.generatedRock===true&&layer.type==='rocks'){
         cleanLayer.generatedRock=true;
-        cleanLayer.formationId=String(layer.formationId||ROCK_FORMATION_ID).slice(0,80);
+        cleanLayer.formationId=String(layer.formationId||'sculpt-legacy').slice(0,80);
         cleanLayer.locked=layer.locked===true;
         cleanLayer.placementMode=layer.placementMode==='center'?'center':'bottom';
-        cleanLayer.rockRadius=THREE.MathUtils.clamp(Number(layer.rockRadius)||3,.6,14);
+        cleanLayer.rockRadius=THREE.MathUtils.clamp(Number(layer.rockRadius)||3,.6,20);
+        cleanLayer.clusterScale=THREE.MathUtils.clamp(Number(layer.clusterScale)||1,.3,3);
         cleanLayer.rockSeed=Number.isFinite(Number(layer.rockSeed))?Number(layer.rockSeed):Number(id);
         cleanLayer.rockKind=['large','medium','small'].includes(layer.rockKind)?layer.rockKind:'medium';
         if(layer.sourceSculpt&&['ix','iy','iz'].every(k=>Number.isInteger(Number(layer.sourceSculpt[k])))){
