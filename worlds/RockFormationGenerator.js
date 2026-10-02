@@ -49,10 +49,20 @@ export function protectedNegativeSpace(data,{densityThreshold=.18}={}){
     if(occupied(map,ix,iy,iz,densityThreshold))continue;
     let neighbors=0;
     for(const [dx,dy,dz] of DIRS)if(occupied(map,ix+dx,iy+dy,iz+dz,densityThreshold))neighbors++;
+    const boundedAxis=(dx,dy,dz,maxSpan=4)=>{
+      let negative=false,positive=false;
+      for(let step=1;step<=maxSpan;step++){
+        if(occupied(map,ix-dx*step,iy-dy*step,iz-dz*step,densityThreshold)){negative=true;break;}
+      }
+      for(let step=1;step<=maxSpan;step++){
+        if(occupied(map,ix+dx*step,iy+dy*step,iz+dz*step,densityThreshold)){positive=true;break;}
+      }
+      return negative&&positive;
+    };
     const opposite=
-      (occupied(map,ix-1,iy,iz,densityThreshold)&&occupied(map,ix+1,iy,iz,densityThreshold))||
-      (occupied(map,ix,iy-1,iz,densityThreshold)&&occupied(map,ix,iy+1,iz,densityThreshold))||
-      (occupied(map,ix,iy,iz-1,densityThreshold)&&occupied(map,ix,iy,iz+1,densityThreshold));
+      boundedAxis(1,0,0)||
+      boundedAxis(0,1,0)||
+      boundedAxis(0,0,1);
     if(neighbors>=3||opposite){
       voids.push({ix,iy,iz,x:sculptWorldFromIndex(ix,cellSize),y:sculptWorldFromIndex(iy,cellSize),z:sculptWorldFromIndex(iz,cellSize)});
     }
