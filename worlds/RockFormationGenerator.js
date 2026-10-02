@@ -64,6 +64,9 @@ export function normalizeRockFormationDescriptor(value={}){
   return {
     formationId:String(value.formationId||'').slice(0,100),
     skin:String(value.skin||'grey_reef').slice(0,60),
+    // 1 = blocky/light, 5 = maximum roundness. Existing worlds default to 3,
+    // which keeps the sculpt readable while using far fewer triangles.
+    shapeLevel:clamp(Math.round(Number(value.shapeLevel)||3),1,5),
     locked:value.locked===true,
     transform:{
       position:Array.isArray(value.transform?.position)&&value.transform.position.length===3?value.transform.position.map(finite):[0,0,0],
@@ -184,7 +187,8 @@ function smoothPositions(positions,indices,cellSize,{
   return current;
 }
 
-export function buildContinuousRockSurface(formation,{densityThreshold=.18,smooth=true}={}){
+export function buildContinuousRockSurface(formation,{densityThreshold=.18,smooth=true,shapeLevel=5}={}){
+  const level=clamp(Math.round(Number(shapeLevel)||5),1,5);
   const occupied=new Set(
     formation.cells.filter(c=>c.density>=densityThreshold).map(c=>sculptKey(c.ix,c.iy,c.iz))
   );
@@ -216,15 +220,21 @@ export function buildContinuousRockSurface(formation,{densityThreshold=.18,smoot
     }
   }
 
-  const subdivided=smooth ? subdivideSurface(positions,indices,1) : {positions,indices};
-  const finalPositions=smooth
-    ? smoothPositions(subdivided.positions,subdivided.indices,formation.cellSize,{
-        iterations:6,
-        lambda:.34,
-        mu:-.35,
-        inflate:.018,
-        maxMove:formation.cellSize*.13
-      })
+  // Safe performance profile:
+  // levels 1-4 keep the original continuous topology (75% fewer triangles than
+  // the old always-subdivided mesh). Only level 5 uses the expensive subdivision.
+  // This avoids runtime LOD mesh swapping, which previously could stop the render loop.
+  const useSubdivision=smooth&&level===5;
+  const subdivided=useSubdivision ? subdivideSurface(positions,indices,1) : {positions,indices};
+
+  let smoothing=null;
+  if(level===2)smoothing={iterations:2,lambda:.24,mu:-.25,inflate:.006,maxMove:formation.cellSize*.08};
+  else if(level===3)smoothing={iterations:4,lambda:.30,mu:-.31,inflate:.012,maxMove:formation.cellSize*.11};
+  else if(level===4)smoothing={iterations:7,lambda:.34,mu:-.35,inflate:.018,maxMove:formation.cellSize*.13};
+  else if(level===5)smoothing={iterations:6,lambda:.34,mu:-.35,inflate:.018,maxMove:formation.cellSize*.13};
+
+  const finalPositions=smooth&&smoothing
+    ? smoothPositions(subdivided.positions,subdivided.indices,formation.cellSize,smoothing)
     : subdivided.positions;
 
   return {
@@ -237,7 +247,8 @@ export function buildContinuousRockSurface(formation,{densityThreshold=.18,smoot
       exposedFaces,
       vertices:finalPositions.length/3,
       triangles:subdivided.indices.length/3,
-      subdivision:smooth?1:0
+      subdivision:useSubdivision?1:0,
+      shapeLevel:level
     }
   };
 }
