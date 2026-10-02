@@ -85,11 +85,36 @@ test('carved tunnel creates inner rock walls without filling the opening',()=>{
   assert.ok(surface.indices.every(Number.isSafeInteger));
 });
 
-test('continuous smoothing keeps topology unchanged',()=>{
+test('rounded surface subdivides each face once before smoothing',()=>{
   const formation=splitSculptFormations(sculptFromCells(solid(-3,3,-3,3,-3,3)))[0];
   const raw=buildContinuousRockSurface(formation,{smooth:false});
-  const smooth=buildContinuousRockSurface(formation,{smooth:true});
-  assert.equal(smooth.indices.length,raw.indices.length);
-  assert.equal(smooth.positions.length,raw.positions.length);
-  assert.notDeepEqual(smooth.positions,raw.positions);
+  const rounded=buildContinuousRockSurface(formation,{smooth:true});
+  assert.equal(rounded.stats.exposedFaces,raw.stats.exposedFaces);
+  assert.equal(rounded.stats.triangles,raw.stats.triangles*4);
+  assert.ok(rounded.stats.vertices>raw.stats.vertices);
+  assert.equal(rounded.stats.subdivision,1);
+  assert.notDeepEqual(rounded.positions.slice(0,Math.min(raw.positions.length,rounded.positions.length)),raw.positions);
+});
+
+test('rounding keeps a carved tunnel exposed instead of filling it',()=>{
+  const cells=[];
+  for(let x=-3;x<=3;x++)for(let y=-3;y<=3;y++)for(let z=-4;z<=4;z++){
+    if(Math.abs(x)<=1&&Math.abs(y)<=1)continue;
+    cells.push([x,y,z,1]);
+  }
+  const formation=splitSculptFormations(sculptFromCells(cells))[0];
+  const raw=buildContinuousRockSurface(formation,{smooth:false});
+  const rounded=buildContinuousRockSurface(formation,{smooth:true});
+  assert.equal(rounded.stats.exposedFaces,raw.stats.exposedFaces);
+  assert.equal(rounded.stats.triangles,raw.stats.triangles*4);
+  assert.ok(rounded.indices.every(Number.isSafeInteger));
+});
+
+test('large rounded rock stays within a bounded one-level subdivision budget',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(0,14,-14,0,0,14)))[0];
+  const raw=buildContinuousRockSurface(formation,{smooth:false});
+  const rounded=buildContinuousRockSurface(formation,{smooth:true});
+  assert.equal(raw.stats.triangles,2700);
+  assert.equal(rounded.stats.triangles,10800);
+  assert.ok(rounded.stats.vertices<8000);
 });
