@@ -105,7 +105,7 @@ test('rounding keeps a carved tunnel exposed instead of filling it',()=>{
   }
   const formation=splitSculptFormations(sculptFromCells(cells))[0];
   const raw=buildContinuousRockSurface(formation,{smooth:false});
-  const rounded=buildContinuousRockSurface(formation,{smooth:true});
+  const rounded=buildContinuousRockSurface(formation,{smooth:true,shapeLevel:5});
   assert.equal(rounded.stats.exposedFaces,raw.stats.exposedFaces);
   assert.equal(rounded.stats.triangles,raw.stats.triangles*4);
   assert.ok(rounded.indices.every(Number.isSafeInteger));
@@ -114,7 +114,7 @@ test('rounding keeps a carved tunnel exposed instead of filling it',()=>{
 test('large rounded rock stays within a bounded one-level subdivision budget',()=>{
   const formation=splitSculptFormations(sculptFromCells(solid(0,14,-14,0,0,14)))[0];
   const raw=buildContinuousRockSurface(formation,{smooth:false});
-  const rounded=buildContinuousRockSurface(formation,{smooth:true});
+  const rounded=buildContinuousRockSurface(formation,{smooth:true,shapeLevel:5});
   assert.equal(raw.stats.triangles,2700);
   assert.equal(rounded.stats.triangles,10800);
   assert.ok(rounded.stats.vertices<8000);
