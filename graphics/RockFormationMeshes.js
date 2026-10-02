@@ -49,6 +49,8 @@ export function createRockFormationMeshSystem({parent}={}){
     mesh.name='Aaneengesloten sculpt-rots';
     mesh.visible=true;
     mesh.frustumCulled=false;
+    mesh.castShadow=false;
+    mesh.receiveShadow=true;
     mesh.userData.formationSurface=true;
 
     const root=new THREE.Group();

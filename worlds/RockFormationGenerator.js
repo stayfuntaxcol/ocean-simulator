@@ -100,30 +100,48 @@ function buildAdjacency(vertexCount,indices){
   return adjacency;
 }
 
-function smoothPositions(positions,indices,cellSize,{iterations=2,amount=.16,inflate=.035}={}){
+function smoothPositions(positions,indices,cellSize,{
+  iterations=5,lambda=.33,mu=-.34,inflate=.018,maxMove=cellSize*.20
+}={}){
   if(!iterations||!positions.length)return positions;
   const adjacency=buildAdjacency(positions.length/3,indices);
-  let current=positions.slice();
-  const maxMove=cellSize*.32;
-  for(let pass=0;pass<iterations;pass++){
-    const next=current.slice();
+
+  const laplacianStep=(source,factor)=>{
+    const next=source.slice();
     for(let i=0;i<adjacency.length;i++){
-      const neighbors=adjacency[i];if(neighbors.size<3)continue;
-      const p=i*3,ox=current[p],oy=current[p+1],oz=current[p+2];
+      const neighbors=adjacency[i];
+      if(neighbors.size<3)continue;
+      const p=i*3,ox=source[p],oy=source[p+1],oz=source[p+2];
       let ax=0,ay=0,az=0;
-      for(const n of neighbors){const q=n*3;ax+=current[q];ay+=current[q+1];az+=current[q+2];}
-      const inv=1/neighbors.size;ax*=inv;ay*=inv;az*=inv;
-      let dx=(ax-ox)*amount,dy=(ay-oy)*amount,dz=(az-oz)*amount;
+      for(const n of neighbors){
+        const q=n*3;
+        ax+=source[q];ay+=source[q+1];az+=source[q+2];
+      }
+      const inv=1/neighbors.size;
+      ax*=inv;ay*=inv;az*=inv;
+      let dx=(ax-ox)*factor,dy=(ay-oy)*factor,dz=(az-oz)*factor;
       const len=Math.hypot(dx,dy,dz);
-      if(len>maxMove){const k=maxMove/len;dx*=k;dy*=k;dz*=k;}
+      if(len>maxMove){
+        const k=maxMove/len;dx*=k;dy*=k;dz*=k;
+      }
       next[p]=ox+dx;next[p+1]=oy+dy;next[p+2]=oz+dz;
     }
-    current=next;
+    return next;
+  };
+
+  let current=positions.slice();
+  for(let pass=0;pass<iterations;pass++){
+    current=laplacianStep(current,lambda);
+    current=laplacianStep(current,mu);
   }
+
   if(inflate){
-    let cx=0,cy=0,cz=0,n=current.length/3;
-    for(let i=0;i<current.length;i+=3){cx+=current[i];cy+=current[i+1];cz+=current[i+2];}
-    cx/=n;cy/=n;cz/=n;
+    let cx=0,cy=0,cz=0;
+    const count=current.length/3;
+    for(let i=0;i<current.length;i+=3){
+      cx+=current[i];cy+=current[i+1];cz+=current[i+2];
+    }
+    cx/=count;cy/=count;cz/=count;
     const factor=1+inflate;
     for(let i=0;i<current.length;i+=3){
       current[i]=cx+(current[i]-cx)*factor;
@@ -167,7 +185,13 @@ export function buildContinuousRockSurface(formation,{densityThreshold=.18,smoot
   }
 
   const finalPositions=smooth
-    ? smoothPositions(positions,indices,formation.cellSize,{iterations:2,amount:.14,inflate:.028})
+    ? smoothPositions(positions,indices,formation.cellSize,{
+        iterations:5,
+        lambda:.33,
+        mu:-.34,
+        inflate:.018,
+        maxMove:formation.cellSize*.20
+      })
     : positions;
 
   return {
