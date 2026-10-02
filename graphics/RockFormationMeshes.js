@@ -34,7 +34,12 @@ export function createRockFormationMeshSystem({parent,caustics=null}={}){
     const transform=old?transformFor(id):descriptor.transform;
     remove(id);
 
-    const surface=buildContinuousRockSurface(formation,{smooth:true});
+    // Keep one proven visible mesh. No per-frame LOD swapping or FrontSide-only
+    // material changes: those optimizations previously risked stopping rendering.
+    // Shape level 3 is the new safe default and uses 75% fewer triangles than
+    // the former always-subdivided rounded mesh.
+    const shapeLevel=Math.max(1,Math.min(5,Math.round(Number(descriptor.shapeLevel)||3)));
+    const surface=buildContinuousRockSurface(formation,{smooth:true,shapeLevel});
     if(!surface.positions.length||!surface.indices.length)throw Error('Geen rotsoppervlak uit deze sculpt kunnen maken.');
 
     const geometry=new THREE.BufferGeometry();
@@ -68,7 +73,8 @@ export function createRockFormationMeshSystem({parent,caustics=null}={}){
       surfaceCount:surface.stats.exposedFaces,
       totalCells:formation.cells.length,
       vertices:surface.stats.vertices,
-      triangles:surface.stats.triangles
+      triangles:surface.stats.triangles,
+      shapeLevel:surface.stats.shapeLevel||shapeLevel
     };
     records.set(id,record);
     applyTransform(record,{...descriptor,transform:transform||descriptor.transform});
