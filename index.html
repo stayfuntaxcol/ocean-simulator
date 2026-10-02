@@ -5523,7 +5523,8 @@ function updateMovement(dt){
       camera.position.x=inside.x;camera.position.z=inside.z;
       camera.position.y=THREE.MathUtils.clamp(camera.position.y,terrainHeightAt(camera.position.x,camera.position.z)+.65,18.7);
       savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();
-      depthText.textContent=`bouw ${Math.max(0,Math.round(20-camera.position.y))}m`;
+      depthText.textContent=`bouw ${Math.round(depthFromWorldY(camera.position.y))}m`;
+      updateBuildDepthHud();
       return;
     }
     const editorMove=new THREE.Vector3();
@@ -5553,7 +5554,8 @@ function updateMovement(dt){
     camera.position.y=THREE.MathUtils.clamp(camera.position.y,35,260);
     orientEditorCamera();
 
-    depthText.textContent=`editor ${Math.round(camera.position.y)}m`;
+    depthText.textContent=`editor · ${Math.round(depthFromWorldY(camera.position.y))}m diep`;
+    updateBuildDepthHud();
     return;
   }
 
@@ -5595,7 +5597,7 @@ function updateMovement(dt){
     camera.position.z*=s;
   }
 
-  depthText.textContent = Math.max(0,Math.round(20-camera.position.y));
+  depthText.textContent = Math.round(depthFromWorldY(camera.position.y));
 }
 
 function updateBubbles(){
@@ -5672,6 +5674,7 @@ function animate(){
     updateBubbles();
   }
   if(streamingTime-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=streamingTime; }
+  if(editMode)updateBuildDepthHud();
   if(editMode&&editorView==='sculpt'&&streamingTime-lastSculptPreviewAt>.08){updateSculptPreview();lastSculptPreviewAt=streamingTime;}
 
   glow.position.x = Math.sin(t*.18)*35;
