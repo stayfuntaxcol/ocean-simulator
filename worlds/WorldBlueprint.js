@@ -1,4 +1,4 @@
-import { ROCK_FORMATION_STYLE_IDS,normalizeRockFormationDescriptor } from './RockFormationGenerator.js';
+import { normalizeRockFormationDescriptor } from './RockFormationGenerator.js';
 import { ROCK_SKIN_IDS } from '../graphics/RockFormationSkins.js';
 import { TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX } from './DepthLayers.js';
 import { normalizeVolumeSculpt } from './VolumeSculpt.js';
@@ -39,7 +39,6 @@ export function normalizeWorldBlueprint(value,{worldHalf=144,maxObjects=1200}={}
       const formationId=item.formationId==null?'':String(item.formationId).slice(0,100);
       if(formationIndex!=null&&(!Number.isSafeInteger(formationIndex)||formationIndex<0||formationIndex>63))throw Error(`Rotsformatie ${index+1} heeft een ongeldige formatie-index.`);
       if(!formationId&&formationIndex==null)throw Error(`Rotsformatie ${index+1} mist formationId of formationIndex.`);
-      if(item.style!=null&&!ROCK_FORMATION_STYLE_IDS.includes(item.style))throw Error(`Rotsformatie ${index+1} heeft een onbekende vormstijl.`);
       if(item.skin!=null&&!ROCK_SKIN_IDS.includes(item.skin))throw Error(`Rotsformatie ${index+1} heeft een onbekende skin.`);
       const descriptor=normalizeRockFormationDescriptor({...item,formationId});
       rockFormations.push({...descriptor,formationIndex});
