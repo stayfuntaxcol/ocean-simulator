@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createRockSkinLibrary,ROCK_SKINS } from './RockFormationSkins.js';
+import { createRockSkinLibrary,ROCK_SKINS,applyRockSkinToGeometry } from './RockFormationSkins.js';
 import { buildContinuousRockSurface } from '../worlds/RockFormationGenerator.js';
 
 export function createRockFormationMeshSystem({parent}={}){
@@ -41,6 +41,7 @@ export function createRockFormationMeshSystem({parent}={}){
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(surface.positions,3));
     geometry.setIndex(surface.indices);
     geometry.computeVertexNormals();
+    applyRockSkinToGeometry(geometry,descriptor.skin,formation.center);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
 
@@ -76,6 +77,7 @@ export function createRockFormationMeshSystem({parent}={}){
     const record=records.get(id);if(!record)return false;
     const key=ROCK_SKINS[skin]?skin:'grey_reef';
     record.mesh.material=skins.get(key);
+    applyRockSkinToGeometry(record.geometry,key,record.center);
     record.root.userData.formationSkin=key;
     return true;
   }
