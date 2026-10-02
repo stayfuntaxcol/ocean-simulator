@@ -1,3 +1,4 @@
+import { normalizeRockFormationDescriptor } from './RockFormationGenerator.js';
 import { normalizeVolumeSculpt } from './VolumeSculpt.js';
 import { HEX, SIDES, neighborSide, arrivalPosition, parseWorldId } from './HexWorld.js';
 
@@ -18,6 +19,13 @@ export function validateWorldRecord(record) {
   const w=record.world;
   const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents'),deathMarkers=readWorldList(w.deathMarkers,'deathMarkers');
   const sculpt=normalizeVolumeSculpt(w.sculpt,{worldHalf:HEX.radius});
+  const rockFormationSource=readWorldList(w.rockFormations,'rockFormations');
+  if(rockFormationSource.length>64)throw Error('Deze wereld bevat te veel rotsformaties.');
+  const rockFormations=rockFormationSource.map((item,index)=>{
+    const value=normalizeRockFormationDescriptor(item);
+    if(!value.formationId)throw Error(`Rotsformatie ${index+1} mist een formationId.`);
+    return value;
+  });
   if(w.worldHalf!=null&&w.worldHalf!==HEX.radius)throw Error('Deze wereld heeft een andere maat en kan nog niet aansluiten.');
   for(const [field,items] of [['cells',cells],['terrain',terrain]])for(const item of items)if(!item||!/^[-]?\d+,[-]?\d+$/.test(String(item.key)))throw Error(`Een terreincoördinaat in ${field} is ongeldig.`);
   if(terrain.some(t=>!Number.isFinite(t.offset)))throw Error('Een bodemhoogte is ongeldig.');
@@ -31,7 +39,7 @@ export function validateWorldRecord(record) {
     if(layers.some(l=>!l||typeof l.type!=='string'))throw Error(`Een landschapslaag in cells[${c.key}] is ongeldig.`);
     return {...c,layers};
   });
-  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt}};
+  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt,rockFormations}};
 }
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,

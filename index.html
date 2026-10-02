@@ -413,9 +413,52 @@
         <div class="toolrow">
           <label>Weergave <select id="sculptViewMode"><option value="clay" selected>Clay · massief</option><option value="cells">Cells · losse bollen</option><option value="ghost">Ghost · transparant</option></select><span></span></label>
         </div>
-        <div class="toolrow">
-          <button id="generateRockFormationBtn" type="button">🪨 Generate Rock Formation</button>
-          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;align-self:center">Maakt echte bewerkbare rotsen langs het sculpt-oppervlak.</span>
+        <div id="rockMeshTools" style="display:grid;gap:7px;padding:8px;border:1px solid rgba(127,226,255,.18);border-radius:9px;background:rgba(4,42,55,.24)">
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Rotspartij
+              <select id="rockFormationSelect" style="width:100%;margin-top:4px"></select>
+            </label>
+          </div>
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Vormstijl
+              <select id="rockFormationStyle" style="width:100%;margin-top:4px">
+                <option value="rounded_reef">Rounded Reef Rock</option>
+                <option value="flat_plates">Flat Stone Plates</option>
+                <option value="lava_rock">Lava Rock</option>
+                <option value="blocky_boulder">Blocky Boulder</option>
+                <option value="mixed_reef">Mixed Reef Formation</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Skin
+              <select id="rockFormationSkin" style="width:100%;margin-top:4px">
+                <option value="tropical_limestone">Tropical Limestone</option>
+                <option value="grey_reef" selected>Grey Reef Stone</option>
+                <option value="dark_lava">Dark Lava Basalt</option>
+                <option value="layered_sandstone">Layered Sandstone</option>
+                <option value="algae_reef">Algae Reef Rock</option>
+                <option value="deep_blue">Deep Blue Reef Rock</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Artistieke afwijking
+              <input id="rockFormationDeviation" type="range" min="5" max="10" step="1" value="7" style="width:100%">
+              <output id="rockFormationDeviationValue">7%</output>
+            </label>
+          </div>
+          <div class="toolrow">
+            <button id="rockVariantPrevious" type="button">← Vorige</button>
+            <button id="generateRockFormationBtn" type="button">🎲 Nieuwe variant</button>
+            <button id="rockVariantNext" type="button">Volgende →</button>
+          </div>
+          <div class="toolrow">
+            <button id="rockVariantAccept" type="button">✓ Accepteer</button>
+            <button id="rockVariantLock" type="button">🔓 Lock</button>
+            <button id="rockGenerateAll" type="button">🪨 Genereer alle</button>
+          </div>
+          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;line-height:1.35">Boetseer eerst één of meer losse formaties. Iedere formatie wordt één mesh.</span>
         </div>
         <div id="volumeSculptStatus">Build grote vormen, Carve ze daarna met een kleinere brush. Preview pauzeert bewerken zodat je vrij rond het resultaat kunt vliegen. Tab wisselt Edit/Preview.</div>
       </div>
@@ -593,7 +636,9 @@ import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
-import { generateAllVolumeRockFills } from './worlds/RockFormationGenerator.js';
+import { splitSculptFormations,generateRockMeshVariant,normalizeRockFormationDescriptor,ROCK_FORMATION_STYLES } from './worlds/RockFormationGenerator.js';
+import { createRockFormationMeshSystem } from './graphics/RockFormationMeshes.js';
+import { ROCK_SKINS } from './graphics/RockFormationSkins.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -733,6 +778,16 @@ const sculptPreviewBtn = document.getElementById('sculptPreviewBtn');
 const sculptUndo = document.getElementById('sculptUndo');
 const sculptClear = document.getElementById('sculptClear');
 const generateRockFormationBtn=document.getElementById('generateRockFormationBtn');
+const rockFormationSelect=document.getElementById('rockFormationSelect');
+const rockFormationStyle=document.getElementById('rockFormationStyle');
+const rockFormationSkin=document.getElementById('rockFormationSkin');
+const rockFormationDeviation=document.getElementById('rockFormationDeviation');
+const rockFormationDeviationValue=document.getElementById('rockFormationDeviationValue');
+const rockVariantPrevious=document.getElementById('rockVariantPrevious');
+const rockVariantNext=document.getElementById('rockVariantNext');
+const rockVariantAccept=document.getElementById('rockVariantAccept');
+const rockVariantLock=document.getElementById('rockVariantLock');
+const rockGenerateAll=document.getElementById('rockGenerateAll');
 const rockFormationStatus=document.getElementById('rockFormationStatus');
 const volumeSculptStatus = document.getElementById('volumeSculptStatus');
 const precisionTool = document.getElementById('precisionTool');
@@ -1179,6 +1234,11 @@ function styleReef(root,type,color){
 const rockCollisionRoots = new Set();
 let rockCollisionRevision=0;
 const rockCellVolumes=new Map();
+const rockFormationMeshes=createRockFormationMeshSystem({parent:reef,caustics:atmosphere.uniforms});
+const rockFormationDescriptors=new Map();
+const rockVariantHistory=new Map();
+let cachedSculptFormations=[];
+let legacyGeneratedRocksCleared=false;
 function removeReefRoot(root){ if(root===selectedEditorRoot)clearEditorSelection();reefLife.release(root); rockLibrary.release(root); if(rockCollisionRoots.delete(root))rockCollisionRevision++; reef.remove(root); }
 const reefMobile = matchMedia('(max-width: 800px)').matches;
 const reefScale = reefMobile ? .55 : 1;
@@ -1938,6 +1998,7 @@ function beginSculptStroke(){
 function endSculptStroke(){
   sculptPainting=false;sculptStrokeDistance=null;volumeSculpt.endStroke();
   sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;
+  if(editMode&&editorView==='sculpt')refreshRockFormationOptions();
 }
 function sculptBrushPoint({forPreview=false}={}){
   if(sculptTool.value==='cell')return null;
@@ -2718,17 +2779,19 @@ function fillSelection(a,b){
   else editorInfo.textContent=`${count} vakken kregen een extra laag ${worldBrush.options[worldBrush.selectedIndex].text}. Wereld: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
 }
 function editorRootFromObject(object){
+  const formationRoot=rockFormationMeshes.rootFromObject(object);
+  if(formationRoot)return formationRoot;
   let root=object;
   while(root&&root.parent!==reef)root=root.parent;
   return root?.parent===reef&&root.userData.editorCell?root:null;
 }
 function refreshPrecisionLockUi(){
-  const generated=selectedEditorRoot?.userData?.generatedRock===true;
+  const generated=selectedEditorRoot?.userData?.generatedRock===true||selectedEditorRoot?.userData?.generatedFormationMesh===true;
   precisionLock.disabled=!generated;
-  if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Alleen gegenereerde formatierotsen kunnen tegen regenereren worden beschermd.';return;}
+  if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Selecteer een gegenereerde rotspartij om hem te locken.';return;}
   const locked=selectedEditorRoot.userData.editorLocked===true;
   precisionLock.textContent=locked?'🔒 Locked':'🔓 Lock';
-  precisionLock.title=locked?'Deze rots blijft staan bij Generate Rock Formation.':'Bescherm deze rots bij regenereren.';
+  precisionLock.title=locked?'Deze vormvariant is vastgezet; de skin blijft wijzigbaar.':'Accepteer en lock deze vormvariant.';
 }
 function clearEditorSelection(){
   selectedEditorRoot=null;
@@ -2742,12 +2805,26 @@ function selectEditorObject(root){
   selectedEditorRoot=root;
   selectedEditorHelper=new THREE.BoxHelper(root,0x7fe2ff);scene.add(selectedEditorHelper);
   const kind=root.userData.editorKind||root.userData.editorLayerType||'object';
-  const lockText=root.userData.generatedRock?(root.userData.editorLocked?' · 🔒 beschermd':' · 🔓 regenereerbaar'):'';
-  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong>${lockText} · schaal, draai of verplaats met de knoppen.`;
+  const generated=root.userData.generatedFormationMesh||root.userData.generatedRock;
+  const lockText=generated?(root.userData.editorLocked?' · 🔒 locked':' · 🔓 bewerkbaar'):'';
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong>${lockText} · schaal, draai of verplaats als geheel.`;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    refreshRockFormationOptions(root.userData.formationId);
+  }
   refreshPrecisionLockUi();
 }
 function saveSelectedObjectEdit({deleted=false}={}){
   const root=selectedEditorRoot;if(!root)return false;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    const id=root.userData.formationId,history=historyForFormation(id);
+    let descriptor=activeFormationDescriptor(id)||rockFormationDescriptors.get(id);
+    if(!descriptor)return false;
+    descriptor=structuredClone(descriptor);
+    descriptor.transform=rockFormationMeshes.transformFor(id);
+    if(history.index>=0)history.items[history.index]=structuredClone(descriptor);
+    if(descriptor.accepted)rockFormationDescriptors.set(id,structuredClone(descriptor));
+    rockCollisionRevision++;return true;
+  }
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,index=root.userData.editorObjectIndex;
   const layer=layerRecord(key,layerId);if(!layer)return false;
   layer.objectEdits=layer.objectEdits||{};
@@ -2780,14 +2857,29 @@ function moveSelectedEditorObject(dx=0,dy=0,dz=0){
   precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'object'}</strong> · x ${next.x.toFixed(1)} · y ${next.y.toFixed(1)} · z ${next.z.toFixed(1)}`;
 }
 function toggleSelectedEditorLock(){
-  const root=selectedEditorRoot;if(!root?.parent||root.userData.generatedRock!==true)return;
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    refreshRockFormationOptions(root.userData.formationId);
+    toggleCurrentRockFormationLock();
+    root.userData.editorLocked=activeFormationDescriptor(root.userData.formationId)?.locked===true;
+    refreshPrecisionLockUi();return;
+  }
+  if(root.userData.generatedRock!==true)return;
   const layer=layerRecord(root.userData.editorCell,root.userData.editorLayerId);if(!layer?.generatedRock)return;
   layer.locked=!layer.locked;root.userData.editorLocked=layer.locked;
-  refreshPrecisionLockUi();updateRockFormationButton();
+  refreshPrecisionLockUi();
   precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'formatie-rots'}</strong> · ${layer.locked?'🔒 beschermd bij regenereren':'🔓 wordt opnieuw berekend bij regenereren'}`;
 }
 function deleteSelectedEditorObject(){
   const root=selectedEditorRoot;if(!root?.parent)return;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    const id=root.userData.formationId;
+    if(rockCollisionRoots.delete(root))rockCollisionRevision++;
+    rockFormationMeshes.remove(id);rockFormationDescriptors.delete(id);
+    clearEditorSelection();refreshRockFormationOptions(id);
+    editorInfo.textContent='Rotspartij-mesh verwijderd. De sculpt blijft bestaan en kan opnieuw worden gegenereerd.';
+    return;
+  }
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,type=root.userData.editorLayerType;
   const layer=layerRecord(key,layerId);if(layer?.generatedRock)layer.locked=false;
   saveSelectedObjectEdit({deleted:true});removeReefRoot(root);clearEditorSelection();refreshLayerHabitat(key,layerId,type);
@@ -2828,38 +2920,25 @@ function useDetailEditor(event){
   const root=addPrecisionObject(precisionTool.value,hit.point);
   if(root)selectEditorObject(root);
 }
-const ROCK_FORMATION_PREFIX='sculpt-';
-
-function generatedFormationLayers(formationId=null){
-  const out=[];
-  for(const [key,layers] of worldCells)for(const layer of layers){
-    if(layer?.generatedRock!==true)continue;
-    if(formationId&&layer.formationId!==formationId)continue;
-    out.push({key,layer});
-  }
-  return out;
+function currentSculptFormations(){
+  cachedSculptFormations=splitSculptFormations(volumeSculpt.serialize());
+  return cachedSculptFormations;
 }
-function lockedFormationReservations(formationId=null){
-  const out=[];
-  for(const {layer} of generatedFormationLayers(formationId)){
-    if(layer.locked!==true||layer.objectEdits?.[0]?.deleted===true)continue;
-    const edit=layer.objectEdits?.[0]||{};
-    const p=Array.isArray(edit.position)&&edit.position.length===3
-      ? {x:Number(edit.position[0]),y:Number(edit.position[1]),z:Number(edit.position[2])}
-      : {x:Number(layer.placement?.x),y:Number(layer.placement?.y),z:Number(layer.placement?.z)};
-    if(![p.x,p.y,p.z].every(Number.isFinite))continue;
-    const scale=Array.isArray(edit.scale)?Math.max(...edit.scale.map(Number).filter(Number.isFinite),1):1;
-    out.push({...p,radius:Math.max(1.2,Number(layer.rockRadius)||4)*scale,formationId:layer.formationId});
-  }
-  return out;
+function sculptFormationById(id){
+  return cachedSculptFormations.find(f=>f.id===id)||currentSculptFormations().find(f=>f.id===id)||null;
 }
-function removeUnlockedGeneratedFormation(formationId=null){
-  let removed=0;
+function randomRockVariantSeed(){
+  try{
+    const values=new Uint32Array(1);crypto.getRandomValues(values);return values[0]||1;
+  }catch{return Math.max(1,Math.floor(Math.random()*0x7fffffff));}
+}
+function removeLegacyGeneratedRocks(){
+  if(legacyGeneratedRocksCleared)return 0;
+  legacyGeneratedRocksCleared=true;let removed=0;
   for(const [key,layers] of [...worldCells]){
     const keep=[];
     for(const layer of layers){
-      const matches=layer?.generatedRock===true&&(!formationId||layer.formationId===formationId);
-      if(matches&&layer.locked!==true){removeLayerObjects(layer.id);removed++;continue;}
+      if(layer?.generatedRock===true){removeLayerObjects(layer.id);removed++;continue;}
       keep.push(layer);
     }
     if(keep.length)worldCells.set(key,keep);else worldCells.delete(key);
@@ -2867,43 +2946,179 @@ function removeUnlockedGeneratedFormation(formationId=null){
   if(removed){habitatRevision++;rockCollisionRevision++;}
   return removed;
 }
-function placeGeneratedFormationRock(item,formationId){
-  const terrainY=terrainHeightAt(item.x,item.z);
-  const y=THREE.MathUtils.clamp(Math.max(item.y,terrainY+Math.min(1.1,item.radius*.18)),WORLD_MIN_Y,SEA_LEVEL_Y-1);
-  const {ix,iz}=groundToCell({x:item.x,z:item.z});
-  return addLayerToCell(ix,iz,'rocks',null,{
-    precision:true,placementMode:'center',generatedRock:true,formationId,locked:false,
-    rockRadius:Number(item.radius.toFixed(3)),clusterScale:Number(item.clusterScale||1),
-    rockSeed:item.rockSeed,rockKind:item.kind,sourceSculpt:item.source,
-    placement:{x:item.x,y:Number(y.toFixed(3)),z:item.z},
-    objectEdits:{0:{rotation:[0,item.rotation||0,0],scale:[1,1,1]}}
+function historyForFormation(id){
+  if(!rockVariantHistory.has(id))rockVariantHistory.set(id,{items:[],index:-1});
+  return rockVariantHistory.get(id);
+}
+function descriptorFromControls(id,seed=randomRockVariantSeed()){
+  const existing=rockFormationMeshes.get(id);
+  return normalizeRockFormationDescriptor({
+    formationId:id,
+    style:rockFormationStyle.value,
+    skin:rockFormationSkin.value,
+    seed,
+    deviation:Number(rockFormationDeviation.value)/100,
+    accepted:false,
+    locked:false,
+    transform:existing?rockFormationMeshes.transformFor(id):rockFormationDescriptors.get(id)?.transform
   });
 }
-function updateRockFormationButton(){
-  const layers=generatedFormationLayers(),ids=new Set(layers.map(item=>item.layer.formationId));
-  const locked=layers.filter(item=>item.layer.locked===true).length;
-  generateRockFormationBtn.textContent=layers.length?'🪨 Regenerate Rock Formations':'🪨 Generate Rock Formations';
-  if(layers.length)rockFormationStatus.textContent=`${ids.size} formaties · ${layers.length} clusters · ${locked} locked`;
+function renderRockFormationDescriptor(formation,descriptor){
+  const old=rockFormationMeshes.get(formation.id);
+  if(old&&rockCollisionRoots.delete(old.root))rockCollisionRevision++;
+  const meshData=generateRockMeshVariant(formation,descriptor);
+  const root=rockFormationMeshes.upsert(meshData,descriptor);
+  rockCollisionRoots.add(root);rockCollisionRevision++;
+  root.userData.formationAccepted=descriptor.accepted===true;
+  root.userData.editorLocked=descriptor.locked===true;
+  return {root,meshData};
 }
-function generateCurrentRockFormation(){
-  if(!editMode){editorInfo.textContent='Open eerst de bouwmodus.';return;}
-  const sculpt=volumeSculpt.serialize();
-  if(!sculpt.cells.length){rockFormationStatus.textContent='Boetseer eerst één of meer volumes.';return;}
-  endSculptStroke();
-  const reserved=lockedFormationReservations();
-  const removed=removeUnlockedGeneratedFormation();
-  const all=generateAllVolumeRockFills(sculpt,{maxClusters:70,targetCoverage:.86,minInside:.72,seed:17,reserved});
-  let placed=0;
-  for(const result of all.results){
-    for(const item of result.placements)if(placeGeneratedFormationRock(item,result.formationId))placed++;
+function activeFormationDescriptor(id){
+  const history=historyForFormation(id);
+  if(history.index>=0&&history.items[history.index])return history.items[history.index];
+  return rockFormationDescriptors.get(id)||null;
+}
+function updateFormationControls(){
+  const id=rockFormationSelect.value,descriptor=activeFormationDescriptor(id);
+  const history=historyForFormation(id);
+  const locked=descriptor?.locked===true;
+  if(descriptor){
+    rockFormationStyle.value=ROCK_FORMATION_STYLES[descriptor.style]?descriptor.style:'rounded_reef';
+    rockFormationSkin.value=ROCK_SKINS[descriptor.skin]?descriptor.skin:'grey_reef';
+    rockFormationDeviation.value=String(Math.round(descriptor.deviation*100));
+    rockFormationDeviationValue.textContent=rockFormationDeviation.value+'%';
   }
-  clearEditorSelection();
+  rockVariantPrevious.disabled=locked||history.index<=0;
+  rockVariantNext.disabled=locked||history.index<0||history.index>=history.items.length-1;
+  generateRockFormationBtn.disabled=!id||locked;
+  rockFormationStyle.disabled=!id||locked;
+  rockFormationDeviation.disabled=!id||locked;
+  rockVariantAccept.disabled=!id||!rockFormationMeshes.get(id)||descriptor?.accepted===true;
+  rockVariantLock.disabled=!id||!rockFormationMeshes.get(id);
+  rockVariantLock.textContent=locked?'🔒 Locked':'🔓 Lock';
+  const formation=sculptFormationById(id);
+  if(!id)rockFormationStatus.textContent='Geen sculptformatie gevonden.';
+  else if(formation){
+    const variant=history.index>=0?history.index+1:0;
+    const total=history.items.length;
+    rockFormationStatus.textContent=
+      `Rotspartij · ${formation.cells.length} sculptcellen · ${Math.round(formation.volume)} m³ · variant ${variant}/${total}`+
+      (descriptor?.accepted?' · ✓ geaccepteerd':'')+(locked?' · 🔒 locked':'');
+  }
+}
+function refreshRockFormationOptions(preferId=null){
+  const formations=currentSculptFormations();
+  const previous=preferId||rockFormationSelect.value;
+  rockFormationSelect.replaceChildren();
+  formations.forEach((formation,index)=>{
+    const option=document.createElement('option');option.value=formation.id;
+    option.textContent=`Rotspartij ${index+1} · ${formation.cells.length} cellen · ~${Math.round(formation.volume)} m³`;
+    rockFormationSelect.append(option);
+  });
+  if(formations.some(f=>f.id===previous))rockFormationSelect.value=previous;
+  else if(formations[0])rockFormationSelect.value=formations[0].id;
+  updateFormationControls();
+  return formations;
+}
+function generateSelectedRockVariant({seed=null,descriptor=null,recordHistory=true}={}){
+  const id=rockFormationSelect.value,formation=sculptFormationById(id);
+  if(!formation){rockFormationStatus.textContent='Selecteer eerst een sculptformatie.';return null;}
+  const persistent=rockFormationDescriptors.get(id);
+  if(persistent?.locked&&recordHistory){rockFormationStatus.textContent='Deze formatie is locked. Unlock eerst om een nieuwe vormvariant te maken.';return null;}
+  removeLegacyGeneratedRocks();
+  const next=normalizeRockFormationDescriptor(descriptor||descriptorFromControls(id,seed||randomRockVariantSeed()));
+  next.formationId=id;
+  const rendered=renderRockFormationDescriptor(formation,next);
+  if(recordHistory){
+    const history=historyForFormation(id);
+    if(history.index<history.items.length-1)history.items.splice(history.index+1);
+    history.items.push(structuredClone(next));
+    if(history.items.length>12)history.items.shift();
+    history.index=history.items.length-1;
+  }
   sculptViewMode.value='ghost';volumeSculpt.setViewMode('ghost');setSculptPreviewMode(true);
-  updateRockFormationButton();
-  const summary=all.results.map((r,i)=>`#${i+1}: ${r.placements.length} clusters / ~${Math.round(r.stats.estimatedCoverage*100)}%`).join(' · ');
-  rockFormationStatus.textContent=`${all.formations.length} losse sculptformaties → ${placed} overlappende rock clusters · ${reserved.length} locked behouden`;
-  editorInfo.textContent=`🪨 ${all.formations.length} formaties herkend. ${placed} clusters geplaatst (${removed} oude niet-locked vervangen). ${summary}`;
-  habitatRevision++;rockCollisionRevision++;
+  updateFormationControls();
+  editorInfo.textContent=`🪨 ${ROCK_FORMATION_STYLES[next.style].name} · ${ROCK_SKINS[next.skin].name} · seed ${next.seed} · max. afwijking ${Math.round(next.deviation*100)}% · ${rendered.meshData.stats.triangles} driehoeken.`;
+  return rendered.root;
+}
+function showVariantAt(delta){
+  const id=rockFormationSelect.value,formation=sculptFormationById(id),history=historyForFormation(id);
+  if(!formation||history.index<0)return;
+  const next=THREE.MathUtils.clamp(history.index+delta,0,history.items.length-1);
+  if(next===history.index)return;
+  history.index=next;renderRockFormationDescriptor(formation,history.items[next]);updateFormationControls();
+}
+function acceptCurrentRockVariant(){
+  const id=rockFormationSelect.value,descriptor=activeFormationDescriptor(id);
+  if(!id||!descriptor||!rockFormationMeshes.get(id))return;
+  descriptor.accepted=true;descriptor.transform=rockFormationMeshes.transformFor(id);
+  const history=historyForFormation(id);
+  if(history.index>=0)history.items[history.index]=structuredClone(descriptor);
+  rockFormationDescriptors.set(id,structuredClone(descriptor));
+  const record=rockFormationMeshes.get(id);if(record)record.root.userData.formationAccepted=true;
+  updateFormationControls();rockFormationStatus.textContent+=' · gekozen variant opgeslagen';
+}
+function toggleCurrentRockFormationLock(){
+  const id=rockFormationSelect.value;if(!id||!rockFormationMeshes.get(id))return;
+  let descriptor=activeFormationDescriptor(id);
+  if(!descriptor)return;
+  if(!descriptor.accepted){acceptCurrentRockVariant();descriptor=activeFormationDescriptor(id);}
+  descriptor.locked=!descriptor.locked;descriptor.accepted=true;descriptor.transform=rockFormationMeshes.transformFor(id);
+  const history=historyForFormation(id);if(history.index>=0)history.items[history.index]=structuredClone(descriptor);
+  rockFormationDescriptors.set(id,structuredClone(descriptor));
+  rockFormationMeshes.setLocked(id,descriptor.locked);
+  updateFormationControls();
+}
+function changeCurrentFormationSkin(){
+  const id=rockFormationSelect.value;if(!id)return;
+  const skin=ROCK_SKINS[rockFormationSkin.value]?rockFormationSkin.value:'grey_reef';
+  rockFormationMeshes.setSkin(id,skin);
+  const history=historyForFormation(id);
+  if(history.index>=0){history.items[history.index].skin=skin;}
+  const saved=rockFormationDescriptors.get(id);
+  if(saved){saved.skin=skin;saved.transform=rockFormationMeshes.transformFor(id);rockFormationDescriptors.set(id,structuredClone(saved));}
+  updateFormationControls();
+}
+function generateAllRockMeshes(){
+  const formations=refreshRockFormationOptions(),previous=rockFormationSelect.value;
+  if(!formations.length)return;
+  removeLegacyGeneratedRocks();
+  let made=0,skipped=0;
+  for(const formation of formations){
+    const saved=rockFormationDescriptors.get(formation.id);
+    if(saved?.locked){skipped++;continue;}
+    rockFormationSelect.value=formation.id;
+    if(generateSelectedRockVariant())made++;
+  }
+  if(formations.some(f=>f.id===previous))rockFormationSelect.value=previous;
+  updateFormationControls();
+  rockFormationStatus.textContent=`${made} meshvarianten gegenereerd · ${skipped} locked overgeslagen`;
+}
+function restoreRockFormationMeshes(records=[]){
+  for(const root of rockFormationMeshes.roots())if(rockCollisionRoots.delete(root))rockCollisionRevision++;
+  rockFormationMeshes.clear();rockFormationDescriptors.clear();rockVariantHistory.clear();
+  const formations=currentSculptFormations(),byId=new Map(formations.map(f=>[f.id,f]));
+  for(const raw of records||[]){
+    const descriptor=normalizeRockFormationDescriptor(raw);
+    const formation=byId.get(descriptor.formationId);
+    if(!formation)continue;
+    descriptor.accepted=true;
+    rockFormationDescriptors.set(descriptor.formationId,structuredClone(descriptor));
+    const history=historyForFormation(descriptor.formationId);history.items=[structuredClone(descriptor)];history.index=0;
+    renderRockFormationDescriptor(formation,descriptor);
+  }
+  refreshRockFormationOptions();
+}
+function serializedRockFormations(){
+  const out=[];
+  for(const [id,descriptor] of rockFormationDescriptors){
+    if(!descriptor.accepted)continue;
+    const record=rockFormationMeshes.get(id);
+    const value=structuredClone(descriptor);
+    if(record)value.transform=rockFormationMeshes.transformFor(id);
+    out.push(value);
+  }
+  return out;
 }
 
 function updateBuildDepthHud(){
@@ -2937,7 +3152,7 @@ function setEditorView(view){
     hint.textContent=view==='sculpt'
       ? 'VOLUME SCULPT · klik om te activeren · houd links ingedrukt om volume te boetseren · WASD/Q/E bewegen'
       : 'Klik op de wereld om de detailvlucht te activeren.';
-    if(view==='sculpt'){setSculptPreviewMode(false);updateSculptStatus('Blueprint actief');}
+    if(view==='sculpt'){setSculptPreviewMode(false);refreshRockFormationOptions();updateSculptStatus('Blueprint actief');}
   }else{
     if(leavingFlight){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
     setSculptPreviewMode(false);endSculptStroke();volumeSculpt.setVisible(false);
@@ -3000,9 +3215,18 @@ sculptStrength.addEventListener('input',()=>{volumeSculpt.setStrength(Number(scu
 sculptDistance.addEventListener('change',()=>{endSculptStroke();sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;updateSculptStatus();});
 sculptViewMode.addEventListener('change',()=>{volumeSculpt.setViewMode(sculptViewMode.value);updateSculptStatus();});
 sculptPreviewBtn.addEventListener('click',()=>setSculptPreviewMode(!sculptPreviewMode));
-generateRockFormationBtn.addEventListener('click',generateCurrentRockFormation);
-sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();updateSculptStatus(ok?'Laatste bewerking teruggedraaid':'Niets om terug te draaien');});
-sculptClear.addEventListener('click',()=>{volumeSculpt.clear();updateSculptStatus('Volume gewist');});
+rockFormationSelect.addEventListener('change',updateFormationControls);
+rockFormationStyle.addEventListener('change',updateFormationControls);
+rockFormationSkin.addEventListener('change',changeCurrentFormationSkin);
+rockFormationDeviation.addEventListener('input',()=>{rockFormationDeviationValue.textContent=rockFormationDeviation.value+'%';});
+generateRockFormationBtn.addEventListener('click',()=>generateSelectedRockVariant());
+rockVariantPrevious.addEventListener('click',()=>showVariantAt(-1));
+rockVariantNext.addEventListener('click',()=>showVariantAt(1));
+rockVariantAccept.addEventListener('click',acceptCurrentRockVariant);
+rockVariantLock.addEventListener('click',toggleCurrentRockFormationLock);
+rockGenerateAll.addEventListener('click',generateAllRockMeshes);
+sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();refreshRockFormationOptions();updateSculptStatus(ok?'Laatste bewerking teruggedraaid':'Niets om terug te draaien');});
+sculptClear.addEventListener('click',()=>{volumeSculpt.clear();refreshRockFormationOptions();updateSculptStatus('Volume gewist');});
 volumeSculpt.setTool(sculptTool.value);volumeSculpt.setBrushRadius(sculptBrushSize.value);volumeSculpt.setStrength(Number(sculptStrength.value)/100);volumeSculpt.setViewMode(sculptViewMode.value);
 precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
 precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
@@ -3125,6 +3349,7 @@ function worldData(){
     reefVisitors:Object.fromEntries([...reefVisitors].map(([kind,a])=>[kind,{position:a.root.position.toArray(),heading:-a.root.rotation.y}])),
     terrain:[...terrainOffsets.entries()].map(([key,offset])=>({key,offset})),
     sculpt:volumeSculpt.serialize(),
+    rockFormations:serializedRockFormations(),
     lavaVents:lavaVents.map(v=>({id:v.id,x:v.x,z:v.z,amount:v.amount,flowRate:v.flowRate,maxAmount:v.maxAmount})),
     orca:orca && !orca.root.userData.dead ? {position:orca.root.position.toArray(),
       heading:Math.atan2(orca.root.userData.velocity.z,orca.root.userData.velocity.x),health:orca.root.userData.health} : null,
@@ -3170,7 +3395,10 @@ function restoreWorld(data){
     if(reef.children[i].userData.editorCell) removeReefRoot(reef.children[i]);
   }
   clearAllWorldVisuals();clearDeathMarkers();
+  for(const root of rockFormationMeshes.roots())if(rockCollisionRoots.delete(root))rockCollisionRevision++;
+  rockFormationMeshes.clear();rockFormationDescriptors.clear();rockVariantHistory.clear();
   worldCells.clear(); terrainOffsets.clear(); clearLavaVents(); nextLayerId=1;
+  legacyGeneratedRocksCleared=false;
   volumeSculpt.load(data.sculpt||null);
   if(Array.isArray(data.terrain)){
     for(const item of data.terrain){
@@ -3246,7 +3474,7 @@ function restoreWorld(data){
   if(savedOrca)placeOrcaAt(savedOrca);
   if(savedWhale)placeWhaleAt(savedWhale);
   for(const [kind,record] of Object.entries(savedVisitors))placeReefVisitorAt(kind,record);
-  updateRockFormationButton();
+  restoreRockFormationMeshes(data.rockFormations||[]);
   editorInfo.textContent=`Wereld geladen: ${totalLayerCount()} lagen in ${worldCells.size} ontworpen vakken · slechts ${activeWorldCells.size} vakken nu gerenderd.`;
   queueMicrotask(()=>updateEcosystem(performance.now()/1000,true));
 }
@@ -3416,8 +3644,21 @@ blueprintFile.addEventListener('change',async()=>{
     let placed=0;
     for(const item of plan.objects)if(addPrecisionObject(item.type,{x:item.x,y:terrainHeightAt(item.x,item.z),z:item.z},{scale:item.scale,rotation:item.rotation}))placed++;
     if(plan.sculpt?.cells?.length)volumeSculpt.load(plan.sculpt);
+    refreshRockFormationOptions();
+    if(plan.rockFormations?.length){
+      const formations=currentSculptFormations();
+      const byId=new Map(formations.map(f=>[f.id,f]));
+      for(const item of plan.rockFormations){
+        const formation=item.formationId?byId.get(item.formationId):formations[item.formationIndex];
+        if(!formation)continue;
+        const descriptor=normalizeRockFormationDescriptor({...item,formationId:formation.id,accepted:true});
+        rockFormationDescriptors.set(formation.id,structuredClone(descriptor));
+        const history=historyForFormation(formation.id);history.items=[structuredClone(descriptor)];history.index=0;
+        renderRockFormationDescriptor(formation,descriptor);
+      }
+    }
     clearEditorSelection();
-    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
+    editorInfo.textContent=`✨ ${plan.name}: ${placed} objecten · ${plan.terrain.length} terreinpunten · ${plan.sculpt?.cells?.length||0} sculptcellen · ${plan.rockFormations?.length||0} meshformaties. Gebruik Volume sculpt om de blueprint handmatig te verbeteren.`;
   }catch(error){editorInfo.textContent=`AI-wereldplan niet geïmporteerd: ${error.message}`;}
   blueprintFile.value='';
 });
@@ -5913,7 +6154,7 @@ const jellyfishSwarm=createJellyfishSwarm({
 });
 jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
 jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
-addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();},{once:true});
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();rockFormationMeshes.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);

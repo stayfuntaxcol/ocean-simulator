@@ -1,3 +1,5 @@
+import { ROCK_FORMATION_STYLE_IDS,normalizeRockFormationDescriptor } from './RockFormationGenerator.js';
+import { ROCK_SKIN_IDS } from '../graphics/RockFormationSkins.js';
 import { TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX } from './DepthLayers.js';
 import { normalizeVolumeSculpt } from './VolumeSculpt.js';
 const TYPES=new Set(['rocks','coral','anemone','sponge','seagrass','shell']);
@@ -28,5 +30,20 @@ export function normalizeWorldBlueprint(value,{worldHalf=144,maxObjects=1200}={}
     }
   }
   const sculpt=normalizeVolumeSculpt(value.sculpt,{worldHalf,maxCells:12000});
-  return {format:'ocean-world-blueprint-v1',name:String(value.name||'AI-landschap').slice(0,80),objects,terrain,sculpt};
+  const rockFormations=[];
+  if(value.rockFormations!=null){
+    if(!Array.isArray(value.rockFormations)||value.rockFormations.length>64)throw Error('Het AI-plan bevat te veel rotsformaties.');
+    for(const [index,item] of value.rockFormations.entries()){
+      if(!item||typeof item!=='object')throw Error(`Rotsformatie ${index+1} is ongeldig.`);
+      const formationIndex=item.formationIndex==null?null:Number(item.formationIndex);
+      const formationId=item.formationId==null?'':String(item.formationId).slice(0,100);
+      if(formationIndex!=null&&(!Number.isSafeInteger(formationIndex)||formationIndex<0||formationIndex>63))throw Error(`Rotsformatie ${index+1} heeft een ongeldige formatie-index.`);
+      if(!formationId&&formationIndex==null)throw Error(`Rotsformatie ${index+1} mist formationId of formationIndex.`);
+      if(item.style!=null&&!ROCK_FORMATION_STYLE_IDS.includes(item.style))throw Error(`Rotsformatie ${index+1} heeft een onbekende vormstijl.`);
+      if(item.skin!=null&&!ROCK_SKIN_IDS.includes(item.skin))throw Error(`Rotsformatie ${index+1} heeft een onbekende skin.`);
+      const descriptor=normalizeRockFormationDescriptor({...item,formationId});
+      rockFormations.push({...descriptor,formationIndex});
+    }
+  }
+  return {format:'ocean-world-blueprint-v1',name:String(value.name||'AI-landschap').slice(0,80),objects,terrain,sculpt,rockFormations};
 }
