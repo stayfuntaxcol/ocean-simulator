@@ -1998,6 +1998,7 @@ function beginSculptStroke(){
 function endSculptStroke(){
   sculptPainting=false;sculptStrokeDistance=null;volumeSculpt.endStroke();
   sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;
+  if(editMode&&editorView==='sculpt')refreshRockFormationOptions();
 }
 function sculptBrushPoint({forPreview=false}={}){
   if(sculptTool.value==='cell')return null;
@@ -2778,17 +2779,19 @@ function fillSelection(a,b){
   else editorInfo.textContent=`${count} vakken kregen een extra laag ${worldBrush.options[worldBrush.selectedIndex].text}. Wereld: ${totalLayerCount()} lagen in ${worldCells.size} vakken.`;
 }
 function editorRootFromObject(object){
+  const formationRoot=rockFormationMeshes.rootFromObject(object);
+  if(formationRoot)return formationRoot;
   let root=object;
   while(root&&root.parent!==reef)root=root.parent;
   return root?.parent===reef&&root.userData.editorCell?root:null;
 }
 function refreshPrecisionLockUi(){
-  const generated=selectedEditorRoot?.userData?.generatedRock===true;
+  const generated=selectedEditorRoot?.userData?.generatedRock===true||selectedEditorRoot?.userData?.generatedFormationMesh===true;
   precisionLock.disabled=!generated;
-  if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Alleen gegenereerde formatierotsen kunnen tegen regenereren worden beschermd.';return;}
+  if(!generated){precisionLock.textContent='🔓 Lock';precisionLock.title='Selecteer een gegenereerde rotspartij om hem te locken.';return;}
   const locked=selectedEditorRoot.userData.editorLocked===true;
   precisionLock.textContent=locked?'🔒 Locked':'🔓 Lock';
-  precisionLock.title=locked?'Deze rots blijft staan bij Generate Rock Formation.':'Bescherm deze rots bij regenereren.';
+  precisionLock.title=locked?'Deze vormvariant is vastgezet; de skin blijft wijzigbaar.':'Accepteer en lock deze vormvariant.';
 }
 function clearEditorSelection(){
   selectedEditorRoot=null;
@@ -2802,12 +2805,26 @@ function selectEditorObject(root){
   selectedEditorRoot=root;
   selectedEditorHelper=new THREE.BoxHelper(root,0x7fe2ff);scene.add(selectedEditorHelper);
   const kind=root.userData.editorKind||root.userData.editorLayerType||'object';
-  const lockText=root.userData.generatedRock?(root.userData.editorLocked?' · 🔒 beschermd':' · 🔓 regenereerbaar'):'';
-  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong>${lockText} · schaal, draai of verplaats met de knoppen.`;
+  const generated=root.userData.generatedFormationMesh||root.userData.generatedRock;
+  const lockText=generated?(root.userData.editorLocked?' · 🔒 locked':' · 🔓 bewerkbaar'):'';
+  precisionSelection.innerHTML=`Geselecteerd: <strong>${kind}</strong>${lockText} · schaal, draai of verplaats als geheel.`;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    refreshRockFormationOptions(root.userData.formationId);
+  }
   refreshPrecisionLockUi();
 }
 function saveSelectedObjectEdit({deleted=false}={}){
   const root=selectedEditorRoot;if(!root)return false;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    const id=root.userData.formationId,history=historyForFormation(id);
+    let descriptor=activeFormationDescriptor(id)||rockFormationDescriptors.get(id);
+    if(!descriptor)return false;
+    descriptor=structuredClone(descriptor);
+    descriptor.transform=rockFormationMeshes.transformFor(id);
+    if(history.index>=0)history.items[history.index]=structuredClone(descriptor);
+    if(descriptor.accepted)rockFormationDescriptors.set(id,structuredClone(descriptor));
+    rockCollisionRevision++;return true;
+  }
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,index=root.userData.editorObjectIndex;
   const layer=layerRecord(key,layerId);if(!layer)return false;
   layer.objectEdits=layer.objectEdits||{};
@@ -2840,7 +2857,14 @@ function moveSelectedEditorObject(dx=0,dy=0,dz=0){
   precisionSelection.innerHTML=`Geselecteerd: <strong>${root.userData.editorKind||'object'}</strong> · x ${next.x.toFixed(1)} · y ${next.y.toFixed(1)} · z ${next.z.toFixed(1)}`;
 }
 function toggleSelectedEditorLock(){
-  const root=selectedEditorRoot;if(!root?.parent||root.userData.generatedRock!==true)return;
+  const root=selectedEditorRoot;if(!root?.parent)return;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    refreshRockFormationOptions(root.userData.formationId);
+    toggleCurrentRockFormationLock();
+    root.userData.editorLocked=activeFormationDescriptor(root.userData.formationId)?.locked===true;
+    refreshPrecisionLockUi();return;
+  }
+  if(root.userData.generatedRock!==true)return;
   const layer=layerRecord(root.userData.editorCell,root.userData.editorLayerId);if(!layer?.generatedRock)return;
   layer.locked=!layer.locked;root.userData.editorLocked=layer.locked;
   refreshPrecisionLockUi();updateRockFormationButton();
@@ -2848,6 +2872,14 @@ function toggleSelectedEditorLock(){
 }
 function deleteSelectedEditorObject(){
   const root=selectedEditorRoot;if(!root?.parent)return;
+  if(root.userData.generatedFormationMesh&&root.userData.formationId){
+    const id=root.userData.formationId;
+    if(rockCollisionRoots.delete(root))rockCollisionRevision++;
+    rockFormationMeshes.remove(id);rockFormationDescriptors.delete(id);
+    clearEditorSelection();refreshRockFormationOptions(id);
+    editorInfo.textContent='Rotspartij-mesh verwijderd. De sculpt blijft bestaan en kan opnieuw worden gegenereerd.';
+    return;
+  }
   const key=root.userData.editorCell,layerId=root.userData.editorLayerId,type=root.userData.editorLayerType;
   const layer=layerRecord(key,layerId);if(layer?.generatedRock)layer.locked=false;
   saveSelectedObjectEdit({deleted:true});removeReefRoot(root);clearEditorSelection();refreshLayerHabitat(key,layerId,type);
@@ -3120,7 +3152,7 @@ function setEditorView(view){
     hint.textContent=view==='sculpt'
       ? 'VOLUME SCULPT · klik om te activeren · houd links ingedrukt om volume te boetseren · WASD/Q/E bewegen'
       : 'Klik op de wereld om de detailvlucht te activeren.';
-    if(view==='sculpt'){setSculptPreviewMode(false);updateSculptStatus('Blueprint actief');}
+    if(view==='sculpt'){setSculptPreviewMode(false);refreshRockFormationOptions();updateSculptStatus('Blueprint actief');}
   }else{
     if(leavingFlight){savedDetailPos=camera.position.clone();savedDetailQuat=camera.quaternion.clone();}
     setSculptPreviewMode(false);endSculptStroke();volumeSculpt.setVisible(false);
@@ -3183,9 +3215,18 @@ sculptStrength.addEventListener('input',()=>{volumeSculpt.setStrength(Number(scu
 sculptDistance.addEventListener('change',()=>{endSculptStroke();sculptDistanceValue.textContent=sculptDistance.value==='auto'?'Auto':`${sculptDistance.value} m`;updateSculptStatus();});
 sculptViewMode.addEventListener('change',()=>{volumeSculpt.setViewMode(sculptViewMode.value);updateSculptStatus();});
 sculptPreviewBtn.addEventListener('click',()=>setSculptPreviewMode(!sculptPreviewMode));
-generateRockFormationBtn.addEventListener('click',generateCurrentRockFormation);
-sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();updateSculptStatus(ok?'Laatste bewerking teruggedraaid':'Niets om terug te draaien');});
-sculptClear.addEventListener('click',()=>{volumeSculpt.clear();updateSculptStatus('Volume gewist');});
+rockFormationSelect.addEventListener('change',updateFormationControls);
+rockFormationStyle.addEventListener('change',updateFormationControls);
+rockFormationSkin.addEventListener('change',changeCurrentFormationSkin);
+rockFormationDeviation.addEventListener('input',()=>{rockFormationDeviationValue.textContent=rockFormationDeviation.value+'%';});
+generateRockFormationBtn.addEventListener('click',()=>generateSelectedRockVariant());
+rockVariantPrevious.addEventListener('click',()=>showVariantAt(-1));
+rockVariantNext.addEventListener('click',()=>showVariantAt(1));
+rockVariantAccept.addEventListener('click',acceptCurrentRockVariant);
+rockVariantLock.addEventListener('click',toggleCurrentRockFormationLock);
+rockGenerateAll.addEventListener('click',generateAllRockMeshes);
+sculptUndo.addEventListener('click',()=>{const ok=volumeSculpt.undo();refreshRockFormationOptions();updateSculptStatus(ok?'Laatste bewerking teruggedraaid':'Niets om terug te draaien');});
+sculptClear.addEventListener('click',()=>{volumeSculpt.clear();refreshRockFormationOptions();updateSculptStatus('Volume gewist');});
 volumeSculpt.setTool(sculptTool.value);volumeSculpt.setBrushRadius(sculptBrushSize.value);volumeSculpt.setStrength(Number(sculptStrength.value)/100);volumeSculpt.setViewMode(sculptViewMode.value);
 precisionSmaller.addEventListener('click',()=>scaleSelectedEditorObject(.86));
 precisionLarger.addEventListener('click',()=>scaleSelectedEditorObject(1.16));
