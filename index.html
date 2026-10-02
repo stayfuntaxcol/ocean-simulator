@@ -4288,8 +4288,9 @@ function refreshCurrentFlowUi(preferId=null){
   if(flows.some(flow=>flow.id===previous))currentFlowSelect.value=previous;
   else if(flows[0])currentFlowSelect.value=flows[0].id;
   const flow=selectedCurrentFlow();
+  const readOnly=!canEditCurrentWorld();
   for(const control of [currentFlowEnabled,currentFlowCategory,currentFlowStrength,currentFlowWidth,currentFlowHeight,currentFlowDepth,currentFlowHeading,currentFlowLength,currentFlowBend,currentFlowTurbulence,currentFlowRockBoost,currentFlowPlace,currentFlowDelete]){
-    control.disabled=!flow;
+    control.disabled=!flow||readOnly;
   }
   if(flow){
     currentFlowEnabled.checked=flow.enabled;
