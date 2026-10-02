@@ -1,143 +1,163 @@
-import { SCULPT_CELL_SIZE,sculptKey,sculptWorldFromIndex,normalizeVolumeSculpt } from './VolumeSculpt.js';
+import { sculptKey,sculptWorldFromIndex,normalizeVolumeSculpt } from './VolumeSculpt.js';
 
-const DIRS=[
-  [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]
-];
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const hash=(x,y,z,seed=1)=>{
   let n=(Math.imul(x,73856093)^Math.imul(y,19349663)^Math.imul(z,83492791)^Math.imul(seed,2654435761))>>>0;
   n^=n>>>13;n=Math.imul(n,1274126177)>>>0;n^=n>>>16;return n>>>0;
 };
 const rand=(x,y,z,seed=1)=>(hash(x,y,z,seed)%1000003)/1000003;
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
 
-function cellPos(c,cellSize){
-  return {
-    x:sculptWorldFromIndex(c.ix,cellSize),
-    y:sculptWorldFromIndex(c.iy,cellSize),
-    z:sculptWorldFromIndex(c.iz,cellSize)
-  };
+const NEIGHBORS=[];
+for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
+  if(dx||dy||dz)NEIGHBORS.push([dx,dy,dz]);
 }
-function dist3(a,b){return Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);}
-function occupied(map,ix,iy,iz,threshold=.18){return (map.get(sculptKey(ix,iy,iz))||0)>=threshold;}
 
-export function analyzeSculptSurface(data,{densityThreshold=.18}={}){
+function cellWorld(c,cellSize){
+  return {x:sculptWorldFromIndex(c.ix,cellSize),y:sculptWorldFromIndex(c.iy,cellSize),z:sculptWorldFromIndex(c.iz,cellSize)};
+}
+
+export function splitSculptFormations(data,{densityThreshold=.18,minCells=2}={}){
   const sculpt=normalizeVolumeSculpt(data);
-  const map=new Map(sculpt.cells.map(c=>[sculptKey(c.ix,c.iy,c.iz),c.density]));
-  const surface=[];
-  for(const c of sculpt.cells){
-    if(c.density<densityThreshold)continue;
-    let nx=0,ny=0,nz=0,empty=0;
-    for(const [dx,dy,dz] of DIRS){
-      if(!occupied(map,c.ix+dx,c.iy+dy,c.iz+dz,densityThreshold)){
-        nx+=dx;ny+=dy;nz+=dz;empty++;
+  const occupied=new Map(sculpt.cells.filter(c=>c.density>=densityThreshold).map(c=>[sculptKey(c.ix,c.iy,c.iz),c]));
+  const remaining=new Set(occupied.keys()),formations=[];
+  while(remaining.size){
+    const first=remaining.values().next().value,queue=[first],cells=[];remaining.delete(first);
+    while(queue.length){
+      const key=queue.pop(),cell=occupied.get(key);if(!cell)continue;cells.push(cell);
+      for(const [dx,dy,dz] of NEIGHBORS){
+        const next=sculptKey(cell.ix+dx,cell.iy+dy,cell.iz+dz);
+        if(remaining.delete(next))queue.push(next);
       }
     }
-    if(!empty)continue;
-    const len=Math.hypot(nx,ny,nz)||1;
-    surface.push({...c,...cellPos(c,sculpt.cellSize),normal:{x:nx/len,y:ny/len,z:nz/len},exposure:empty/6});
-  }
-  return {cellSize:sculpt.cellSize,map,surface};
-}
-
-export function protectedNegativeSpace(data,{densityThreshold=.18}={}){
-  const {cellSize,map,surface}=analyzeSculptSurface(data,{densityThreshold});
-  if(!surface.length)return {cellSize,map,voids:[]};
-  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
-  for(const c of surface){minX=Math.min(minX,c.ix);minY=Math.min(minY,c.iy);minZ=Math.min(minZ,c.iz);maxX=Math.max(maxX,c.ix);maxY=Math.max(maxY,c.iy);maxZ=Math.max(maxZ,c.iz);}
-  const voids=[];
-  for(let ix=minX-1;ix<=maxX+1;ix++)for(let iy=minY-1;iy<=maxY+1;iy++)for(let iz=minZ-1;iz<=maxZ+1;iz++){
-    if(occupied(map,ix,iy,iz,densityThreshold))continue;
-    let neighbors=0;
-    for(const [dx,dy,dz] of DIRS)if(occupied(map,ix+dx,iy+dy,iz+dz,densityThreshold))neighbors++;
-    const boundedAxis=(dx,dy,dz,maxSpan=4)=>{
-      let negative=false,positive=false;
-      for(let step=1;step<=maxSpan;step++){
-        if(occupied(map,ix-dx*step,iy-dy*step,iz-dz*step,densityThreshold)){negative=true;break;}
-      }
-      for(let step=1;step<=maxSpan;step++){
-        if(occupied(map,ix+dx*step,iy+dy*step,iz+dz*step,densityThreshold)){positive=true;break;}
-      }
-      return negative&&positive;
-    };
-    const opposite=
-      boundedAxis(1,0,0)||
-      boundedAxis(0,1,0)||
-      boundedAxis(0,0,1);
-    if(neighbors>=3||opposite){
-      voids.push({ix,iy,iz,x:sculptWorldFromIndex(ix,cellSize),y:sculptWorldFromIndex(iy,cellSize),z:sculptWorldFromIndex(iz,cellSize)});
+    if(cells.length<minCells)continue;
+    cells.sort((a,b)=>a.ix-b.ix||a.iy-b.iy||a.iz-b.iz);
+    const min={ix:Infinity,iy:Infinity,iz:Infinity},max={ix:-Infinity,iy:-Infinity,iz:-Infinity};
+    let sx=0,sy=0,sz=0,weight=0;
+    for(const c of cells){
+      min.ix=Math.min(min.ix,c.ix);min.iy=Math.min(min.iy,c.iy);min.iz=Math.min(min.iz,c.iz);
+      max.ix=Math.max(max.ix,c.ix);max.iy=Math.max(max.iy,c.iy);max.iz=Math.max(max.iz,c.iz);
+      const w=c.density;sx+=c.ix*w;sy+=c.iy*w;sz+=c.iz*w;weight+=w;
     }
+    const anchor=cells[0],id=`sculpt-${anchor.ix}_${anchor.iy}_${anchor.iz}-${cells.length}`;
+    formations.push({
+      id,cells,cellSize:sculpt.cellSize,
+      center:{x:sculptWorldFromIndex(sx/weight,sculpt.cellSize),y:sculptWorldFromIndex(sy/weight,sculpt.cellSize),z:sculptWorldFromIndex(sz/weight,sculpt.cellSize)},
+      bounds:{min,max},
+      volume:cells.reduce((sum,c)=>sum+c.density*Math.pow(sculpt.cellSize,3),0)
+    });
   }
-  return {cellSize,map,voids};
+  formations.sort((a,b)=>b.volume-a.volume||a.id.localeCompare(b.id));
+  return formations;
 }
 
-function sphereHitsVoid(center,radius,voids,cellSize){
-  const clearance=cellSize*.58;
-  return voids.some(v=>dist3(center,v)<radius+clearance);
+function componentMap(formation){
+  return new Map(formation.cells.map(c=>[sculptKey(c.ix,c.iy,c.iz),c.density]));
 }
-function sphereHitsReserved(center,radius,reserved=[]){
-  return reserved.some(r=>dist3(center,r)<radius+(Number(r.radius)||2)*.82);
+function densityAtWorld(map,p,cellSize){
+  const ix=Math.round(p.x/cellSize),iy=Math.round(p.y/cellSize),iz=Math.round(p.z/cellSize);
+  return map.get(sculptKey(ix,iy,iz))||0;
 }
-function candidateSpacing(center,radius,placed,factor){
-  return placed.every(p=>dist3(center,p)>Math.max(radius,p.radius)*factor);
+function insideRatio(map,center,radius,cellSize,seed){
+  // Cheap deterministic approximation of how much of a rock cluster stays inside the sculpt.
+  const samples=[center];
+  const dirs=[
+    [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],
+    [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[0,1,1],[0,-1,1]
+  ];
+  for(let i=0;i<dirs.length;i++){
+    const d=dirs[i],len=Math.hypot(...d),r=radius*(.42+.42*rand(i,seed,17,31));
+    samples.push({x:center.x+d[0]/len*r,y:center.y+d[1]/len*r,z:center.z+d[2]/len*r});
+  }
+  let score=0;
+  for(const p of samples)score+=clamp(densityAtWorld(map,p,cellSize),0,1);
+  return score/samples.length;
 }
-function inwardCenter(c,radius){
-  const inset=Math.min(radius*.48,2.6);
-  return {x:c.x-c.normal.x*inset,y:c.y-c.normal.y*inset,z:c.z-c.normal.z*inset};
+function overlapOk(center,radius,placed){
+  // Deliberate overlap: centers may be only 65–85% of combined nominal radii apart.
+  return placed.every(p=>dist(center,p) >= (radius+p.radius)*.34);
 }
-function orientation(c,seed){
-  const yaw=rand(c.ix,c.iy,c.iz,seed)*Math.PI*2;
-  const tiltX=(rand(c.ix,c.iy,c.iz,seed+11)-.5)*.34;
-  const tiltZ=(rand(c.ix,c.iy,c.iz,seed+23)-.5)*.34;
-  const vertical=Math.abs(c.normal.y);
-  return {
-    rotation:[tiltX,yaw,tiltZ],
-    scale:[
-      .90+rand(c.ix,c.iy,c.iz,seed+31)*.25,
-      .82+vertical*.10+rand(c.ix,c.iy,c.iz,seed+41)*.18,
-      .90+rand(c.ix,c.iy,c.iz,seed+53)*.25
-    ]
-  };
+function reservedOk(center,radius,reserved){
+  return reserved.every(r=>dist(center,r) >= radius*.55+(Number(r.radius)||2)*.7);
 }
 
-export function generateRockFormation(data,{
-  maxRocks=220,seed=17,densityThreshold=.18,reserved=[]
+export function generateVolumeRockFill(formation,{
+  seed=17,maxClusters=70,targetCoverage=.86,minInside=.72,reserved=[]
 }={}){
-  const {cellSize,surface}=analyzeSculptSurface(data,{densityThreshold});
-  const {voids}=protectedNegativeSpace(data,{densityThreshold});
-  if(!surface.length)return {placements:[],stats:{surfaceCells:0,protectedVoids:voids.length,large:0,medium:0,small:0}};
-
-  const shuffled=[...surface].sort((a,b)=>hash(a.ix,a.iy,a.iz,seed)-hash(b.ix,b.iy,b.iz,seed));
+  const map=componentMap(formation),cellSize=formation.cellSize;
+  const candidates=[...formation.cells]
+    .filter(c=>c.density>=.25)
+    .sort((a,b)=>hash(a.ix,a.iy,a.iz,seed)-hash(b.ix,b.iy,b.iz,seed));
   const placed=[];
-  const stats={surfaceCells:surface.length,protectedVoids:voids.length,large:0,medium:0,small:0};
+  const targetVolume=formation.volume*clamp(targetCoverage,.5,.95);
+  let estimatedFilled=0;
 
   const passes=[
-    {kind:'large',radius:cellSize*1.55,spacing:1.62,exposureMax:.84},
-    {kind:'medium',radius:cellSize*1.10,spacing:1.34,exposureMax:1},
-    {kind:'small',radius:cellSize*.72,spacing:1.10,exposureMax:1}
+    {kind:'large',radius:cellSize*2.35,clusterScale:1.55,minInside:Math.max(.68,minInside-.05)},
+    {kind:'medium',radius:cellSize*1.55,clusterScale:1.05,minInside},
+    {kind:'small',radius:cellSize*.95,clusterScale:.68,minInside:Math.min(.82,minInside+.06)}
   ];
 
   for(const [passIndex,pass] of passes.entries()){
-    for(const c of shuffled){
-      if(placed.length>=maxRocks)break;
-      if(c.exposure>pass.exposureMax&&pass.kind==='large')continue;
-      const jitter=.88+rand(c.ix,c.iy,c.iz,seed+passIndex*101)*.24;
-      const radius=pass.radius*jitter;
-      const center=inwardCenter(c,radius);
-      if(sphereHitsVoid(center,radius*1.25,voids,cellSize))continue;
-      if(sphereHitsReserved(center,radius,reserved))continue;
-      if(!candidateSpacing(center,radius,placed,pass.spacing))continue;
-      const look=orientation(c,seed+passIndex*101);
+    for(const c of candidates){
+      if(placed.length>=maxClusters||estimatedFilled>=targetVolume)break;
+      const base=cellWorld(c,cellSize);
+      const jitter=cellSize*.34;
+      const center={
+        x:base.x+(rand(c.ix,c.iy,c.iz,seed+passIndex*101)-.5)*jitter,
+        y:base.y+(rand(c.ix,c.iy,c.iz,seed+passIndex*131)-.5)*jitter,
+        z:base.z+(rand(c.ix,c.iy,c.iz,seed+passIndex*151)-.5)*jitter
+      };
+      const radius=pass.radius*(.84+rand(c.ix,c.iy,c.iz,seed+passIndex*181)*.28);
+      const ratio=insideRatio(map,center,radius,cellSize,seed+passIndex*211);
+      if(ratio<pass.minInside||!overlapOk(center,radius,placed)||!reservedOk(center,radius,reserved))continue;
       const rockSeed=hash(c.ix,c.iy,c.iz,seed+passIndex*701);
+      const volume=4/3*Math.PI*Math.pow(radius,3)*.62*ratio;
       placed.push({
         x:Number(center.x.toFixed(3)),y:Number(center.y.toFixed(3)),z:Number(center.z.toFixed(3)),
-        radius:Number(radius.toFixed(3)),kind:pass.kind,rockSeed,
-        rotation:look.rotation.map(v=>Number(v.toFixed(5))),
-        scale:look.scale.map(v=>Number(v.toFixed(4))),
+        radius:Number(radius.toFixed(3)),clusterScale:Number((pass.clusterScale*(.86+rand(c.ix,c.iy,c.iz,seed+903)*.28)).toFixed(3)),
+        kind:pass.kind,insideRatio:Number(ratio.toFixed(3)),rockSeed,
+        rotation:Number((rand(c.ix,c.iy,c.iz,seed+1009)*Math.PI*2).toFixed(5)),
         source:{ix:c.ix,iy:c.iy,iz:c.iz}
       });
-      stats[pass.kind]++;
+      estimatedFilled+=volume;
     }
-    if(placed.length>=maxRocks)break;
   }
-  return {placements:placed,stats};
+  return {
+    formationId:formation.id,
+    placements:placed,
+    stats:{
+      cells:formation.cells.length,
+      sculptVolume:Number(formation.volume.toFixed(1)),
+      estimatedCoverage:Number(clamp(estimatedFilled/Math.max(1,formation.volume),0,1).toFixed(3)),
+      large:placed.filter(p=>p.kind==='large').length,
+      medium:placed.filter(p=>p.kind==='medium').length,
+      small:placed.filter(p=>p.kind==='small').length
+    }
+  };
+}
+
+export function generateAllVolumeRockFills(data,options={}){
+  const formations=splitSculptFormations(data,options);
+  return {
+    formations,
+    results:formations.map((formation,index)=>generateVolumeRockFill(formation,{...options,seed:(options.seed||17)+index*997}))
+  };
+}
+
+// Backward-compatible entry point used by older tests/integrations.
+export function generateRockFormation(data,options={}){
+  const all=generateAllVolumeRockFills(data,options);
+  const placements=all.results.flatMap(r=>r.placements.map(p=>({...p,formationId:r.formationId})));
+  return {
+    placements,
+    formations:all.formations,
+    results:all.results,
+    stats:{
+      formations:all.formations.length,
+      large:placements.filter(p=>p.kind==='large').length,
+      medium:placements.filter(p=>p.kind==='medium').length,
+      small:placements.filter(p=>p.kind==='small').length
+    }
+  };
 }
