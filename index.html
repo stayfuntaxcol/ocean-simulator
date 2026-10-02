@@ -2070,7 +2070,7 @@ function refreshLayerHabitat(key,layerId,type){
   habitatRevision++;
 }
 function markLayerRoots(before,key,layerId,type,supportRoots){
-  const roots=[];
+  const layer=layerRecord(key,layerId),roots=[];
   for(let i=before;i<reef.children.length;i++){
     const root=reef.children[i];
     root.userData.editorCell=key;
@@ -2085,7 +2085,7 @@ function markLayerRoots(before,key,layerId,type,supportRoots){
     roots.push(root);
   }
   placeRootsOnExistingSurface(roots,supportRoots);
-  const layer=layerRecord(key,layerId),survivors=[];
+  const survivors=[];
   for(const root of roots){
     if(layer?.precision&&Number.isFinite(layer.placement?.y)){
       root.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(root);
