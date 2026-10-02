@@ -1,3 +1,4 @@
+import { TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX } from './DepthLayers.js';
 import { normalizeVolumeSculpt } from './VolumeSculpt.js';
 const TYPES=new Set(['rocks','coral','anemone','sponge','seagrass','shell']);
 const finite=value=>Number.isFinite(Number(value))?Number(value):null;
@@ -23,7 +24,7 @@ export function normalizeWorldBlueprint(value,{worldHalf=144,maxObjects=1200}={}
     for(const [index,item] of value.terrain.entries()){
       const ix=finite(item?.ix),iz=finite(item?.iz),offset=finite(item?.offset);
       if(!Number.isInteger(ix)||!Number.isInteger(iz)||offset==null||Math.abs(ix)>worldHalf/6||Math.abs(iz)>worldHalf/6)throw Error(`Terreinpunt ${index+1} is ongeldig.`);
-      terrain.push({ix,iz,offset:clamp(offset,-12,10)});
+      terrain.push({ix,iz,offset:clamp(offset,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX)});
     }
   }
   const sculpt=normalizeVolumeSculpt(value.sculpt,{worldHalf,maxCells:12000});
