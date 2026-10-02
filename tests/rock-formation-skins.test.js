@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import {ROCK_SKINS,ROCK_SKIN_IDS,createRockSkinMaterial,applyRockSkinToGeometry} from '../graphics/RockFormationSkins.js';
+import {ROCK_SKINS,ROCK_SKIN_IDS,createRockSkinMaterial,createSimpleRockSkinMaterial,applyRockSkinToGeometry} from '../graphics/RockFormationSkins.js';
 
 function geometry(){
   const g=new THREE.BufferGeometry();
@@ -20,6 +20,7 @@ test('six rock skins use reliable standard vertex-color materials',()=>{
     assert.equal(material.isMeshStandardMaterial,true);
     assert.equal(material.vertexColors,true);
     assert.equal(material.transparent,false);
+    assert.equal(material.side,THREE.FrontSide);
     assert.ok(material.roughness>=.9);
     material.dispose();
   }
@@ -83,4 +84,17 @@ test('grey reef and limestone skins reuse the simulator existing stone shader en
   assert.match(limestoneShader.fragmentShader,/bands/);
 
   grey.dispose();limestone.dispose();
+});
+
+
+test('far LOD skins are simple FrontSide materials without custom stone shader work',()=>{
+  for(const id of ROCK_SKIN_IDS){
+    const material=createSimpleRockSkinMaterial(id);
+    assert.equal(material.isMeshStandardMaterial,true);
+    assert.equal(material.side,THREE.FrontSide);
+    assert.equal(material.vertexColors,true);
+    assert.equal(material.userData.simpleRockSkin,true);
+    assert.equal(material.customProgramCacheKey(),material.type);
+    material.dispose();
+  }
 });
