@@ -376,6 +376,7 @@
           <button id="precisionLarger" type="button" title="Vergroot geselecteerd object">+ Groter</button>
           <button id="precisionRotateLeft" type="button" title="Draai linksom">↶</button>
           <button id="precisionRotateRight" type="button" title="Draai rechtsom">↷</button>
+          <button id="precisionLock" type="button" title="Bescherm gegenereerde rots bij regenereren">🔓 Lock</button>
           <button id="precisionDelete" type="button" title="Verwijder geselecteerd object">🗑</button>
         </div>
         <div id="precisionSelection">Klik op <strong>Detailvlucht</strong>, richt het vizier en klik om nauwkeurig te bouwen.</div>
@@ -403,6 +404,10 @@
         </div>
         <div class="toolrow">
           <label>Weergave <select id="sculptViewMode"><option value="clay" selected>Clay · massief</option><option value="cells">Cells · losse bollen</option><option value="ghost">Ghost · transparant</option></select><span></span></label>
+        </div>
+        <div class="toolrow">
+          <button id="generateRockFormationBtn" type="button">🪨 Generate Rock Formation</button>
+          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;align-self:center">Maakt echte bewerkbare rotsen langs het sculpt-oppervlak.</span>
         </div>
         <div id="volumeSculptStatus">Build grote vormen, Carve ze daarna met een kleinere brush. Preview pauzeert bewerken zodat je vrij rond het resultaat kunt vliegen. Tab wisselt Edit/Preview.</div>
       </div>
@@ -580,6 +585,7 @@ import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
+import { generateRockFormation } from './worlds/RockFormationGenerator.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -718,6 +724,8 @@ const sculptViewMode = document.getElementById('sculptViewMode');
 const sculptPreviewBtn = document.getElementById('sculptPreviewBtn');
 const sculptUndo = document.getElementById('sculptUndo');
 const sculptClear = document.getElementById('sculptClear');
+const generateRockFormationBtn=document.getElementById('generateRockFormationBtn');
+const rockFormationStatus=document.getElementById('rockFormationStatus');
 const volumeSculptStatus = document.getElementById('volumeSculptStatus');
 const precisionTool = document.getElementById('precisionTool');
 const precisionSelection = document.getElementById('precisionSelection');
@@ -725,6 +733,7 @@ const precisionSmaller = document.getElementById('precisionSmaller');
 const precisionLarger = document.getElementById('precisionLarger');
 const precisionRotateLeft = document.getElementById('precisionRotateLeft');
 const precisionRotateRight = document.getElementById('precisionRotateRight');
+const precisionLock = document.getElementById('precisionLock');
 const precisionDelete = document.getElementById('precisionDelete');
 const importBlueprintBtn = document.getElementById('importBlueprintBtn');
 const blueprintFile = document.getElementById('blueprintFile');
