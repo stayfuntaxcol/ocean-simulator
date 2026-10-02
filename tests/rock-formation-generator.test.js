@@ -1,78 +1,88 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SCULPT_FORMAT,SCULPT_CELL_SIZE} from '../worlds/VolumeSculpt.js';
-import {analyzeSculptSurface,protectedNegativeSpace,generateRockFormation} from '../worlds/RockFormationGenerator.js';
+import {splitSculptFormations,generateVolumeRockFill,generateAllVolumeRockFills} from '../worlds/RockFormationGenerator.js';
 
-function block({minX=-2,maxX=2,minY=-2,maxY=2,minZ=-2,maxZ=2,remove=()=>false}={}){
+function sculptFromCells(cells){
+  return {format:SCULPT_FORMAT,cellSize:SCULPT_CELL_SIZE,cells:cells.map(([ix,iy,iz,density=1])=>({ix,iy,iz,density}))};
+}
+function solid(minX,maxX,minY,maxY,minZ,maxZ){
   const cells=[];
-  for(let ix=minX;ix<=maxX;ix++)for(let iy=minY;iy<=maxY;iy++)for(let iz=minZ;iz<=maxZ;iz++){
-    if(remove(ix,iy,iz))continue;
-    cells.push({ix,iy,iz,density:1});
-  }
-  return {format:SCULPT_FORMAT,cellSize:SCULPT_CELL_SIZE,cells};
+  for(let x=minX;x<=maxX;x++)for(let y=minY;y<=maxY;y++)for(let z=minZ;z<=maxZ;z++)cells.push([x,y,z,1]);
+  return cells;
 }
 
-test('rock generator samples sculpt surface instead of filling the solid interior',()=>{
-  const sculpt=block();
-  const analysis=analyzeSculptSurface(sculpt);
-  assert.ok(analysis.surface.length>0);
-  assert.ok(analysis.surface.length<sculpt.cells.length);
-  const result=generateRockFormation(sculpt,{maxRocks:120,seed:5});
-  assert.ok(result.placements.length>0);
-  assert.ok(result.placements.length<sculpt.cells.length);
-  assert.equal(result.stats.surfaceCells,analysis.surface.length);
-  for(const p of result.placements){
-    const c=p.source;
-    const exposed=[
-      [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]
-    ].some(([dx,dy,dz])=>!analysis.map.has(`${c.ix+dx},${c.iy+dy},${c.iz+dz}`));
-    assert.equal(exposed,true);
-  }
+test('disconnected sculpt masses become independent formations',()=>{
+  const data=sculptFromCells([
+    ...solid(-6,-3,-2,1,-2,2),
+    ...solid(3,6,-1,2,-1,2),
+    ...solid(10,11,0,1,8,9)
+  ]);
+  const formations=splitSculptFormations(data);
+  assert.equal(formations.length,3);
+  assert.ok(formations.every(f=>f.cells.length>1));
+  assert.ok(new Set(formations.map(f=>f.id)).size===3);
 });
 
-test('through-tunnel cells are detected as protected negative space and rocks stay clear',()=>{
-  const sculpt=block({
-    minX:-3,maxX:3,minY:-3,maxY:3,minZ:-5,maxZ:5,
-    remove:(ix,iy,iz)=>Math.abs(ix)<=1&&Math.abs(iy)<=1
-  });
-  const negative=protectedNegativeSpace(sculpt);
-  assert.ok(negative.voids.length>0);
-  assert.ok(negative.voids.some(v=>v.ix===0&&v.iy===0&&v.iz===0));
-  const result=generateRockFormation(sculpt,{maxRocks:220,seed:17});
-  assert.ok(result.placements.length>0);
-  for(const rock of result.placements){
-    for(const v of negative.voids){
-      const distance=Math.hypot(rock.x-v.x,rock.y-v.y,rock.z-v.z);
-      assert.ok(distance>=rock.radius*1.25+SCULPT_CELL_SIZE*.58-1e-6,
-        `rock ${rock.kind} intrudes into protected tunnel at ${v.ix},${v.iy},${v.iz}`);
-    }
-  }
+test('diagonally touching sculpt cells stay one hand-sculpted formation',()=>{
+  const data=sculptFromCells([[0,0,0],[1,1,0],[2,2,1],[3,2,2]]);
+  assert.equal(splitSculptFormations(data).length,1);
 });
 
-test('large rocks are generated before medium and small fill rocks',()=>{
-  const result=generateRockFormation(block({minX:-4,maxX:4,minY:-3,maxY:3,minZ:-4,maxZ:4}),{maxRocks:160,seed:23});
-  assert.ok(result.stats.large>0);
+test('a real water gap keeps two formations separate',()=>{
+  const data=sculptFromCells([...solid(-3,-1,0,2,0,2),...solid(2,4,0,2,0,2)]);
+  assert.equal(splitSculptFormations(data).length,2);
+});
+
+test('volume fill uses overlapping clusters that mostly remain inside the sculpt',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-5,5,-3,3,-4,4)))[0];
+  const result=generateVolumeRockFill(formation,{seed:7,maxClusters:70,targetCoverage:.86,minInside:.72});
+  assert.ok(result.placements.length>0);
+  assert.ok(result.placements.length<formation.cells.length/2);
+  assert.ok(result.placements.every(p=>p.insideRatio>=.67));
+  assert.ok(result.stats.estimatedCoverage>=.70);
+  assert.ok(result.stats.estimatedCoverage<=1);
+  let overlaps=0;
+  for(let i=0;i<result.placements.length;i++)for(let j=i+1;j<result.placements.length;j++){
+    const a=result.placements[i],b=result.placements[j];
+    const d=Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+    if(d<a.radius+b.radius)overlaps++;
+  }
+  assert.ok(overlaps>0);
+});
+
+test('large clusters are attempted before medium and small fill clusters',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-6,6,-4,4,-5,5)))[0];
+  const result=generateVolumeRockFill(formation,{seed:19,maxClusters:70});
   const order={large:0,medium:1,small:2};
   let last=-1;
-  for(const rock of result.placements){
-    assert.ok(order[rock.kind]>=last);
-    last=order[rock.kind];
+  for(const p of result.placements){assert.ok(order[p.kind]>=last);last=order[p.kind];}
+  assert.ok(result.stats.large>0);
+});
+
+test('all-volume generation preserves formation identity',()=>{
+  const data=sculptFromCells([...solid(-7,-3,-2,2,-2,2),...solid(3,7,-2,2,-2,2)]);
+  const all=generateAllVolumeRockFills(data,{seed:29,maxClusters:40});
+  assert.equal(all.formations.length,2);
+  assert.equal(all.results.length,2);
+  assert.deepEqual(all.results.map(r=>r.formationId),all.formations.map(f=>f.id));
+  assert.ok(all.results.every(r=>r.placements.length>0));
+});
+
+test('reserved locked clusters remain clear during regeneration',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-6,6,-4,4,-5,5)))[0];
+  const reserved=[{x:0,y:0,z:0,radius:10}];
+  const result=generateVolumeRockFill(formation,{seed:41,maxClusters:70,reserved});
+  for(const p of result.placements){
+    const d=Math.hypot(p.x,p.y,p.z);
+    assert.ok(d>=p.radius*.55+7-1e-6);
   }
 });
 
-test('reserved locked rocks create no-overlap zones during regeneration',()=>{
-  const sculpt=block({minX:-4,maxX:4,minY:-3,maxY:3,minZ:-4,maxZ:4});
-  const reserved=[{x:0,y:0,z:0,radius:9}];
-  const result=generateRockFormation(sculpt,{maxRocks:180,seed:31,reserved});
-  for(const rock of result.placements){
-    const d=Math.hypot(rock.x,rock.y,rock.z);
-    assert.ok(d>=rock.radius+reserved[0].radius*.82-1e-6);
-  }
-});
-
-test('rock generation is deterministic for the same sculpt and seed',()=>{
-  const sculpt=block({minX:-3,maxX:3,minY:-2,maxY:2,minZ:-3,maxZ:3});
-  const a=generateRockFormation(sculpt,{maxRocks:80,seed:99});
-  const b=generateRockFormation(sculpt,{maxRocks:80,seed:99});
-  assert.deepEqual(a,b);
+test('volume generation is deterministic',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-4,4,-3,3,-4,4)))[0];
+  assert.deepEqual(
+    generateVolumeRockFill(formation,{seed:99,maxClusters:50}),
+    generateVolumeRockFill(formation,{seed:99,maxClusters:50})
+  );
 });
