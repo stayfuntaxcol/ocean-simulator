@@ -413,9 +413,52 @@
         <div class="toolrow">
           <label>Weergave <select id="sculptViewMode"><option value="clay" selected>Clay · massief</option><option value="cells">Cells · losse bollen</option><option value="ghost">Ghost · transparant</option></select><span></span></label>
         </div>
-        <div class="toolrow">
-          <button id="generateRockFormationBtn" type="button">🪨 Generate Rock Formation</button>
-          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;align-self:center">Maakt echte bewerkbare rotsen langs het sculpt-oppervlak.</span>
+        <div id="rockMeshTools" style="display:grid;gap:7px;padding:8px;border:1px solid rgba(127,226,255,.18);border-radius:9px;background:rgba(4,42,55,.24)">
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Rotspartij
+              <select id="rockFormationSelect" style="width:100%;margin-top:4px"></select>
+            </label>
+          </div>
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Vormstijl
+              <select id="rockFormationStyle" style="width:100%;margin-top:4px">
+                <option value="rounded_reef">Rounded Reef Rock</option>
+                <option value="flat_plates">Flat Stone Plates</option>
+                <option value="lava_rock">Lava Rock</option>
+                <option value="blocky_boulder">Blocky Boulder</option>
+                <option value="mixed_reef">Mixed Reef Formation</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Skin
+              <select id="rockFormationSkin" style="width:100%;margin-top:4px">
+                <option value="tropical_limestone">Tropical Limestone</option>
+                <option value="grey_reef" selected>Grey Reef Stone</option>
+                <option value="dark_lava">Dark Lava Basalt</option>
+                <option value="layered_sandstone">Layered Sandstone</option>
+                <option value="algae_reef">Algae Reef Rock</option>
+                <option value="deep_blue">Deep Blue Reef Rock</option>
+              </select>
+            </label>
+          </div>
+          <div class="toolrow">
+            <label style="width:100%;font-size:11px;color:#d9f5ff">Artistieke afwijking
+              <input id="rockFormationDeviation" type="range" min="5" max="10" step="1" value="7" style="width:100%">
+              <output id="rockFormationDeviationValue">7%</output>
+            </label>
+          </div>
+          <div class="toolrow">
+            <button id="rockVariantPrevious" type="button">← Vorige</button>
+            <button id="generateRockFormationBtn" type="button">🎲 Nieuwe variant</button>
+            <button id="rockVariantNext" type="button">Volgende →</button>
+          </div>
+          <div class="toolrow">
+            <button id="rockVariantAccept" type="button">✓ Accepteer</button>
+            <button id="rockVariantLock" type="button">🔓 Lock</button>
+            <button id="rockGenerateAll" type="button">🪨 Genereer alle</button>
+          </div>
+          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;line-height:1.35">Boetseer eerst één of meer losse formaties. Iedere formatie wordt één mesh.</span>
         </div>
         <div id="volumeSculptStatus">Build grote vormen, Carve ze daarna met een kleinere brush. Preview pauzeert bewerken zodat je vrij rond het resultaat kunt vliegen. Tab wisselt Edit/Preview.</div>
       </div>
@@ -593,7 +636,9 @@ import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
-import { generateAllVolumeRockFills } from './worlds/RockFormationGenerator.js';
+import { splitSculptFormations,generateRockMeshVariant,normalizeRockFormationDescriptor,ROCK_FORMATION_STYLES } from './worlds/RockFormationGenerator.js';
+import { createRockFormationMeshSystem } from './graphics/RockFormationMeshes.js';
+import { ROCK_SKINS } from './graphics/RockFormationSkins.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -733,6 +778,16 @@ const sculptPreviewBtn = document.getElementById('sculptPreviewBtn');
 const sculptUndo = document.getElementById('sculptUndo');
 const sculptClear = document.getElementById('sculptClear');
 const generateRockFormationBtn=document.getElementById('generateRockFormationBtn');
+const rockFormationSelect=document.getElementById('rockFormationSelect');
+const rockFormationStyle=document.getElementById('rockFormationStyle');
+const rockFormationSkin=document.getElementById('rockFormationSkin');
+const rockFormationDeviation=document.getElementById('rockFormationDeviation');
+const rockFormationDeviationValue=document.getElementById('rockFormationDeviationValue');
+const rockVariantPrevious=document.getElementById('rockVariantPrevious');
+const rockVariantNext=document.getElementById('rockVariantNext');
+const rockVariantAccept=document.getElementById('rockVariantAccept');
+const rockVariantLock=document.getElementById('rockVariantLock');
+const rockGenerateAll=document.getElementById('rockGenerateAll');
 const rockFormationStatus=document.getElementById('rockFormationStatus');
 const volumeSculptStatus = document.getElementById('volumeSculptStatus');
 const precisionTool = document.getElementById('precisionTool');
