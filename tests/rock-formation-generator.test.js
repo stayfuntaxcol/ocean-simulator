@@ -89,7 +89,7 @@ test('carved tunnel creates inner rock walls without filling the opening',()=>{
 test('rounded surface subdivides each face once before smoothing',()=>{
   const formation=splitSculptFormations(sculptFromCells(solid(-3,3,-3,3,-3,3)))[0];
   const raw=buildContinuousRockSurface(formation,{smooth:false});
-  const rounded=buildContinuousRockSurface(formation,{smooth:true});
+  const rounded=buildContinuousRockSurface(formation,{smooth:true,shapeLevel:5});
   assert.equal(rounded.stats.exposedFaces,raw.stats.exposedFaces);
   assert.equal(rounded.stats.triangles,raw.stats.triangles*4);
   assert.ok(rounded.stats.vertices>raw.stats.vertices);
