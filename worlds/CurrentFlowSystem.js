@@ -22,11 +22,15 @@ export function currentCategory(value){
 
 export function classifyCurrent({width=28,strength=.62}={}){
   const w=clamp(finite(width,28),4,90),s=clamp(finite(strength,.62),0,3);
-  // Width decides scale; speed decides impact. Combining both makes the label
-  // useful even after a preset has been tuned manually.
-  const score=clamp((w/60)*2.2+(s/1.45)*2.8,0,5);
-  const id=clamp(Math.round(score)||1,1,5);
-  return CURRENT_CATEGORIES[id];
+  // Pick the nearest scale/impact profile. This guarantees that every preset
+  // classifies as itself, while manually tuned currents still get a useful label.
+  let best=CURRENT_CATEGORIES[3],bestDistance=Infinity;
+  for(const preset of Object.values(CURRENT_CATEGORIES)){
+    const dw=(w-preset.width)/60,ds=(s-preset.strength)/1.45;
+    const distance=dw*dw+ds*ds;
+    if(distance<bestDistance){best=preset;bestDistance=distance;}
+  }
+  return best;
 }
 
 function routePoints(flow,{seaLevelY=20}={}){
