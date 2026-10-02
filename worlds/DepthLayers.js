@@ -17,7 +17,9 @@ export const WORLD_MIN_Y=layerBottomY(MIN_DEPTH_LAYER);
 
 export function depthLayerForY(y){
   const depth=depthFromWorldY(y);
-  const layer=-Math.floor(depth/DEPTH_LAYER_HEIGHT);
+  const index=Math.floor(depth/DEPTH_LAYER_HEIGHT);
+  if(index<=0)return 0;
+  const layer=-index;
   return Math.max(MIN_DEPTH_LAYER,Math.min(MAX_DEPTH_LAYER,layer));
 }
 export function depthLayerRange(layer=0){
