@@ -37,13 +37,15 @@ test('AI blueprint can assign rock skins to sculpt formations',()=>{
     format:'ocean-world-blueprint-v1',objects:[],terrain:[],
     sculpt:{format:'ocean-volume-sculpt-v1',cellSize:3,cells:[{ix:0,iy:-4,iz:0,density:1},{ix:1,iy:-4,iz:0,density:1}]},
     rockFormations:[
-      {formationIndex:0,skin:'tropical_limestone',locked:true},
-      {formationIndex:1,skin:'dark_lava'}
+      {formationIndex:0,skin:'tropical_limestone',shapeLevel:5,locked:true},
+      {formationIndex:1,skin:'dark_lava',shapeLevel:1}
     ]
   });
   assert.equal(plan.rockFormations.length,2);
   assert.equal(plan.rockFormations[0].skin,'tropical_limestone');
   assert.equal(plan.rockFormations[0].locked,true);
+  assert.equal(plan.rockFormations[0].shapeLevel,5);
+  assert.equal(plan.rockFormations[1].shapeLevel,1);
   assert.equal('style' in plan.rockFormations[0],false);
 });
 
