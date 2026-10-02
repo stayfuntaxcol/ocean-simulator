@@ -118,3 +118,23 @@ test('large rounded rock stays within a bounded one-level subdivision budget',()
   assert.equal(rounded.stats.triangles,10800);
   assert.ok(rounded.stats.vertices<8000);
 });
+
+test('performance shape level 3 keeps one quarter of the old rounded triangles',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(0,14,-14,0,0,14)))[0];
+  const balanced=buildContinuousRockSurface(formation,{smooth:true,shapeLevel:3});
+  const maximum=buildContinuousRockSurface(formation,{smooth:true,shapeLevel:5});
+  assert.equal(balanced.stats.triangles,2700);
+  assert.equal(maximum.stats.triangles,10800);
+  assert.equal(balanced.stats.triangles,maximum.stats.triangles/4);
+  assert.equal(balanced.stats.subdivision,0);
+  assert.equal(balanced.stats.shapeLevel,3);
+});
+
+test('shape level 1 remains visible geometry without smoothing or subdivision',()=>{
+  const formation=splitSculptFormations(sculptFromCells(solid(-2,2,-2,2,-2,2)))[0];
+  const blocky=buildContinuousRockSurface(formation,{smooth:true,shapeLevel:1});
+  assert.ok(blocky.positions.length>0);
+  assert.ok(blocky.indices.length>0);
+  assert.equal(blocky.stats.subdivision,0);
+  assert.equal(blocky.stats.shapeLevel,1);
+});
