@@ -593,7 +593,7 @@ import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
-import { generateRockFormation } from './worlds/RockFormationGenerator.js';
+import { generateAllVolumeRockFills } from './worlds/RockFormationGenerator.js';
 import { createOceanWeather } from './graphics/OceanWeather.js';
 import { REFERENCE } from './graphics/reference-scene.js';
 import { installSeabedMaterial } from './graphics/SeabedMaterials.js';
@@ -1213,23 +1213,21 @@ function addRockCluster(x,z,scale=1,layerSeed=0){
   g.position.set(x,-17.7,z); g.userData.editorKind='rots'; reef.add(g); return g;
 }
 
-function addFormationRock(x,z,radius=3,rockSeed=1){
+function addFormationRock(x,z,clusterScale=1,rockSeed=1){
+  // Reuse the original, deliberately simple rock-cluster language.
+  // One generated object is one overlapping cluster and remains editable as a group.
   const random=seededRandom(Number(rockSeed)>>>0);
-  const g=new THREE.Group();
-  g.userData.orcaRock=true;
-  g.userData.generatedRock=true;
-  const m=new THREE.Mesh(
-    new THREE.DodecahedronGeometry(1,0),
-    reefMat(rockColors[Math.floor(random()*rockColors.length)])
-  );
-  m.scale.set(.90+random()*.22,.78+random()*.22,.90+random()*.22);
-  m.rotation.set((random()-.5)*.32,random()*Math.PI*2,(random()-.5)*.32);
-  rockLibrary.decorate(m,Math.max(.8,radius),Number(rockSeed)>>>0);
-  g.add(m);
-  g.position.set(x,-17.7,z);
-  g.userData.editorKind='formatie-rots';
-  reef.add(g);
-  return g;
+  const g=new THREE.Group();g.userData.orcaRock=true;g.userData.generatedRock=true;
+  const n=3+Math.floor(random()*4);
+  for(let i=0;i<n;i++){
+    const r=(1.45+random()*4.2)*clusterScale;
+    const m=new THREE.Mesh(new THREE.DodecahedronGeometry(1,0),reefMat(rockColors[Math.floor(random()*rockColors.length)]));
+    m.scale.set(1+.65*random(),.62+random()*.62,.86+random()*.68);
+    m.position.set((random()-.5)*3.7*clusterScale,(r*.32)-.45,(random()-.5)*3.7*clusterScale);
+    m.rotation.set(random()*.7,random()*Math.PI,random()*.28);
+    rockLibrary.decorate(m,r,(Number(rockSeed)+i*83492791)>>>0);g.add(m);
+  }
+  g.position.set(x,-17.7,z);g.userData.editorKind='formatie-cluster';reef.add(g);return g;
 }
 function addBranchCoral(x,z,scale=1,color=0xff7f6e){
   const g=new THREE.Group(), mat=reefMat(color,.82);
@@ -2266,7 +2264,7 @@ function instantiateLayerVisual(ix,iz,layer){
 
   if(layer.precision&&layer.placement){
     const x=layer.placement.x,z=layer.placement.z;
-    if(type==='rocks'&&layer.generatedRock)addFormationRock(x,z,layer.rockRadius||3,layer.rockSeed||layerSeed);
+    if(type==='rocks'&&layer.generatedRock)addFormationRock(x,z,layer.clusterScale||1,layer.rockSeed||layerSeed);
     else if(type==='rocks')addRockCluster(x,z,.85,layerSeed);
     else if(type==='coral')addBranchCoral(x,z,.85,coralColors[Math.floor(seededJitter(ix,iz,3,layerSeed)*coralColors.length)]);
     else if(type==='anemone')addAnemone(x,z,.8,coralColors[Math.floor(seededJitter(ix,iz,4,layerSeed)*coralColors.length)]);
