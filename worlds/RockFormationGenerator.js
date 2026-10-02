@@ -82,9 +82,9 @@ function orientation(c,seed){
   return {
     rotation:[tiltX,yaw,tiltZ],
     scale:[
-      .82+rand(c.ix,c.iy,c.iz,seed+31)*.50,
-      .72+vertical*.28+rand(c.ix,c.iy,c.iz,seed+41)*.30,
-      .82+rand(c.ix,c.iy,c.iz,seed+53)*.50
+      .90+rand(c.ix,c.iy,c.iz,seed+31)*.25,
+      .82+vertical*.10+rand(c.ix,c.iy,c.iz,seed+41)*.18,
+      .90+rand(c.ix,c.iy,c.iz,seed+53)*.25
     ]
   };
 }
@@ -113,7 +113,7 @@ export function generateRockFormation(data,{
       const jitter=.88+rand(c.ix,c.iy,c.iz,seed+passIndex*101)*.24;
       const radius=pass.radius*jitter;
       const center=inwardCenter(c,radius);
-      if(sphereHitsVoid(center,radius*.72,voids,cellSize))continue;
+      if(sphereHitsVoid(center,radius*1.25,voids,cellSize))continue;
       if(sphereHitsReserved(center,radius,reserved))continue;
       if(!candidateSpacing(center,radius,placed,pass.spacing))continue;
       const look=orientation(c,seed+passIndex*101);
