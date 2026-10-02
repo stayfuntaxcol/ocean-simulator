@@ -396,7 +396,7 @@
         <div class="toolrow">
           <label>Sterkte <input id="sculptStrength" type="range" min="5" max="100" step="5" value="45"><output id="sculptStrengthValue">45%</output></label>
         </div>
-        <div id="volumeSculptStatus">Blauwe transparante massa = blueprintvolume. Houd de muisknop ingedrukt en beweeg je blik om te boetseren. Deze laag is nog geen echte rots.</div>
+        <div id="volumeSculptStatus">Blauwgroene kleimassa = blueprintvolume. Houd de muisknop ingedrukt en beweeg je blik om te boetseren. De zichtbare zeespiegel en depth layers blijven je referentie.</div>
       </div>
       <div class="toolrow" id="autoLandscapeTools">
         <select id="landscapeDensity" aria-label="Dichtheid automatisch landschap">
@@ -1481,7 +1481,7 @@ function appendAtlasWorldMap(group,world,point,index){
   clip.append(createSvgElement('polygon',{points:svgPoints(flatTopHexPoints(point.x,point.y,radius-1))}));defs.append(clip);group.append(defs);
   const map=createSvgElement('g',{'clip-path':`url(#${clipId})`,'aria-hidden':'true'});
   for(const [ix,iz,offset] of snapshot.terrain){
-    const raised=offset>0,t=Math.min(1,Math.abs(offset)/12);
+    const raised=offset>0,t=Math.min(1,Math.log1p(Math.abs(offset))/Math.log1p(220));
     map.append(createSvgElement('rect',{class:'atlas-map-terrain',x:point.x+ix*TERRAIN_CELL*scale,y:point.y+iz*TERRAIN_CELL*scale,
       width:TERRAIN_CELL*scale+.3,height:TERRAIN_CELL*scale+.3,fill:raised?`rgba(131,145,111,${.22+.38*t})`:`rgba(21,75,91,${.20+.42*t})`}));
   }
@@ -1703,7 +1703,7 @@ function drawMinimap(){
   for(const [key,offset] of terrainOffsets.entries()){
     const [ix,iz]=key.split(',').map(Number),x0=ix*TERRAIN_CELL,z0=iz*TERRAIN_CELL,x1=x0+TERRAIN_CELL,z1=z0+TERRAIN_CELL;
     if(x1<minX||x0>maxX||z1<minZ||z0>maxZ)continue;
-    const t=Math.min(1,Math.abs(offset)/12),a=mapPoint({x:x0,z:z0},bounds,w,h),b=mapPoint({x:x1,z:z1},bounds,w,h);
+    const t=Math.min(1,Math.log1p(Math.abs(offset))/Math.log1p(220)),a=mapPoint({x:x0,z:z0},bounds,w,h),b=mapPoint({x:x1,z:z1},bounds,w,h);
     ctx.fillStyle=offset>0?`rgba(131,145,111,${.22+.38*t})`:`rgba(21,75,91,${.20+.42*t})`;
     ctx.fillRect(a.x,Math.min(a.y,b.y),Math.max(1,b.x-a.x),Math.max(1,Math.abs(b.y-a.y)));
   }
@@ -5650,7 +5650,7 @@ const jellyfishSwarm=createJellyfishSwarm({
 });
 jellyfishSwarm.setEnabled(jellyfishEnabled.checked);
 jellyfishEnabled.addEventListener('change',()=>jellyfishSwarm.setEnabled(jellyfishEnabled.checked));
-addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();},{once:true});
+addEventListener('pagehide',()=>{microLife.dispose();jellyfishSwarm.dispose();nightFlashlight.dispose();volumeSculpt.dispose();depthLayerGuide.dispose();},{once:true});
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),.04);
