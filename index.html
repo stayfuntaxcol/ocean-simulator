@@ -1424,17 +1424,18 @@ function addShell(x,z,scale=1){
 }
 addEventListener('pagehide',()=>{detailShellGeometry.dispose();detailShellMaterial.dispose();},{once:true});
 function addSeaweed(x,z,scale=1){
-  const g=new THREE.Group(), colors=[0x317a64,0x3f8d72,0x597f55,0x6c9058];
+  const g=new THREE.Group(),sway=new THREE.Group(),colors=[0x317a64,0x3f8d72,0x597f55,0x6c9058];
+  g.add(sway);
   const blades=3+Math.floor(oceanRandom()*6);
   for(let i=0;i<blades;i++){
     const h=(1.8+oceanRandom()*5.5)*scale;
     const weed=new THREE.Mesh(new THREE.CylinderGeometry(.035*scale,.11*scale,h,5),reefMat(colors[Math.floor(oceanRandom()*colors.length)],.96));
     weed.position.set((oceanRandom()-.5)*.8*scale,h/2,(oceanRandom()-.5)*.8*scale);
-    weed.rotation.z=(oceanRandom()-.5)*.4; g.add(weed);
+    weed.rotation.z=(oceanRandom()-.5)*.4;sway.add(weed);
   }
   g.position.set(x,-17.7,z); g.rotation.y=oceanRandom()*Math.PI*2;
   g.scale.set(.78+oceanRandom()*.46,.88+oceanRandom()*.28,.78+oceanRandom()*.46);
-  g.userData.editorKind='zeegras'; reef.add(g);
+  g.userData.editorKind='zeegras';g.userData.currentSway=sway;reef.add(g);
   styleReef(g,'grass',0x689653);
   return g;
 }
@@ -3887,10 +3888,12 @@ function updateImportedHealth(dt){
     fish.userData.ageSeconds=(fish.userData.ageSeconds||0)+dt;
 
     const hazard=lavaHazardAt(fish.position);
+    const flowStrength=Math.max(0,fish.userData.currentStrength||0),flowAssist=THREE.MathUtils.clamp(fish.userData.currentAssist||0,-1,1);
+    const flowMetabolism=1+Math.max(0,-flowAssist)*Math.min(.18,flowStrength*.12)-Math.max(0,flowAssist)*Math.min(.07,flowStrength*.05);
     const next=advanceImportedVitality({
       health:fish.userData.health,foodReserve:fish.userData.foodReserve,maxFoodReserve:fish.userData.maxFoodReserve,
       starvationSeconds:fish.userData.starvationSeconds,state:fish.userData.vitalState
-    },dt,{hazard,foodSupply:fish.userData.localFoodSupply??0,metabolism:fish.userData.metabolism??1,resting:Boolean(fish.userData.sleeping)});
+    },dt,{hazard,foodSupply:fish.userData.localFoodSupply??0,metabolism:(fish.userData.metabolism??1)*flowMetabolism,resting:Boolean(fish.userData.sleeping)});
     fish.userData.health=next.health;fish.userData.foodReserve=next.foodReserve;
     fish.userData.maxFoodReserve=next.maxFoodReserve;fish.userData.starvationSeconds=next.starvationSeconds;
     fish.userData.vitalState=next.state;
@@ -4391,6 +4394,56 @@ currentFlowDelete.addEventListener('click',()=>{
 refreshCurrentFlowUi();
 refreshCurrentFlowDebug();
 
+let lastCurrentRockRefresh=0,currentPlantAccumulator=0;
+const currentPlantSample={},currentFoodSample={};
+function updateCurrentPlants(dt,t){
+  currentPlantAccumulator+=dt;
+  if(currentPlantAccumulator<.16)return;
+  const elapsed=Math.min(.35,currentPlantAccumulator);currentPlantAccumulator=0;
+  const maxDistSq=120*120;
+  for(const root of reef.children){
+    const sway=root.userData?.currentSway;
+    if(!sway||!root.visible||root.position.distanceToSquared(camera.position)>maxDistSq)continue;
+    root.getWorldPosition(currentFlowWorldPos);
+    currentFlow.sampleInto(currentFlowWorldPos.x,currentFlowWorldPos.y+2,currentFlowWorldPos.z,t,currentPlantSample);
+    const amount=Math.min(.34,currentPlantSample.strength*.12);
+    const targetX=-currentPlantSample.z*amount;
+    const targetZ=currentPlantSample.x*amount;
+    const lerp=1-Math.exp(-elapsed*3.5);
+    sway.rotation.x=THREE.MathUtils.lerp(sway.rotation.x,targetX,lerp);
+    sway.rotation.z=THREE.MathUtils.lerp(sway.rotation.z,targetZ,lerp);
+    root.userData.currentStrength=currentPlantSample.strength;
+  }
+}
+function applyCurrentFoodBoost(sectors){
+  // Food/biodiversity sectors are 36 m while the flow grid is 12 m. Sample a
+  // 3x3 set of flow sectors so nutrient transport is not lost at sector edges.
+  for(const sector of sectors.values()){
+    let nutrient=0,strength=0,samples=0;
+    const floor=terrainHeightAt(sector.x,sector.z)+2;
+    for(const dx of [-12,0,12])for(const dz of [-12,0,12]){
+      currentFlow.sampleInto(sector.x+dx,floor,sector.z+dz,0,currentFoodSample);
+      nutrient+=currentFoodSample.nutrient;strength+=currentFoodSample.strength;samples++;
+    }
+    nutrient/=samples;strength/=samples;
+    const boost=1+THREE.MathUtils.clamp(nutrient+strength*.035,0,.22);
+    const ratio=sector.maxFood>0?THREE.MathUtils.clamp(sector.stock/sector.maxFood,0,1):1;
+    sector.capacity*=boost;sector.maxFood*=boost;sector.stock=sector.maxFood*ratio;
+    sector.currentBoost=boost;sector.currentStrength=strength;
+  }
+  // Keep the simulator's global carrying-cap ceiling intact. Currents improve
+  // the relative quality of affected sectors rather than allowing infinite fish.
+  const total=[...sectors.values()].reduce((sum,sector)=>sum+sector.capacity,0);
+  if(total>1000){
+    const factor=1000/total;
+    for(const sector of sectors.values()){
+      const ratio=sector.maxFood>0?THREE.MathUtils.clamp(sector.stock/sector.maxFood,0,1):1;
+      sector.capacity*=factor;sector.maxFood*=factor;sector.stock=sector.maxFood*ratio;
+    }
+  }
+  return sectors;
+}
+
 function speciesFromName(name){
   return String(name||'fish').toLowerCase().replace(/\.glb$/i,'').replace(/[^a-z0-9_-]+/g,'-');
 }
@@ -4632,6 +4685,7 @@ function rebuildFoodSectorMap(force=false){
   foodSectors=buildFoodSectors(ecosystemLayerSamples(),{
     lavaVents,previous:foodSectors,sectorSize:FOOD_SECTOR_SIZE
   });
+  applyCurrentFoodBoost(foodSectors);
   foodSectorRevision=habitatRevision;foodSectorLavaCount=lavaVents.length;
   foodSectorSummary=summarizeFoodSectors(foodSectors);
 }
@@ -5497,7 +5551,21 @@ fishFiles.addEventListener('change',async()=>{
 // Tijdelijke vectoren voor boids; hergebruik voorkomt veel garbage collection.
 const sepV=new THREE.Vector3(), aliV=new THREE.Vector3(), cohV=new THREE.Vector3();
 const targetV=new THREE.Vector3(), wanderV=new THREE.Vector3(), desiredV=new THREE.Vector3();
-const tmpV=new THREE.Vector3();
+const tmpV=new THREE.Vector3(),currentFishSample={};
+function applyCurrentToFish(fish,from,to,dt,t){
+  currentFlow.sampleInto(from.x,from.y,from.z,t,currentFishSample);
+  fish.userData.currentStrength=currentFishSample.strength;
+  fish.userData.currentRockBoost=currentFishSample.rockBoost;
+  fish.userData.currentAssist=0;
+  if(currentFishSample.strength<=.001)return;
+  to.x+=currentFishSample.x*dt;to.y+=currentFishSample.y*dt;to.z+=currentFishSample.z*dt;
+  const velocity=fish.userData.velocity;
+  const speed=velocity?.length?.()||0;
+  if(speed>.001){
+    const dot=(velocity.x*currentFishSample.x+velocity.y*currentFishSample.y+velocity.z*currentFishSample.z)/(speed*currentFishSample.strength);
+    fish.userData.currentAssist=THREE.MathUtils.clamp(dot,-1,1)*Math.min(1,currentFishSample.strength/1.4);
+  }
+}
 
 function disturbanceLevel(fish,now){
   const u=fish.userData;
@@ -5605,6 +5673,7 @@ function updateFish(dt,t){
         const importPace=useRockNavigator?steerImport(fish,targetV,school,dt):1;
         fish.userData.velocity.lerp(targetV.multiplyScalar(school.cruiseSpeed*vitalityPace*importPace),Math.min(1,dt*(fish.userData.imported?1.45:.16)));
         collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
+        applyCurrentToFish(fish,p,collisionTmp2,dt,t);
         if(useRockNavigator){
           moveImportSafely(fish,collisionTmp2,dt,school);
         }else if(cellHasRockAt(collisionTmp2.x,collisionTmp2.z)){
@@ -5730,6 +5799,7 @@ function updateFish(dt,t){
       fish.userData.velocity.lerp(desiredV,Math.min(1,dt*(panic>0?2.35:policy?.kind==='family'?3.4:policy?.kind==='coral-pair'?2.7:policy?.kind==='puffer'?.72:1.45)));
       collisionTmp.copy(p);
       collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
+        applyCurrentToFish(fish,p,collisionTmp2,dt,t);
       // Sample terrain along this frame's travel; do not tunnel through a raised seabed.
       const clearance=policy?.kind==='bottom'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:Math.max(.45,(policy?.bodyClearance||0)*fish.scale.x);
       const ground=Math.max(...[0,.5,1].map(a=>terrainHeightAt(THREE.MathUtils.lerp(p.x,collisionTmp2.x,a),THREE.MathUtils.lerp(p.z,collisionTmp2.z,a))));
@@ -6407,6 +6477,10 @@ function animate(){
   microLife.update(dt,camera,{enabled:microLifeEnabled.checked&&ecosystemState.stageId>=1,editor:editMode||landscapeEditorActive,inspect:terrainInspectActive,paused:referencePaused,
     quality:atmosphere.quality,revision:habitatRevision,worldKey:currentAtlasWorldId(),showSchools:microSchoolsEnabled.checked&&ecosystemState.stageId>=2,showPlankton:microPlanktonEnabled.checked&&ecosystemState.stageId>=1,
     nightFactor:currentWeatherState.nightFactor||0});
+  if(streamingTime-lastCurrentRockRefresh>.55){
+    refreshCurrentRockFactors();lastCurrentRockRefresh=streamingTime;
+  }
+  updateCurrentPlants(referencePaused?0:dt,t);
   reefLife.setTime(t,landscapeEditorActive || terrainInspectActive);
   const detailedReef=reefDetail.checked && atmosphere.enabled;
   if(streamingTime-lastReefDetailUpdate>.25 || detailedReef!==previousReefDetail){
