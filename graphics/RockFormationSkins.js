@@ -58,7 +58,7 @@ export function createRockSkinMaterial(skinId,caustics=null){
     color:0xffffff,
     roughness:skin.roughness,
     metalness:0,
-    side:THREE.DoubleSide,
+    side:THREE.FrontSide,
     vertexColors:true,
     flatShading:false
   });
@@ -145,14 +145,39 @@ export function applyRockSkinToGeometry(geometry,skinId,center={x:0,y:0,z:0}){
   return true;
 }
 
+export function createSimpleRockSkinMaterial(skinId){
+  const id=ROCK_SKINS[skinId]?skinId:'grey_reef',skin=ROCK_SKINS[id];
+  const material=new THREE.MeshStandardMaterial({
+    color:0xffffff,
+    roughness:skin.roughness,
+    metalness:0,
+    side:THREE.FrontSide,
+    vertexColors:true,
+    flatShading:false
+  });
+  material.userData.rockSkin=id;
+  material.userData.simpleRockSkin=true;
+  material.name='Sculpt rock LOD skin · '+skin.name;
+  return material;
+}
+
 export function createRockSkinLibrary(caustics=null){
-  const cache=new Map();
+  const detailed=new Map(),simple=new Map();
   return {
     get(id){
       const key=ROCK_SKINS[id]?id:'grey_reef';
-      if(!cache.has(key))cache.set(key,createRockSkinMaterial(key,caustics));
-      return cache.get(key);
+      if(!detailed.has(key))detailed.set(key,createRockSkinMaterial(key,caustics));
+      return detailed.get(key);
     },
-    dispose(){for(const material of cache.values())material.dispose();cache.clear();}
+    getSimple(id){
+      const key=ROCK_SKINS[id]?id:'grey_reef';
+      if(!simple.has(key))simple.set(key,createSimpleRockSkinMaterial(key));
+      return simple.get(key);
+    },
+    dispose(){
+      for(const material of detailed.values())material.dispose();
+      for(const material of simple.values())material.dispose();
+      detailed.clear();simple.clear();
+    }
   };
 }
