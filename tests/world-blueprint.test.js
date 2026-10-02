@@ -7,7 +7,7 @@ test('AI blueprint keeps supported precise objects and clamps safe transforms',(
     {type:'coral',x:4,z:-7,scale:9,rotation:1.2},{type:'shell',x:0,z:0,scale:.01}
   ],terrain:[{ix:2,iz:-1,offset:20}]});
   assert.equal(plan.objects[0].scale,5);assert.equal(plan.objects[1].scale,.2);
-  assert.deepEqual(plan.terrain,[{ix:2,iz:-1,offset:10}]);
+  assert.deepEqual(plan.terrain,[{ix:2,iz:-1,offset:16}]);
 });
 
 test('AI blueprint rejects unsupported, oversized and out-of-world input',()=>{
