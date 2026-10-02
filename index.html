@@ -4641,8 +4641,13 @@ function spawnImportedSchool(source,fileName,count,profile=oceanPreset('balanced
     fish.scale.multiplyScalar(.76+oceanRandom()*.28);
     const a=oceanRandom()*Math.PI*2, r=Math.sqrt(oceanRandom())*(2.2+Math.sqrt(count)*.55);
     fish.position.copy(spawnCenter).addScaledVector(rightVec,Math.cos(a)*r);
-    fish.position.y=THREE.MathUtils.clamp(spawnCenter.y+Math.sin(a)*r*.45+(oceanRandom()-.5)*2,-12,16);
     fish.position.z+=(oceanRandom()-.5)*r;
+    const spawnFloor=terrainHeightAt(fish.position.x,fish.position.z)+.85;
+    fish.position.y=THREE.MathUtils.clamp(
+      spawnCenter.y+Math.sin(a)*r*.45+(oceanRandom()-.5)*2,
+      Math.max(MIN_SWIM_Y,spawnFloor),
+      SEA_LEVEL_Y-4
+    );
     const dir=new THREE.Vector3(forward.x+(oceanRandom()-.5)*.22,(oceanRandom()-.5)*.06,forward.z+(oceanRandom()-.5)*.22).normalize();
     fish.userData.velocity=dir.multiplyScalar(.95+oceanRandom()*.65);
     fish.userData.speed=fish.userData.velocity.length(); fish.userData.tail=fish.getObjectByName('Tail')||null;
