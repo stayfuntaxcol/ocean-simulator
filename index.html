@@ -4340,10 +4340,22 @@ function refreshCurrentRockFactors(force=false){
   currentRockFactorStamp=stamp;
   const factors=new Map();
   const add=(key,value)=>factors.set(key,Math.min(1,(factors.get(key)||0)+value));
+  // A rock constricts the water in its own sector and in the immediately
+  // adjacent water. This makes the usable water lanes beside a rock faster,
+  // instead of applying the boost only inside solid geometry.
+  const spread=(ix,iz,value)=>{
+    add(cellKey(ix,iz),value);
+    for(const [dx,dz,weight] of [[1,0,.42],[-1,0,.42],[0,1,.42],[0,-1,.42],[1,1,.24],[1,-1,.24],[-1,1,.24],[-1,-1,.24]]){
+      add(cellKey(ix+dx,iz+dz),value*weight);
+    }
+  };
   for(const [key,layers] of worldCells){
     let rock=0;
     for(const layer of layers||[])if(layer.type==='rocks'||layer.type==='mixed')rock++;
-    if(rock)add(key,Math.min(.75,.22+rock*.18));
+    if(rock){
+      const [ix,iz]=key.split(',').map(Number);
+      if(Number.isFinite(ix)&&Number.isFinite(iz))spread(ix,iz,Math.min(.75,.22+rock*.18));
+    }
   }
   // Sculpt rocks and currently streamed rock clusters also contribute. Bounding
   // boxes are calculated only when the world/rock revision changes, never per frame.
@@ -4354,7 +4366,7 @@ function refreshCurrentRockFactors(force=false){
     if(box.isEmpty())continue;
     const minX=Math.floor(box.min.x/CELL),maxX=Math.floor(box.max.x/CELL);
     const minZ=Math.floor(box.min.z/CELL),maxZ=Math.floor(box.max.z/CELL);
-    for(let iz=minZ;iz<=maxZ;iz++)for(let ix=minX;ix<=maxX;ix++)add(cellKey(ix,iz),.48);
+    for(let iz=minZ;iz<=maxZ;iz++)for(let ix=minX;ix<=maxX;ix++)spread(ix,iz,.48);
   }
   currentFlow.setRockFactors(factors);
   foodSectorRevision=-1;ecosystemLastRevision=-1;
