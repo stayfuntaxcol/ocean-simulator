@@ -42,7 +42,7 @@ function routePoints(flow,{seaLevelY=20}={}){
   const vertical=clamp(finite(flow.verticalBend,1.4),0,12);
   const points=[];
   for(let i=0;i<count;i++){
-    const u=count===1?.5:i/(count-1);
+    const u=count===1 ? .5 : i/(count-1);
     const along=(u-.5)*length;
     // One broad snake wave plus a smaller second harmonic prevents a rigid arc.
     const lateral=Math.sin((u-.08)*Math.PI*2)*bend+Math.sin((u+.17)*Math.PI*4)*bend*.18;
@@ -83,6 +83,7 @@ export function normalizeCurrentFlow(value={},options={}){
 
 export function normalizeCurrentFlows(value,options={}){
   if(value==null)return [];
+  if(typeof value!=='object')throw Error('Ongeldige stromingsgegevens.');
   const source=Array.isArray(value)?value:Object.values(value);
   if(source.length>24)throw Error('Deze wereld bevat te veel stromingen.');
   return source.map((item,index)=>normalizeCurrentFlow({...item,id:item?.id||`current-${index+1}`},options));
