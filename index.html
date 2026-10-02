@@ -2966,17 +2966,30 @@ function showSelectedFormationAsRock(){
   const descriptor=descriptorForFormation(id);
   descriptor.skin=ROCK_SKINS[rockFormationSkin.value]?rockFormationSkin.value:'grey_reef';
   descriptor.formationId=id;
-  const existing=rockFormationMeshes.get(id);
-  if(existing&&descriptor.locked){
-    rockFormationMeshes.setSkin(id,descriptor.skin);
-  }else{
-    descriptor.transform=existing?rockFormationMeshes.transformFor(id):descriptor.transform;
-    renderSimpleRockFormation(formation,descriptor);
+  try{
+    const existing=rockFormationMeshes.get(id);
+    if(existing&&descriptor.locked){
+      rockFormationMeshes.setSkin(id,descriptor.skin);
+    }else{
+      descriptor.transform=existing?rockFormationMeshes.transformFor(id):descriptor.transform;
+      renderSimpleRockFormation(formation,descriptor);
+    }
+    const record=rockFormationMeshes.get(id);
+    if(!record||record.surfaceCount<1)throw Error('geen zichtbare buitenste sculptcellen');
+    rockFormationDescriptors.set(id,structuredClone(descriptor));
+    updateFormationControls();
+    rockFormationStatus.textContent=`${record.surfaceCount} zichtbare rotscellen · ${ROCK_SKINS[descriptor.skin].name}`;
+    editorInfo.textContent=`🪨 Rotsweergave klaar: ${record.surfaceCount} zichtbare cellen met ${ROCK_SKINS[descriptor.skin].name}.`;
+    requestAnimationFrame(()=>{
+      if(!rockFormationMeshes.get(id))return;
+      rockMeshPreviewOnly=true;setSculptPreviewMode(true);
+    });
+  }catch(error){
+    rockMeshPreviewOnly=false;
+    volumeSculpt.setVisible(true);
+    rockFormationStatus.textContent=`Rotsweergave mislukt: ${error.message}`;
+    editorInfo.textContent=`Rotsweergave mislukt: ${error.message}. De sculpt blijft zichtbaar.`;
   }
-  rockFormationDescriptors.set(id,structuredClone(descriptor));
-  rockMeshPreviewOnly=true;setSculptPreviewMode(true);
-  updateFormationControls();
-  editorInfo.textContent=`🪨 Sculptvorm behouden · ${ROCK_SKINS[descriptor.skin].name} toegepast · geen nieuwe meshberekening.`;
 }
 function changeCurrentFormationSkin(){
   const id=rockFormationSelect.value;if(!id)return;
