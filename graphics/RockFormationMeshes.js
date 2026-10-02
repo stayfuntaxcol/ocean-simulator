@@ -39,7 +39,9 @@ export function createRockFormationMeshSystem({parent,caustics}={}){
     const mesh=new THREE.InstancedMesh(cellGeometry,skins.get(descriptor.skin),Math.max(1,surface.length));
     mesh.name='Sculpt rock skin surface';
     mesh.count=surface.length;
-    mesh.frustumCulled=true;
+    mesh.frustumCulled=false;
+    mesh.visible=true;
+    mesh.renderOrder=2;
     mesh.userData.formationSurface=true;
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 
@@ -53,7 +55,7 @@ export function createRockFormationMeshSystem({parent,caustics}={}){
       dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);
     }
     mesh.instanceMatrix.needsUpdate=true;
-    mesh.computeBoundingBox();mesh.computeBoundingSphere();
+    // Keep culling disabled in the builder: large sculpt formations span many instances.
 
     const root=new THREE.Group();
     root.name='Sculpt rock formation '+id;
