@@ -1238,7 +1238,9 @@ const rockFormationMeshes=createRockFormationMeshSystem({parent:reef,caustics:at
 const rockFormationDescriptors=new Map();
 const rockVariantHistory=new Map();
 let cachedSculptFormations=[];
+let cachedSculptRevision=-1;
 let legacyGeneratedRocksCleared=false;
+let rockGenerationBusy=false;
 function removeReefRoot(root){ if(root===selectedEditorRoot)clearEditorSelection();reefLife.release(root); rockLibrary.release(root); if(rockCollisionRoots.delete(root))rockCollisionRevision++; reef.remove(root); }
 const reefMobile = matchMedia('(max-width: 800px)').matches;
 const reefScale = reefMobile ? .55 : 1;
@@ -2921,7 +2923,10 @@ function useDetailEditor(event){
   if(root)selectEditorObject(root);
 }
 function currentSculptFormations(){
+  const revision=volumeSculpt.revision;
+  if(cachedSculptRevision===revision&&cachedSculptFormations.length)return cachedSculptFormations;
   cachedSculptFormations=splitSculptFormations(volumeSculpt.serialize());
+  cachedSculptRevision=revision;
   return cachedSculptFormations;
 }
 function sculptFormationById(id){
@@ -3021,6 +3026,7 @@ function refreshRockFormationOptions(preferId=null){
   return formations;
 }
 function generateSelectedRockVariant({seed=null,descriptor=null,recordHistory=true}={}){
+  if(rockGenerationBusy&&recordHistory)return null;
   const id=rockFormationSelect.value,formation=sculptFormationById(id);
   if(!formation){rockFormationStatus.textContent='Selecteer eerst een sculptformatie.';return null;}
   const persistent=rockFormationDescriptors.get(id);
@@ -3079,20 +3085,32 @@ function changeCurrentFormationSkin(){
   if(saved){saved.skin=skin;saved.transform=rockFormationMeshes.transformFor(id);rockFormationDescriptors.set(id,structuredClone(saved));}
   updateFormationControls();
 }
-function generateAllRockMeshes(){
+async function generateAllRockMeshes(){
+  if(rockGenerationBusy)return;
   const formations=refreshRockFormationOptions(),previous=rockFormationSelect.value;
   if(!formations.length)return;
-  removeLegacyGeneratedRocks();
+  removeLegacyGeneratedRocks();rockGenerationBusy=true;rockGenerateAll.disabled=true;generateRockFormationBtn.disabled=true;
   let made=0,skipped=0;
-  for(const formation of formations){
-    const saved=rockFormationDescriptors.get(formation.id);
-    if(saved?.locked){skipped++;continue;}
-    rockFormationSelect.value=formation.id;
-    if(generateSelectedRockVariant())made++;
+  try{
+    for(let i=0;i<formations.length;i++){
+      const formation=formations[i],saved=rockFormationDescriptors.get(formation.id);
+      if(saved?.locked){skipped++;continue;}
+      rockFormationSelect.value=formation.id;
+      rockFormationStatus.textContent=`Mesh ${i+1}/${formations.length} genereren…`;
+      await new Promise(requestAnimationFrame);
+      const next=normalizeRockFormationDescriptor(descriptorFromControls(formation.id,randomRockVariantSeed()));
+      next.formationId=formation.id;
+      const rendered=renderRockFormationDescriptor(formation,next);
+      const history=historyForFormation(formation.id);
+      history.items.push(structuredClone(next));if(history.items.length>12)history.items.shift();history.index=history.items.length-1;
+      if(rendered?.root)made++;
+    }
+  }finally{
+    rockGenerationBusy=false;rockGenerateAll.disabled=false;
+    if(formations.some(f=>f.id===previous))rockFormationSelect.value=previous;
+    updateFormationControls();
+    rockFormationStatus.textContent=`${made} meshvarianten gegenereerd · ${skipped} locked overgeslagen`;
   }
-  if(formations.some(f=>f.id===previous))rockFormationSelect.value=previous;
-  updateFormationControls();
-  rockFormationStatus.textContent=`${made} meshvarianten gegenereerd · ${skipped} locked overgeslagen`;
 }
 function restoreRockFormationMeshes(records=[]){
   for(const root of rockFormationMeshes.roots())if(rockCollisionRoots.delete(root))rockCollisionRevision++;
