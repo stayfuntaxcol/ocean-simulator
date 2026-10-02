@@ -5556,6 +5556,9 @@ addEventListener('keydown',e=>{
   if(editMode&&editorView==='detail'&&selectedEditorRoot&&(e.code==='Delete'||e.code==='Backspace')){
     e.preventDefault();deleteSelectedEditorObject();return;
   }
+  if(editMode&&editorView==='sculpt'&&e.code==='Tab'&&!e.repeat){
+    e.preventDefault();setSculptPreviewMode(!sculptPreviewMode);return;
+  }
   if(e.code==='Space'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
     e.preventDefault();setPressureOverlay(!pressureOverlayVisible);return;
   }
