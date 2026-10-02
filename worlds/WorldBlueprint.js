@@ -1,3 +1,4 @@
+import { normalizeVolumeSculpt } from './VolumeSculpt.js';
 const TYPES=new Set(['rocks','coral','anemone','sponge','seagrass','shell']);
 const finite=value=>Number.isFinite(Number(value))?Number(value):null;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
@@ -25,5 +26,6 @@ export function normalizeWorldBlueprint(value,{worldHalf=144,maxObjects=1200}={}
       terrain.push({ix,iz,offset:clamp(offset,-12,10)});
     }
   }
-  return {format:'ocean-world-blueprint-v1',name:String(value.name||'AI-landschap').slice(0,80),objects,terrain};
+  const sculpt=normalizeVolumeSculpt(value.sculpt,{worldHalf,maxCells:12000});
+  return {format:'ocean-world-blueprint-v1',name:String(value.name||'AI-landschap').slice(0,80),objects,terrain,sculpt};
 }
