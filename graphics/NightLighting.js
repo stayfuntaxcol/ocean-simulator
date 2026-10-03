@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 
 export const FLASHLIGHT_STYLES=Object.freeze({
-  fluorescent:{name:'Fluorescent',color:0x79ffbd,intensity:52},
-  turquoise:{name:'Turquoise',color:0x45ffe6,intensity:56},
-  ethereal:{name:'Ethereal',color:0xa9c8ff,intensity:48},
+  fluorescent:{name:'Fluorescent',color:0x79ffbd,intensity:104},
+  turquoise:{name:'Turquoise',color:0x45ffe6,intensity:112},
+  ethereal:{name:'Ethereal',color:0xa9c8ff,intensity:96},
 });
 
 export function createNightFlashlight({scene,camera}={}){
-  const light=new THREE.SpotLight(0x45ffe6,56,58,Math.PI*.105,.64,1.25);
+  // Double the projected cone area; preserve illumination across the wider beam.
+  const beamAngle=Math.atan(Math.SQRT2*Math.tan(Math.PI*.105));
+  const light=new THREE.SpotLight(0x45ffe6,112,58,beamAngle,.64,1.25);
   light.name='Night exploration flashlight';
   const target=new THREE.Object3D();target.name='Flashlight target';
   scene.add(light,target);

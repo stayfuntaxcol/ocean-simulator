@@ -5,7 +5,7 @@ const bundle=process.env.CHROMIUM_BUNDLE;
 const chromiumOptions=bundle?(await import(process.env.CHROMIUM_MODULE||'@sparticuz/chromium')).default:null;
 const root=new URL('../',import.meta.url).pathname.replace(/\/$/,''),origin='http://127.0.0.1:8765';
 const artifacts=process.env.FISH_LIBRARY_ARTIFACTS||'/tmp/fish-library-review';await fs.mkdir(artifacts,{recursive:true});
-const browser=await chromium.launch(bundle?{headless:true,executablePath:bundle+'/chromium',args:chromiumOptions.args.filter(arg=>arg!=='--single-process'),env:{...process.env,LD_LIBRARY_PATH:bundle,FONTCONFIG_PATH:bundle+'/fonts'}}:{headless:true});
+const browser=await chromium.launch(bundle?{headless:true,executablePath:bundle+'/chromium',args:chromiumOptions.args.filter(arg=>arg!=='--single-process'),env:{...process.env,LD_LIBRARY_PATH:bundle,FONTCONFIG_PATH:bundle+'/fonts'}}:{headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']}:null)});
 const errors=[],requests=[];
 async function context(){
  const ctx=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});
@@ -31,6 +31,10 @@ async function context(){
   await route.fulfill({path:root+file,contentType:file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html'});
  });
  ctx.on('request',r=>{if(/firebasedatabase|firebaseio|firebasestorage/.test(r.url()))requests.push(r.url());});return ctx;
+}
+async function openOceanLibrary(page){
+ await page.locator('[data-menu-panel="design"]').click();
+ await page.locator('#openFishLibrary').click();
 }
 const getRecords=page=>page.evaluate(async()=>{const {listFish}=await import('/library/FishStore.js');return listFish();});
 async function waitIdle(page){await page.waitForFunction(()=>!document.querySelector('#fishLibraryDialog')?.hasAttribute('aria-busy'));}
@@ -76,7 +80,7 @@ try{
  await ocean.waitForFunction(()=>window.__libraryQA?.state().world==='A'&&window.__libraryQA.state().editable,null,{timeout:60000});
  const before=await ocean.evaluate(()=>window.__libraryQA.state());
  assert.equal((await getRecords(ocean)).length,0,'second browser starts with an empty collection');
- await ocean.locator('#openFishLibrary').click();await ocean.locator('.fl-empty').waitFor();
+ await openOceanLibrary(ocean);await ocean.locator('.fl-empty').waitFor();
  await ocean.locator('.fl-files').setInputFiles([file,file]);await ocean.waitForFunction(()=>document.querySelector('.fl-message').textContent.includes('1 al aanwezig'),null,{timeout:60000});await waitIdle(ocean);
  assert.equal((await getRecords(ocean)).length,1);assert.equal((await getRecords(ocean))[0].name,'Koraalvriend');
  await ocean.locator('select[aria-label="Aantal vissen uit bibliotheek"]').selectOption('8');
@@ -92,10 +96,10 @@ try{
  // Reject corrupt and external-resource GLBs without losing the collection.
  await ocean.locator('.fl-files').setInputFiles({name:'kapot.glb',mimeType:'model/gltf-binary',buffer:Buffer.from('broken')});await ocean.waitForFunction(()=>document.querySelector('.fl-message').classList.contains('fl-error'));await waitIdle(ocean);
  assert.equal((await getRecords(ocean)).length,1);
- await ocean.reload();await ocean.waitForFunction(()=>window.__libraryQA?.state().world==='A');await ocean.locator('#openFishLibrary').click();await ocean.locator('.fl-card').waitFor();
+ await ocean.reload();await ocean.waitForFunction(()=>window.__libraryQA?.state().world==='A');await openOceanLibrary(ocean);await ocean.locator('.fl-card').waitFor();
  assert.equal((await getRecords(ocean)).length,1,'library survives reload');
  await ocean.screenshot({path:artifacts+'/ocean-library.png'});
- await ocean.goto(origin+'/?world=B');await ocean.waitForFunction(()=>window.__libraryQA?.state().world==='B');await ocean.locator('#openFishLibrary').click();await ocean.locator('.fl-card').waitFor();
+ await ocean.goto(origin+'/?world=B');await ocean.waitForFunction(()=>window.__libraryQA?.state().world==='B');await openOceanLibrary(ocean);await ocean.locator('.fl-card').waitFor();
  assert.ok(await ocean.getByRole('button',{name:'Voeg toe aan mijn oceaan',exact:true}).isDisabled(),'visitor cannot place');
  // Metadata fields treat names as text, and deletion is a local operation.
  await ocean.locator('.fl-metadata summary').click();await ocean.locator('.fl-fields input').first().fill('<img src=x onerror=alert(1)>');await ocean.getByRole('button',{name:'Naam en maker bewaren',exact:true}).click();await waitIdle(ocean);

@@ -259,7 +259,7 @@ await page.waitForFunction(()=>window.__ecosystemQA).catch(error=>{
   throw error;
 });
 const ui=await page.evaluate(()=>{
-  const panel=document.getElementById('graphicsOptionsPanel');
+  const panel=document.getElementById('settingsDialog');
   const collapsedInitially=!panel.open;
   const style=document.getElementById('fishRenderStyle');
   style.value='realistic';style.dispatchEvent(new Event('change',{bubbles:true}));
@@ -272,7 +272,7 @@ await page.waitForFunction(()=>document.getElementById('hud').getBoundingClientR
 const worldPanel=await page.locator('#journeyHud').boundingBox();
 assert.ok(worldPanel.x<20&&worldPanel.y<20&&worldPanel.x+worldPanel.width<1440*.35,'world panel leaves center clear');
 // Actual pointer-lock lifecycle, not a manual CSS class toggle.
-await page.locator('#startBtn').click();
+await page.locator('#freeSwimBtn').click();
 await page.waitForFunction(()=>Boolean(document.pointerLockElement)&&document.getElementById('startBtn').textContent==='Verkennen actief'&&!document.getElementById('hud').classList.contains('settings-open'));
 assert.equal(await page.locator('#hud').isVisible(),false);
 await page.keyboard.press('Escape');
@@ -283,24 +283,26 @@ await page.waitForFunction(()=>!document.pointerLockElement&&document.getElement
 assert.equal(await page.locator('#journeyMenu').isVisible(),true,'world menu survives Escape/unlock');
 await page.locator('#journeyMenu').click();
 assert.equal(await page.locator('#hud').isVisible(),true);
-await page.locator('#graphicsOptionsPanel > summary').click();
-assert.equal(await page.locator('#graphicsOptionsPanel').evaluate(e=>e.open),true);
+await page.locator('[data-menu-panel="settings"]').click();
+assert.equal(await page.locator('#settingsDialog').evaluate(e=>e.open),true);
 await page.evaluate(()=>window.__ecosystemQA.lateUnlock());
-assert.equal(await page.locator('#hud').isVisible(),true,'late unlock cannot hide the open panel');
-assert.equal(await page.locator('#journeyMenu').getAttribute('aria-expanded'),'true');
-await page.locator('#journeyMenu').click();assert.equal(await page.locator('#hud').isVisible(),false);
+assert.equal(await page.locator('#settingsDialog').isVisible(),true,'late unlock cannot hide the open panel');
+assert.equal(await page.locator('#journeyMenu').getAttribute('aria-expanded'),'false');
 await page.locator('#journeyMenu').click();assert.equal(await page.locator('#hud').isVisible(),true);
+await page.locator('[data-menu-panel="settings"]').click();
 await page.locator('#fishRenderStyle').selectOption('cartoon');
 await page.locator('#fishRenderStyle').selectOption('realistic');
-await page.locator('#startBtn').click();
+await page.locator('#freeSwimBtn').click();
 await page.waitForFunction(()=>Boolean(document.pointerLockElement)&&document.getElementById('startBtn').textContent==='Verkennen actief'&&!document.getElementById('hud').classList.contains('settings-open'));
 assert.equal(await page.locator('#hud').isVisible(),false,'resuming swimming hides settings again');
 await page.keyboard.press('o');
 await page.waitForFunction(()=>!document.pointerLockElement&&document.getElementById('hud').classList.contains('settings-open'));
 assert.equal(await page.locator('#hud').isVisible(),true,'O opens options directly during swimming');
-assert.equal(await page.locator('#graphicsOptionsPanel').evaluate(e=>e.open),true);
+assert.equal(await page.locator('#settingsDialog').evaluate(e=>e.open),false);
+await page.locator('[data-menu-panel="save"]').click();
 await page.locator('#cloudWorldName').fill('Mijn oceaan');await page.keyboard.press('o');
 assert.equal(await page.locator('#cloudWorldName').inputValue(),'Mijn oceaano','O remains text in input fields');
+await page.locator('#journeyMenu').click();
 ui.pointerLockOptions=true;ui.keyboardOptions=true;ui.lateUnlockSafe=true;ui.singleLeftMenu=true;
 const streaming=await page.evaluate(()=>window.__ecosystemQA.streamingRocks());
 console.log(JSON.stringify({streaming}));
@@ -327,7 +329,7 @@ const mobile=await page.evaluate(()=>{const panel=document.getElementById('ecosy
 assert.ok(mobile.panelRight<=mobile.viewport&&mobile.hudRight<=mobile.viewport);
 await page.waitForFunction(()=>document.getElementById('hud').getBoundingClientRect().top>=document.getElementById('journeyHud').getBoundingClientRect().bottom);
 await page.screenshot({path:'/tmp/ecosystem-dashboard-mobile.png',fullPage:true});
-assert.equal(await page.locator('#minimapWrap').isVisible(),false,'mobile map cannot cover menu controls');
+assert.equal(await page.locator('#minimapWrap').isVisible(),true,'navigation map remains available on mobile');
 await page.setViewportSize({width:1440,height:1000});
 await page.locator('#journeyMenu').click();
 for(const distance of [6,1]){
@@ -370,6 +372,7 @@ await page.locator('#fishLibraryDialog .fl-close').click();
 assert.equal(await page.evaluate(()=>window.__firebaseWrites||0),0);assert.deepEqual(errors,[]);
 console.log(JSON.stringify({growth,split,surfaceRoute,animals,clock,survival}));
 await page.locator('#journeyMenu').click();
+await page.locator('#ecosystemPanel > summary').click();
 await page.getByText('Populatiegroei en tijd',{exact:true}).click();
 assert.equal(await page.locator('#ecologySpeed').isVisible(),true);
 await page.screenshot({path:'/tmp/ocean-population-controls.png'});

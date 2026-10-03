@@ -10,6 +10,7 @@
     "build:micro-review": "node scripts/build-micro-review.mjs",
     "test:sculpt-browser": "node scripts/test-sculpt-browser.mjs",
     "test:recovery-browser": "node scripts/test-recovery-browser.mjs",
+    "test:menu-browser": "node scripts/test-menu-browser.mjs",
     "benchmark:sculpt": "node scripts/benchmark-sculpt.mjs"
   },
   "devDependencies": {

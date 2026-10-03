@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./graphics/graphics.css">
   <link rel="stylesheet" href="./worlds/community.css">
   <link rel="stylesheet" href="./library/library.css">
+  <link rel="stylesheet" href="./ui/menu.css">
   <style>
     :root{
       --bg:#061827;
@@ -27,8 +28,6 @@
       box-shadow:0 10px 30px rgba(0,0,0,.25)
     }
     #hud.swimming.settings-open{display:block}
-    #graphicsOptionsPanel{margin-top:10px}
-    #graphicsOptionsPanel>summary{font-size:14px;color:#d9f5ff}
     #weatherOptionsPanel{margin:9px 0;border:1px solid rgba(127,226,255,.25);border-radius:10px;background:rgba(4,42,55,.34);overflow:hidden}
     #weatherOptionsPanel>summary{padding:9px 10px;cursor:pointer;color:#d9f5ff;font-size:13px;font-weight:700}
     .weather-controls{padding:0 10px 10px;display:grid;gap:8px;font-size:12px}
@@ -141,7 +140,7 @@
     #minimap{display:block;width:202px;height:202px;cursor:crosshair;border-radius:10px;background:#082936;border:1px solid rgba(255,255,255,.12)}
     #minimapLegend{display:flex;justify-content:space-between;gap:5px;margin-top:6px;color:#bfe5f3;font-size:10px}
     #minimapWrap.collapsed{width:auto;padding:8px 10px}
-    #minimapWrap.collapsed #minimap,#minimapWrap.collapsed #minimapLegend,#minimapWrap.collapsed #mapZoomOut,#minimapWrap.collapsed #mapZoomIn{display:none}
+    #minimapWrap.collapsed #minimap,#minimapWrap.collapsed #minimapLegend{display:none}
     @media (max-width:700px){#minimapWrap{right:10px;bottom:54px;width:174px}#minimap{width:152px;height:152px}}
 
     @media (max-width:700px){
@@ -547,13 +546,13 @@
     <span id="journeyPermission"></span>
     <button id="journeyAtlas" type="button">Werelden &amp; doorgangen</button>
     <button id="journeyMenu" type="button" aria-controls="hud" aria-expanded="true" title="Menu openen of sluiten (O)">Menu</button>
-    <span id="journeyControls">Esc: muis vrij · O: menu</span>
+    <button id="freeSwimBtn" type="button" title="Vrij zwemmen (Z)">Zwemmen</button>
+    <span id="journeyControls">Esc: muis vrij · O: menu · Z: zwemmen</span>
     <p id="journeyStatus" role="status" aria-live="polite"></p>
   </nav>
   <div id="journeyWaterVeil" aria-hidden="true"></div>
   <div id="stats">
     <div id="graphicsMetrics">Beeldmeting starten…</div>
-    <div id="sculptMetrics" style="font-size:11px;line-height:1.5">Sculpt: geen chunks</div>
     <div>Vissen: <span id="fishCount">0</span></div>
     <div>Snelheid: <span id="speedText">0</span></div>
     <div>Diepte: <span id="depthText">0</span> m</div>
@@ -571,7 +570,7 @@
 
 
   <div id="minimapWrap">
-    <div id="minimapHeader"><span>🧭 Kaart · klik om te reizen · spatie: belasting</span><div id="minimapControls"><button id="mapZoomOut" type="button" title="Uitzoomen">−</button><button id="mapZoomIn" type="button" title="Inzoomen">+</button><button id="mapToggle" type="button" title="Kaart inklappen">▾</button></div></div>
+    <div id="minimapHeader"><span>🧭 Kaart · klik om te reizen · spatie: belasting</span><div id="minimapControls"><button id="mapToggle" type="button" title="Kaart inklappen">▾</button></div></div>
     <canvas id="minimap" width="404" height="404" aria-label="Minimap van de onderwaterwereld"></canvas>
     <div id="minimapLegend"><span>laag landschap</span><span>rijk rif</span><span id="minimapPressureLegend" hidden>oranje/rood: overbelast</span><span>▲ jij</span></div>
   </div>
@@ -656,6 +655,7 @@ import { normalizeWorldBlueprint } from './worlds/WorldBlueprint.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { createUnderwaterAtmosphere, installCaustics, seededRandom } from './graphics/UnderwaterAtmosphere.js';
 import { createNightFlashlight } from './graphics/NightLighting.js';
+import { installMenuPanels } from './ui/MenuPanels.js';
 import { createJellyfishSwarm } from './graphics/JellyfishSwarm.js';
 import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
@@ -739,7 +739,6 @@ const journeyResize = new ResizeObserver(()=>{
 });
 journeyResize.observe(journeyHud);
 addEventListener('pagehide',()=>journeyResize.disconnect(),{once:true});
-const graphicsOptionsPanel = document.getElementById('graphicsOptionsPanel');
 const schoolCountText = document.getElementById('schoolCountText');
 const healthText = document.getElementById('healthText');
 const criticalFishText = document.getElementById('criticalFishText');
@@ -858,8 +857,6 @@ const importBlueprintBtn = document.getElementById('importBlueprintBtn');
 const blueprintFile = document.getElementById('blueprintFile');
 const minimapWrap = document.getElementById('minimapWrap');
 const minimap = document.getElementById('minimap');
-const mapZoomOut = document.getElementById('mapZoomOut');
-const mapZoomIn = document.getElementById('mapZoomIn');
 const mapToggle = document.getElementById('mapToggle');
 const minimapCtx = minimap.getContext('2d');
 let minimapZoom = 1;
@@ -907,19 +904,34 @@ app.insertBefore(renderer.domElement, app.firstChild);
 
 const controls = new PointerLockControls(camera, renderer.domElement);
 
-startBtn.addEventListener('click', () => { if(!editMode){ if(followMode) stopFollowing(false); controls.lock(); } });
+const menuPanels=installMenuPanels({
+  beforeOpen:()=>{controls.unlock();closeWorldAtlas();Object.keys(keys).forEach(key=>keys[key]=false);},
+  onExpert:()=>{if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy)return;if(!editMode)setEditMode(true);setEditorView('sculpt');}
+});
+function startFreeSwimming(){
+  if(communityOcean?.busy||cloudBusy||document.getElementById('fishLibraryDialog')?.open)return;
+  menuPanels.close();closeWorldAtlas();
+  if(followMode)stopFollowing(false);
+  if(editMode)setEditMode(false);
+  document.activeElement?.blur();
+  Object.keys(keys).forEach(key=>keys[key]=false);
+  controls.lock();
+}
+startBtn.addEventListener('click',startFreeSwimming);
+document.getElementById('freeSwimBtn').addEventListener('click',startFreeSwimming);
 renderer.domElement.addEventListener('click', () => {
   if (!editMode && !controls.isLocked && !followMode) controls.lock();
 });
 
 controls.addEventListener('lock', () => {
+  menuPanels.close();document.activeElement?.blur();
   document.getElementById('hud').classList.add('swimming');
   document.getElementById('hud').classList.remove('settings-open');
   journeyMenu.setAttribute('aria-expanded','false');
   startBtn.textContent = editMode ? 'Detailbouw actief' : 'Verkennen actief';
   hint.textContent = editMode
     ? 'DETAILBOUW · richt het vizier en klik · WASD bewegen · Q/E hoogte · Shift versnellen · Esc: gereedschap'
-    : 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: menu';
+    : 'WASD · Q omhoog · E omlaag · Shift versnellen · Esc: muis vrij · O: menu · Z: vrij zwemmen';
 });
 controls.addEventListener('unlock', () => {
   startBtn.textContent = editMode ? 'Detailbouw hervatten' : 'Verder verkennen';
@@ -927,15 +939,14 @@ controls.addEventListener('unlock', () => {
   // An asynchronous unlock must leave an already opened menu alone.
   Object.keys(keys).forEach(key=>keys[key]=false);
   if(editMode){
-    document.getElementById('hud').classList.remove('swimming');
-    document.getElementById('hud').classList.add('settings-open');
-    journeyMenu.setAttribute('aria-expanded','true');
+    if(!menuPanels.active)menuPanels.open('build');
   }
   hint.textContent = editMode
     ? 'Muis vrij · kies gereedschap of pas het geselecteerde object aan · klik op de wereld om verder te bouwen.'
     : 'Muis vrij · klik op Menu of druk O. Klik op het water om verder te verkennen.';
 });
 function openMainMenu(){
+  menuPanels.close();
   if(followMode)stopFollowing(false);
   controls.unlock();
   closeWorldAtlas();
@@ -944,7 +955,7 @@ function openMainMenu(){
   journeyMenu.setAttribute('aria-expanded','true');
 }
 function toggleMainMenu(){
-  if(document.getElementById('hud').classList.contains('swimming'))openMainMenu();
+  if(menuPanels.active||document.getElementById('hud').classList.contains('swimming'))openMainMenu();
   else{
     document.getElementById('hud').classList.remove('settings-open');
     document.getElementById('hud').classList.add('swimming');
@@ -1938,8 +1949,6 @@ function drawMinimap(){
   ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w/2,34);ctx.lineTo(w/2,49);ctx.stroke();
 }
 
-mapZoomIn.addEventListener('click',e=>{e.stopPropagation();minimapZoom=Math.min(4,minimapZoom*1.5);drawMinimap();});
-mapZoomOut.addEventListener('click',e=>{e.stopPropagation();minimapZoom=Math.max(1,minimapZoom/1.5);drawMinimap();});
 mapToggle.addEventListener('click',e=>{e.stopPropagation();minimapWrap.classList.toggle('collapsed');mapToggle.textContent=minimapWrap.classList.contains('collapsed')?'▴':'▾';});
 
 minimap.addEventListener('click',e=>{
@@ -3555,6 +3564,7 @@ function refreshWorldPermissions(){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
   const flowReadOnly=!canEditCurrentWorld();
+  document.getElementById('openExpertBuild').disabled=flowReadOnly;
   for(const control of [currentFlowEnabled,currentFlowCategory,currentFlowStrength,currentFlowWidth,currentFlowHeight,currentFlowDepth,currentFlowHeading,currentFlowLength,currentFlowBend,currentFlowTurbulence,currentFlowRockBoost]){
     if(control)control.disabled=flowReadOnly||!selectedCurrentFlow();
   }
@@ -6099,6 +6109,11 @@ function setFollowButtonState(){
 }
 function startFollowing(fish,mode='fish'){
   if(!fish)return;
+  // A retained select/input focus used to swallow movement keys after previewing a fish.
+  menuPanels.close();document.activeElement?.blur();
+  document.getElementById('hud').classList.add('swimming');
+  document.getElementById('hud').classList.remove('settings-open');
+  journeyMenu.setAttribute('aria-expanded','false');
   selectedFish=fish; followMode=mode; followLookReady=false; followFilterReady=false; followRouteWaypoint=null; followOrbitInitialized=false;
   followPanel.style.display='block';
   const school=selectedSchool();
@@ -6419,6 +6434,13 @@ function updateFollowCamera(dt){
 const keys = {};
 addEventListener('keydown',e=>{
   if(document.getElementById('fishLibraryDialog')?.open || e.target?.closest?.('input,textarea,select,[contenteditable]'))return;
+  if(e.code==='KeyZ'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){
+    e.preventDefault();startFreeSwimming();return;
+  }
+  if(e.code==='KeyO'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('worldAtlasOverlay').classList.contains('open')){
+    e.preventDefault();toggleMainMenu();return;
+  }
+  if(menuPanels.active&&menuPanels.active!=='build')return;
   if(editMode&&editorView==='detail'&&selectedEditorRoot&&(e.code==='Delete'||e.code==='Backspace')){
     e.preventDefault();deleteSelectedEditorObject();return;
   }
@@ -6431,9 +6453,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyF'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!editMode){
     e.preventDefault();nightFlashlightToggle.checked=nightFlashlight.toggle();return;
   }
-  if(e.code==='KeyO'&&!editMode&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('worldAtlasOverlay').classList.contains('open')){
-    e.preventDefault();toggleMainMenu();return;
-  }
+  if(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE'].includes(e.code))e.preventDefault();
   keys[e.code]=true;
   if(e.code==='Escape' && followMode){ e.preventDefault(); stopFollowing(false); }
 });
@@ -6446,6 +6466,7 @@ const right = new THREE.Vector3();
 
 function updateMovement(dt){
   if(document.getElementById('fishLibraryDialog')?.open || communityOcean?.busy || cloudBusy || document.getElementById('worldAtlasOverlay').classList.contains('open'))return;
+  if(menuPanels.active&&(menuPanels.active!=='build'||!editMode))return;
   if(followMode){ updateFollowCamera(dt); return; }
 
   if(editMode){
@@ -6572,7 +6593,7 @@ if (referenceMode) {
 const graphicsMetrics = document.getElementById('graphicsMetrics');
 let visualTime = referenceMode ? REFERENCE.time : 0;
 function simulationTime() { return referenceMode ? visualTime : performance.now()/1000; }
-let metricStart = performance.now(), metricFrames = 0, lastSculptStreamAt=-Infinity,lastSculptCollisionQueries=0;
+let metricStart = performance.now(), metricFrames = 0, lastSculptStreamAt=-Infinity;
 let lastRockDetailUpdate = -Infinity, previousSeabedDetail = null;
 let lastReefDetailUpdate = -Infinity, previousReefDetail = null;
 let lastWeatherUiUpdate = -Infinity;
@@ -6666,9 +6687,6 @@ function animate(){
     graphicsMetrics.textContent = Math.round(metricFrames * 1000 / (metricNow - metricStart)) + ' FPS · '
       + renderer.info.render.calls + ' draw calls · '
       + Math.round(renderer.info.render.triangles / 1000) + 'k driehoeken';
-    const sculpt=rockFormationMeshes.stats,preview=volumeSculpt.stats;
-    const collisionPerSecond=Math.max(0,sculpt.collisionQueries-lastSculptCollisionQueries)*1000/(metricNow-metricStart);lastSculptCollisionQueries=sculpt.collisionQueries;
-    document.getElementById('sculptMetrics').textContent=`Sculpt: ${sculpt.visibleChunks}/${sculpt.loadedChunks}/${sculpt.totalChunks} chunks zichtbaar/geladen/totaal · ${sculpt.triangles} triangles · LOD ${sculpt.lod0}/${sculpt.lod1}/${sculpt.lod2} · collision ${Math.round(collisionPerSecond)}/s · mesh ${sculpt.buildMs.toFixed(1)} ms · preview ${preview.triangles} triangles · dirty ${preview.dirtyChunks} · budget-cull ${sculpt.budgetCulledChunks}`;
     metricFrames = 0;
     metricStart = metricNow;
   }
@@ -6711,7 +6729,11 @@ if(!referenceMode){
     openMenu:toggleMainMenu
   });
   refreshWorldPermissions();
-}else document.getElementById('journeyHud').hidden=true;
+}else{
+  document.getElementById('journeyWorldName').textContent='Vergelijkingsscène';
+  document.getElementById('journeyAtlas').hidden=true;
+  journeyMenu.onclick=toggleMainMenu;
+}
 refreshWorldStreaming(true);
 settleSpeciesHomes();
 updateSchoolBrains(simulationTime());

@@ -186,7 +186,7 @@ await page.evaluate(()=>window.__deny=false);
 assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
 state=await page.evaluate(()=>window.__communityQA.state());
 assert.deepEqual(state.cells.map(cell=>({key:cell.key,layers:cell.layers.map(layer=>({id:layer.id,type:layer.type}))})),own.cells.map(cell=>({key:cell.key,layers:cell.layers.map(layer=>({id:layer.id,type:layer.type}))})),'repeated travel preserves own designed layers');assert.equal(state.editable,true);
-await page.locator('#journeyMenu').click();assert.ok(await page.evaluate(()=>{const e=document.getElementById('hud');return e.scrollHeight>e.clientHeight&&getComputedStyle(e).overflowY==='auto';}));
+await page.locator('#journeyMenu').click();assert.ok(await page.evaluate(()=>{const e=document.getElementById('hud');return e.scrollWidth<=e.clientWidth&&getComputedStyle(e).overflowY==='auto'&&e.querySelectorAll('.menu-clusters button').length===4;}));
 assert.equal(await page.evaluate(()=>window.__writes??0),0);assert.deepEqual(errors,[]);
 
 // De atlas is de duurzame fallback wanneer browser-/poortwijzigingen de losse
