@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Conservative per-stone volumes retain gaps between separate rocks.
 // Only imported fish use this safeguard; editor and camera collision stay unchanged.
-export function moveImportedFish(from,to,obstacles,radius,{minY=-40,maxY=18}={}){
+function moveBoxFish(from,to,obstacles,radius,{minY=-40,maxY=18}={}){
   const padding=radius+.04,reach=from.distanceTo(to)+padding+4;
   const boxes=obstacles.filter(b=>b.distanceToPoint(from)<=reach).map(b=>b.clone().expandByScalar(padding));
   const free=p=>p.y>=minY&&p.y<=maxY&&!obstacles.some(b=>p.x>=b.min.x-padding&&p.x<=b.max.x+padding&&p.y>=b.min.y-padding&&p.y<=b.max.y+padding&&p.z>=b.min.z-padding&&p.z<=b.max.z+padding);
@@ -44,6 +44,20 @@ export function moveImportedFish(from,to,obstacles,radius,{minY=-40,maxY=18}={})
     }
   }
   return {position:free(safe)?safe:start,blocked:true,normal};
+}
+
+// A specialized density route composes with the unchanged ordinary-rock route.
+export function moveImportedFish(from,to,obstacles,radius,bounds={}){
+  const result=moveBoxFish(from,to,obstacles,radius,bounds);
+  const query=bounds.sculptCollision;if(!query)return result;
+  if(query(from,from,radius))return {position:from.clone(),blocked:true,trapped:true};
+  const hit=query(from,result.position,radius);if(!hit)return result;
+  const length=from.distanceTo(result.position),direction=result.position.clone().sub(from).normalize();
+  const safe=from.clone().addScaledVector(direction,Math.max(0,hit.distance-.025));
+  const remainder=result.position.clone().sub(safe);remainder.addScaledVector(hit.normal,-Math.min(0,remainder.dot(hit.normal)));
+  const slide=safe.clone().add(remainder);
+  if(!query(safe,slide,radius)&&!moveBoxFish(safe,slide,obstacles,radius,bounds).blocked)safe.copy(slide);
+  return {position:safe,blocked:true,normal:hit.normal};
 }
 
 // Route around a rock that cannot be cleared below the water surface.

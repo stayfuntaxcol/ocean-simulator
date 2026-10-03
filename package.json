@@ -7,7 +7,9 @@
     "test:community-browser": "node scripts/test-community-browser.mjs",
     "test:ecosystem-browser": "node scripts/test-ecosystem-browser.mjs",
     "build:reef-review": "node scripts/build-reef-review.mjs",
-    "build:micro-review": "node scripts/build-micro-review.mjs"
+    "build:micro-review": "node scripts/build-micro-review.mjs",
+    "test:sculpt-browser": "node scripts/test-sculpt-browser.mjs",
+    "benchmark:sculpt": "node scripts/benchmark-sculpt.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

@@ -8,7 +8,13 @@ for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){
 }
 const FACE_DIRS=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 
-export function splitSculptFormations(data,{densityThreshold=.18,minCells=2}={}){
+function touchesFormation(c,component){
+  for(let dx=-2;dx<=2;dx++)for(let dy=-2;dy<=2;dy++)for(let dz=-2;dz<=2;dz++)
+    if(component.has(sculptKey(c.ix+dx,c.iy+dy,c.iz+dz)))return true;
+  return false;
+}
+
+export function splitSculptFormations(data,{densityThreshold=.18,minCells=2,connectivity='legacy'}={}){
   const sculpt=normalizeVolumeSculpt(data);
   const occupied=new Map(sculpt.cells.filter(c=>c.density>=densityThreshold).map(c=>[sculptKey(c.ix,c.iy,c.iz),c]));
   const remaining=new Set(occupied.keys()),formations=[];
@@ -17,7 +23,7 @@ export function splitSculptFormations(data,{densityThreshold=.18,minCells=2}={})
     while(queue.length){
       const key=queue.pop(),cell=occupied.get(key);if(!cell)continue;
       cells.push(cell);
-      for(const [dx,dy,dz] of NEIGHBORS){
+      for(const [dx,dy,dz] of (connectivity==='faces'?FACE_DIRS:NEIGHBORS)){
         const next=sculptKey(cell.ix+dx,cell.iy+dy,cell.iz+dz);
         if(remaining.delete(next))queue.push(next);
       }
@@ -28,10 +34,13 @@ export function splitSculptFormations(data,{densityThreshold=.18,minCells=2}={})
     for(const c of cells){
       const w=Math.max(.05,c.density);sx+=c.ix*w;sy+=c.iy*w;sz+=c.iz*w;weight+=w;
     }
-    const anchor=cells[0];
+    const anchor=cells[0],component=new Set(cells.map(c=>sculptKey(c.ix,c.iy,c.iz)));
     formations.push({
       id:`sculpt-${anchor.ix}_${anchor.iy}_${anchor.iz}`,
       cells,cellSize:sculpt.cellSize,
+      // Sub-threshold samples still affect the interpolated boundary/normal.
+      densityCells:[...cells,...sculpt.cells.filter(c=>c.density<densityThreshold&&
+        touchesFormation(c,component))],
       center:{
         x:sculptWorldFromIndex(sx/weight,sculpt.cellSize),
         y:sculptWorldFromIndex(sy/weight,sculpt.cellSize),
@@ -187,10 +196,10 @@ function smoothPositions(positions,indices,cellSize,{
   return current;
 }
 
-export function buildContinuousRockSurface(formation,{densityThreshold=.18,smooth=true,shapeLevel=5}={}){
+export function buildContinuousRockSurface(formation,{densityThreshold=.18,smooth=true,shapeLevel=5,occupiedCells=formation.cells}={}){
   const level=clamp(Math.round(Number(shapeLevel)||5),1,5);
   const occupied=new Set(
-    formation.cells.filter(c=>c.density>=densityThreshold).map(c=>sculptKey(c.ix,c.iy,c.iz))
+    occupiedCells.filter(c=>c.density>=densityThreshold).map(c=>sculptKey(c.ix,c.iy,c.iz))
   );
   const positions=[],indices=[],vertexMap=new Map();
   const half=formation.cellSize*.5;

@@ -138,3 +138,15 @@ test('shape level 1 remains visible geometry without smoothing or subdivision',(
   assert.equal(blocky.stats.subdivision,0);
   assert.equal(blocky.stats.shapeLevel,1);
 });
+
+test('face grouping is opt-in so legacy saved formation IDs remain valid',()=>{
+  const data=sculptFromCells([[0,0,0],[0,1,0],[1,2,1],[1,3,1]]);
+  assert.equal(splitSculptFormations(data).length,1);
+  assert.equal(splitSculptFormations(data,{connectivity:'faces'}).length,2);
+});
+
+test('weak density halo remains available to the organic mesher',()=>{
+  const data=sculptFromCells([[0,0,0,1],[1,0,0,1],[2,0,0,.1]]);
+  const [formation]=splitSculptFormations(data);assert.equal(formation.cells.length,2);
+  assert.equal(formation.densityCells.length,3);
+});

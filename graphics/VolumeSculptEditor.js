@@ -4,6 +4,8 @@ import {
   sculptMapFromData,applyVolumeBrush,sculptWorldFromIndex
 } from '../worlds/VolumeSculpt.js';
 
+import { SculptChunkManager } from '../worlds/SculptChunkManager.js';
+
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const VIEW_MODES=new Set(['clay','cells','ghost']);
 
@@ -12,14 +14,13 @@ export function createVolumeSculptEditor({
   cellSize=SCULPT_CELL_SIZE,maxCells=SCULPT_MAX_CELLS
 }={}){
   const group=new THREE.Group();group.name='Volume sculpt blueprint';scene.add(group);
-  const cells=new Map(),instanceKeys=[];
-  const cellGeometry=new THREE.IcosahedronGeometry(cellSize*.72,1);
+  const cells=new Map(),chunks=new SculptChunkManager({cellSize}),previews=new Map();
+  let buildMs=0;
+  const cellGeometry=new THREE.IcosahedronGeometry(SCULPT_CELL_SIZE*.72,0);
   const cellMaterial=new THREE.MeshStandardMaterial({
     color:0x58cfe1,emissive:0x1b7f91,emissiveIntensity:.35,
     transparent:false,opacity:1,roughness:.82,metalness:0,depthWrite:true
   });
-  const mesh=new THREE.InstancedMesh(cellGeometry,cellMaterial,maxCells);
-  mesh.name='Volume sculpt cells';mesh.frustumCulled=false;mesh.count=0;mesh.userData.volumeSculpt=true;group.add(mesh);
 
   const dummy=new THREE.Object3D(),color=new THREE.Color();
   const prismGeometry=new THREE.CylinderGeometry(worldHalf,worldHalf,maxY-minY,6,1,true);
@@ -54,24 +55,37 @@ export function createVolumeSculptEditor({
     }else{
       cellMaterial.transparent=false;cellMaterial.opacity=1;cellMaterial.depthWrite=true;cellMaterial.emissiveIntensity=.30;
     }
-    cellMaterial.needsUpdate=true;dirty=true;refresh();
+    cellMaterial.needsUpdate=true;chunks.markAllDirty();dirty=true;refresh();
   }
 
   function refresh(){
-    if(!dirty)return;dirty=false;instanceKeys.length=0;
-    let i=0;
-    for(const [key,density] of cells){
-      if(i>=maxCells)break;
-      const [ix,iy,iz]=key.split(',').map(Number);
-      const x=sculptWorldFromIndex(ix,cellSize),y=sculptWorldFromIndex(iy,cellSize),z=sculptWorldFromIndex(iz,cellSize);
-      const scale=viewScale(density);
-      dummy.position.set(x,y,z);dummy.rotation.set(0,0,0);dummy.scale.setScalar(scale);dummy.updateMatrix();
-      mesh.setMatrixAt(i,dummy.matrix);
-      color.setRGB(.12+.10*density,.54+.30*density,.61+.31*density);mesh.setColorAt(i,color);
-      instanceKeys[i]=key;i++;
+    if(!dirty&&!chunks.dirty.size)return;
+    const start=performance.now();dirty=false;
+    for(const key of chunks.dirty){
+      const previous=previews.get(key);if(previous){group.remove(previous);previous.dispose();previews.delete(key);}
+      const chunk=chunks.chunks.get(key);if(!chunk)continue;
+      const surface=chunks.surfaceCells(chunk);if(!surface.length)continue;
+      const mesh=new THREE.InstancedMesh(cellGeometry,cellMaterial,surface.length);
+      mesh.name='Sculpt preview chunk '+key;mesh.userData.volumeSculpt=true;
+      mesh.userData.instanceKeys=surface.map(c=>c.key);mesh.frustumCulled=true;
+      for(let i=0;i<surface.length;i++){
+        const {ix,iy,iz,density}=surface[i];
+        dummy.position.set(ix*cellSize,iy*cellSize,iz*cellSize);
+        dummy.rotation.set(0,0,0);dummy.scale.setScalar(viewScale(density)*cellSize/SCULPT_CELL_SIZE);dummy.updateMatrix();
+        mesh.setMatrixAt(i,dummy.matrix);
+        color.setRGB(.12+.10*density,.54+.30*density,.61+.31*density);mesh.setColorAt(i,color);
+      }
+      mesh.instanceMatrix.needsUpdate=true;mesh.instanceColor.needsUpdate=true;
+      mesh.computeBoundingBox();mesh.computeBoundingSphere();group.add(mesh);previews.set(key,mesh);
     }
-    mesh.count=i;mesh.instanceMatrix.needsUpdate=true;
-    if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+    chunks.dirty.clear();buildMs=performance.now()-start;
+  }
+  function reloadChunks(){chunks.load(serialize().cells,cellSize);dirty=true;refresh();}
+  function updateVisibility(camera,{cullRadius=60}={}){
+    refresh();
+    for(const mesh of previews.values()){
+      mesh.visible=visible&&(!camera||mesh.boundingBox.distanceToPoint(camera.position)<=cullRadius);
+    }
   }
 
   function snapshotHistory(){
@@ -79,39 +93,40 @@ export function createVolumeSculptEditor({
     if(history.length>30)history.shift();
   }
   function beginStroke(){if(strokeOpen)return;strokeOpen=true;snapshotHistory();}
-  function endStroke(){strokeOpen=false;}
+  function endStroke(){strokeOpen=false;refresh();}
   function undo(){
     const previous=history.pop();if(!previous)return false;
     const mapped=sculptMapFromData(previous,{worldHalf,minY,maxY,maxCells});cells.clear();
     for(const [key,value] of mapped.cells)cells.set(key,value);
-    revision++;dirty=true;refresh();return true;
+    revision++;reloadChunks();return true;
   }
 
   function apply(point,mode=tool){
-    if(!point||mode==='cell'||(cells.size>=maxCells&&mode==='add'))return 0;
-    const before=cells.size;
-    const affected=applyVolumeBrush(cells,point,{
+    if(!point||mode==='cell')return 0;
+    let changes=0;
+    applyVolumeBrush(cells,point,{
       mode,cellSize,radius:brushRadius,strength,
+      onChange:(c,density)=>{chunks.setCell(c.ix,c.iy,c.iz,density);changes++;},
       accept:c=>accepted(c)&&(mode!=='add'||cells.has(c.key)||cells.size<maxCells)
     });
-    if(affected>0||cells.size!==before)revision++;
-    dirty=true;refresh();
-    return affected+(cells.size!==before?1:0);
+    if(changes)revision++;
+    dirty=true;if(!strokeOpen)refresh();
+    return changes;
   }
 
-  function removeInstance(instanceId){
-    const key=instanceKeys[Number(instanceId)];
+  function removeInstance(instanceId,object=previews.values().next().value){
+    const key=object?.userData?.instanceKeys?.[Number(instanceId)];
     if(!key||!cells.has(key))return false;
-    snapshotHistory();cells.delete(key);revision++;dirty=true;refresh();return true;
+    snapshotHistory();cells.delete(key);chunks.setCell(...key.split(',').map(Number),0);revision++;refresh();return true;
   }
 
   function brushPointFromHit(hit,mode=tool){
     if(!hit?.point)return null;
     const p=hit.point.clone();
     if(mode==='add'){
-      if(hit.object===mesh){
+      if(hit.object?.userData?.volumeSculpt){
         const n=hit.face?.normal?.clone?.()||new THREE.Vector3(0,1,0);
-        n.transformDirection(mesh.matrixWorld);
+        n.transformDirection(hit.object.matrixWorld);
         p.addScaledVector(n,cellSize*.55);
       }else{
         p.y=Math.max(p.y+cellSize*.42,terrain(p.x,p.z)+cellSize*.42);
@@ -136,12 +151,12 @@ export function createVolumeSculptEditor({
   function serialize(){return sculptDataFromMap(cells,cellSize);}
   function load(data){
     const normalized=normalizeVolumeSculpt(data,{worldHalf,minY,maxY,maxCells});
-    history.length=0;strokeOpen=false;cells.clear();
+    history.length=0;strokeOpen=false;cells.clear();cellSize=normalized.cellSize;
     const mapped=sculptMapFromData(normalized,{worldHalf,minY,maxY,maxCells});
     for(const [key,value] of mapped.cells)if(cells.size<maxCells)cells.set(key,value);
-    revision++;dirty=true;refresh();
+    revision++;reloadChunks();
   }
-  function clear(){if(cells.size){snapshotHistory();cells.clear();revision++;}strokeOpen=false;dirty=true;refresh();}
+  function clear(){if(cells.size){snapshotHistory();cells.clear();revision++;}strokeOpen=false;reloadChunks();}
   function setVisible(value){visible=Boolean(value);group.visible=visible;if(!visible)brush.visible=false;refresh();}
   function setBrushRadius(value){brushRadius=clamp(Number(value)||6,cellSize,36);if(brush.visible)brush.scale.setScalar(brushRadius);}
   function setStrength(value){strength=clamp(Number(value)||.45,.05,1);}
@@ -152,17 +167,18 @@ export function createVolumeSculptEditor({
   }
   function setViewMode(value){viewMode=VIEW_MODES.has(value)?value:'clay';applyViewStyle();}
   function dispose(){
-    scene.remove(group);cellGeometry.dispose();cellMaterial.dispose();mesh.dispose?.();
+    scene.remove(group);cellGeometry.dispose();cellMaterial.dispose();for(const mesh of previews.values())mesh.dispose();previews.clear();
     prism.geometry.dispose();prism.material.dispose();brush.geometry.dispose();brush.material.dispose();
   }
 
   group.visible=false;applyViewStyle();
   return {
-    group,mesh,brush,apply,beginStroke,endStroke,undo,removeInstance,
+    group,get mesh(){return previews.values().next().value;},get meshes(){return [...previews.values()];},brush,apply,beginStroke,endStroke,undo,removeInstance,
     brushPointFromHit,pointAtDistance,setBrushPreview,serialize,load,clear,refresh,
-    setVisible,setBrushRadius,setStrength,setTool,setViewMode,dispose,
+    updateVisibility,setVisible,setBrushRadius,setStrength,setTool,setViewMode,dispose,
     get visible(){return visible;},get count(){return cells.size;},get cellSize(){return cellSize;},get revision(){return revision;},
     get brushRadius(){return brushRadius;},get strength(){return strength;},get tool(){return tool;},get viewMode(){return viewMode;},
-    isSculptObject:object=>object===mesh||object?.userData?.volumeSculpt===true
+    get stats(){let visibleChunks=0,instances=0;for(const mesh of previews.values())if(group.visible&&mesh.visible){visibleChunks++;instances+=mesh.count;}return {visibleChunks,loadedChunks:previews.size,triangles:instances*20,dirtyChunks:chunks.dirty.size,buildMs};},
+    isSculptObject:object=>object?.userData?.volumeSculpt===true
   };
 }

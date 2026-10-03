@@ -482,7 +482,7 @@
             <button id="rockVariantLock" type="button">🔓 Vastzetten</button>
             <button id="rockGenerateAll" type="button">🪨 Toon alle</button>
           </div>
-          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;line-height:1.35">De sculpt is de vorm. De buitenkant wordt afgerond tot één vriendelijke rifmesh; grotten en holle ruimtes blijven open.</span>
+          <span id="rockFormationStatus" style="font-size:11px;color:#9cc9d8;line-height:1.35">De sculpt is de vorm. De buitenkant wordt per chunk afgerond tot een organisch rif; grotten en holle ruimtes blijven open.</span>
         </div>
         <div id="volumeSculptStatus">Build grote vormen, Carve ze daarna met een kleinere brush. Preview pauzeert bewerken zodat je vrij rond het resultaat kunt vliegen. Tab wisselt Edit/Preview.</div>
       </div>
@@ -553,6 +553,7 @@
   <div id="journeyWaterVeil" aria-hidden="true"></div>
   <div id="stats">
     <div id="graphicsMetrics">Beeldmeting starten…</div>
+    <div id="sculptMetrics" style="font-size:11px;line-height:1.5">Sculpt: geen chunks</div>
     <div>Vissen: <span id="fishCount">0</span></div>
     <div>Snelheid: <span id="speedText">0</span></div>
     <div>Diepte: <span id="depthText">0</span> m</div>
@@ -678,7 +679,7 @@ import { constrainWater, waterLimit, createFishNeighborhood, avoidFish, resolveF
 import { SPECIES_POLICY, populationPlan, habitatPreference, swimRhythm, bottomClearance, advanceBottomRest, reefTargetHeight, reefMotionPace, advanceFinPhase } from './graphics/SpeciesBehavior.js';
 import { evaluateEcosystem, naturalPopulationPlan, ecosystemAdvice } from './graphics/Ecosystem.js';
 import { growthBudget, juvenileScale, MATURITY_SECONDS, MAX_POPULATION } from './graphics/PopulationGrowth.js';
-import { moveImportedFish, createRockIndex, steerImportedFish } from './graphics/ImportedNavigation.js';
+import { moveImportedFish as moveImportedFishWithBounds, createRockIndex, steerImportedFish } from './graphics/ImportedNavigation.js';
 import { importedCollisionRadius, importedDayPhase, importedExploreRadius, importedReserveMode, importedRetargetSeconds } from './graphics/ImportedBehavior.js';
 import { FOOD_SECTOR_SIZE, advanceImportedVitality, buildFoodSectors, createImportedVitality, fishBiomass, foodAtPosition, foodSectorKey, healthMotionFactor, residenceDuration, summarizeFoodSectors, updateFoodSectors } from './graphics/FishVitality.js';
 import { ecologicalAge, formatOceanTraits, individualOceanTraits, normalizeOceanProfile, oceanBehavior, oceanPreset } from './graphics/OceanProfile.js';
@@ -1281,7 +1282,7 @@ function styleReef(root,type,color){
 const rockCollisionRoots = new Set();
 let rockCollisionRevision=0;
 const rockCellVolumes=new Map();
-const rockFormationMeshes=createRockFormationMeshSystem({parent:reef,caustics:atmosphere.uniforms});
+const rockFormationMeshes=createRockFormationMeshSystem({parent:reef,caustics:atmosphere.uniforms,camera});
 const rockFormationDescriptors=new Map();
 let cachedSculptFormations=[];
 let cachedSculptRevision=-1;
@@ -2030,7 +2031,7 @@ let sculptPainting=false,sculptPreviewMode=false,rockMeshPreviewOnly=false,lastS
 let sculptStrokeDistance=null;
 function sculptRayHit(){
   raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
-  const hits=raycaster.intersectObjects([volumeSculpt.mesh,floor],true);
+  const hits=raycaster.intersectObjects([...volumeSculpt.meshes.filter(m=>m.visible),floor],true);
   return hits.find(hit=>isPointInsideBuildHex(hit.point.x,hit.point.z))||null;
 }
 function sculptRay(){
@@ -2080,8 +2081,8 @@ function applySculptBrush(){
 }
 function removeSculptCellUnderCrosshair(){
   const hit=sculptRayHit();
-  if(!hit||hit.object!==volumeSculpt.mesh||hit.instanceId==null){updateSculptStatus('Geen sculptcel geraakt');return false;}
-  const removed=volumeSculpt.removeInstance(hit.instanceId);
+  if(!hit||!volumeSculpt.isSculptObject(hit.object)||hit.instanceId==null){updateSculptStatus('Geen sculptcel geraakt');return false;}
+  const removed=volumeSculpt.removeInstance(hit.instanceId,hit.object);
   updateSculptStatus(removed?'Één sculptcel verwijderd':'Cel niet verwijderd');
   return removed;
 }
@@ -2237,6 +2238,9 @@ const CAMERA_RADIUS = 0.46;
 const FISH_RADIUS = 0.38;
 const MIN_SWIM_Y = WORLD_MIN_Y + 0.65;
 
+function moveImportedFish(from,to,boxes,radius,bounds={}){
+  return moveImportedFishWithBounds(from,to,boxes,radius,{...bounds,sculptCollision:(a,b,r)=>rockFormationMeshes.segmentHit(a,b,r)});
+}
 function activeRockRoots(){
   // Set bevat uitsluitend momenteel gerenderde rotslagen; streaming houdt dit klein.
   return Array.from(rockCollisionRoots).filter(o=>o.parent);
@@ -2254,13 +2258,16 @@ function segmentRockHit(from,to,padding=0){
   collisionRaycaster.set(from,collisionDir);
   collisionRaycaster.near=0;
   collisionRaycaster.far=len+padding;
-  const hits=collisionRaycaster.intersectObjects(activeRockRoots(),true);
-  if(!hits.length)return null;
+  const sculptHit=rockFormationMeshes.segmentHit(from,to,padding);
+  const hits=collisionRaycaster.intersectObjects(activeRockRoots().filter(root=>!root.userData.generatedFormationMesh),true);
+  if(!hits.length)return sculptHit;
+  if(sculptHit&&sculptHit.distance<=hits[0].distance)return sculptHit;
   const h=hits[0];
   h.solidRoot=solidRockRoot(h.object);
   return h;
 }
 function pointInsideRock(point,radius=0){
+  const sculptHit=rockFormationMeshes.segmentHit(point,point,radius);if(sculptHit)return sculptHit.solidRoot;
   // Belangrijk: een bounding box van een overhang mag vrije ruimte eronder NIET blokkeren.
   // Daarom gebruiken we de bbox alleen als snelle voorselectie en daarna korte rays naar de echte mesh.
   const dirs=[
@@ -2269,7 +2276,7 @@ function pointInsideRock(point,radius=0){
     new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)
   ];
   for(const root of rockCollisionRoots){
-    if(!root.parent)continue;
+    if(!root.parent||root.userData.generatedFormationMesh)continue;
     collisionBox.setFromObject(root).expandByScalar(radius+.08);
     if(!collisionBox.containsPoint(point))continue;
 
@@ -2294,7 +2301,7 @@ function safeMoveAgainstRocks(from,to,radius=CAMERA_RADIUS){
   if(hit){
     const d=from.distanceTo(hit.point);
     collisionDir.copy(to).sub(from).normalize();
-    return from.clone().addScaledVector(collisionDir,Math.max(0,d-radius-0.08));
+    return from.clone().addScaledVector(collisionDir,Math.max(0,d-(hit.sculpt?0:radius)-0.08));
   }
   return from.clone();
 }
@@ -2302,7 +2309,8 @@ function safeMoveAgainstRocks(from,to,radius=CAMERA_RADIUS){
 function routeCandidatesAroundRock(from,preferred,hit,radius=CAMERA_RADIUS){
   const root=hit?.solidRoot;
   if(!root)return [];
-  collisionBox.setFromObject(root);
+  if(hit?.colliderBounds)collisionBox.copy(hit.colliderBounds);
+  else if(root.userData.sculptBounds){root.updateWorldMatrix(true,false);collisionBox.copy(root.userData.sculptBounds).applyMatrix4(root.matrixWorld);}else collisionBox.setFromObject(root);
   const center=collisionBox.getCenter(new THREE.Vector3());
   const size=collisionBox.getSize(new THREE.Vector3());
 
@@ -3023,8 +3031,8 @@ function descriptorForFormation(id){
 }
 function renderSimpleRockFormation(formation,descriptor){
   const old=rockFormationMeshes.get(formation.id);
-  if(old&&rockCollisionRoots.delete(old.root))rockCollisionRevision++;
   const root=rockFormationMeshes.build(formation,descriptor);
+  if(old&&rockCollisionRoots.delete(old.root))rockCollisionRevision++;
   rockCollisionRoots.add(root);rockCollisionRevision++;
   return root;
 }
@@ -4362,7 +4370,7 @@ function refreshCurrentRockFactors(force=false){
   for(const root of rockCollisionRoots){
     if(!root.parent)continue;
     root.updateMatrixWorld(true);
-    const box=new THREE.Box3().setFromObject(root);
+    const box=root.userData.sculptBounds?root.userData.sculptBounds.clone().applyMatrix4(root.matrixWorld):new THREE.Box3().setFromObject(root);
     if(box.isEmpty())continue;
     const minX=Math.floor(box.min.x/CELL),maxX=Math.floor(box.max.x/CELL);
     const minZ=Math.floor(box.min.z/CELL),maxZ=Math.floor(box.max.z/CELL);
@@ -4866,7 +4874,7 @@ function chooseImportedFeedingTarget(school,t){
 
 let importBoxes=[],importBoxTime=-Infinity,importBoxStamp='',importIndexBoxes=null,importRockQuery=null;
 function rockVolumesForRoot(root){
-  const volumes=[];
+  const volumes=[];if(root.userData.generatedFormationMesh)return volumes;
   root.traverse(o=>{if(o.isMesh){
     o.updateWorldMatrix(true,false);
     const box=new THREE.Box3().setFromObject(o),appearance=o.userData.rockAppearance;
@@ -4904,7 +4912,7 @@ function steerImport(fish,direction,school,dt){
   const state=fish.userData.rockRoute||(fish.userData.rockRoute={});
   const result=steerImportedFish(fish.position,direction,school.navWaypoint||school.target,
     nearbyImportRocks(fish.position,24+radius),radius,state,dt,
-    {minY:MIN_SWIM_Y,maxY:waterLimit(fish),terrain:terrainHeightAt});
+    {minY:MIN_SWIM_Y,maxY:waterLimit(fish),terrain:terrainHeightAt,sculptCollision:(a,b,r)=>rockFormationMeshes.segmentHit(a,b,r)});
   // A single fish negotiating a corner must not reset every school member.
   if(state.stalled)state.stalled=false;
   direction.copy(result.direction);
@@ -5833,7 +5841,7 @@ function updateFish(dt,t){
       }else if(fishHit){
         const travel=collisionTmp2.clone().sub(collisionTmp);
         if(travel.lengthSq())travel.normalize();
-        p.copy(fishHit.point).addScaledVector(travel,-contactRadius-.025);
+        p.copy(fishHit.point).addScaledVector(travel,-(fishHit.sculpt?0:contactRadius)-.025);
 
         if(fish.userData.imported){
           const now=simulationTime();
@@ -6435,7 +6443,7 @@ if (referenceMode) {
 const graphicsMetrics = document.getElementById('graphicsMetrics');
 let visualTime = referenceMode ? REFERENCE.time : 0;
 function simulationTime() { return referenceMode ? visualTime : performance.now()/1000; }
-let metricStart = performance.now(), metricFrames = 0;
+let metricStart = performance.now(), metricFrames = 0, lastSculptStreamAt=-Infinity,lastSculptCollisionQueries=0;
 let lastRockDetailUpdate = -Infinity, previousSeabedDetail = null;
 let lastReefDetailUpdate = -Infinity, previousReefDetail = null;
 let lastWeatherUiUpdate = -Infinity;
@@ -6478,8 +6486,9 @@ function animate(){
     updateBubbles();
   }
   if(streamingTime-lastMinimapDraw>.20){ drawMinimap(); lastMinimapDraw=streamingTime; }
+  if(streamingTime-lastSculptStreamAt>.20){rockFormationMeshes.update(camera,{highRadius:HIGH_DETAIL_RADIUS,activeRadius:ACTIVE_RADIUS,cullRadius:CULL_RADIUS,budget:matchMedia('(pointer: coarse)').matches?70000:150000});lastSculptStreamAt=streamingTime;}
   if(editMode)updateBuildDepthHud();
-  if(editMode&&editorView==='sculpt'&&streamingTime-lastSculptPreviewAt>.08){updateSculptPreview();lastSculptPreviewAt=streamingTime;}
+  if(editMode&&editorView==='sculpt'&&streamingTime-lastSculptPreviewAt>.08){volumeSculpt.updateVisibility(camera,{cullRadius:CULL_RADIUS});updateSculptPreview();lastSculptPreviewAt=streamingTime;}
 
   glow.position.x = Math.sin(t*.18)*35;
   glow.position.z = Math.cos(t*.15)*35;
@@ -6528,6 +6537,9 @@ function animate(){
     graphicsMetrics.textContent = Math.round(metricFrames * 1000 / (metricNow - metricStart)) + ' FPS · '
       + renderer.info.render.calls + ' draw calls · '
       + Math.round(renderer.info.render.triangles / 1000) + 'k driehoeken';
+    const sculpt=rockFormationMeshes.stats,preview=volumeSculpt.stats;
+    const collisionPerSecond=Math.max(0,sculpt.collisionQueries-lastSculptCollisionQueries)*1000/(metricNow-metricStart);lastSculptCollisionQueries=sculpt.collisionQueries;
+    document.getElementById('sculptMetrics').textContent=`Sculpt: ${sculpt.visibleChunks}/${sculpt.loadedChunks}/${sculpt.totalChunks} chunks zichtbaar/geladen/totaal · ${sculpt.triangles} triangles · LOD ${sculpt.lod0}/${sculpt.lod1}/${sculpt.lod2} · collision ${Math.round(collisionPerSecond)}/s · mesh ${sculpt.buildMs.toFixed(1)} ms · preview ${preview.triangles} triangles · dirty ${preview.dirtyChunks} · budget-cull ${sculpt.budgetCulledChunks}`;
     metricFrames = 0;
     metricStart = metricNow;
   }

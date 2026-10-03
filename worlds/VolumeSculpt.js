@@ -65,7 +65,7 @@ export function sculptBrushIndices(point,{cellSize=SCULPT_CELL_SIZE,radius=6}={}
   return out;
 }
 
-export function applyVolumeBrush(cells,point,{mode='add',cellSize=SCULPT_CELL_SIZE,radius=6,strength=.45,accept=()=>true}={}){
+export function applyVolumeBrush(cells,point,{mode='add',cellSize=SCULPT_CELL_SIZE,radius=6,strength=.45,accept=()=>true,onChange=()=>{}}={}){
   const affected=sculptBrushIndices(point,{cellSize,radius}).filter(c=>accept(c));
   if(mode==='smooth'){
     const snapshot=new Map(cells);
@@ -77,14 +77,17 @@ export function applyVolumeBrush(cells,point,{mode='add',cellSize=SCULPT_CELL_SI
       const current=snapshot.get(c.key)||0,average=total/count;
       const next=current+(average-current)*clamp(strength*c.weight,0,1);
       if(next<.02)cells.delete(c.key);else cells.set(c.key,clamp(next,0,1));
+      if(current!==(cells.get(c.key)||0))onChange(c,cells.get(c.key)||0);
     }
   }else{
     const sign=mode==='remove'?-1:1;
     for(const c of affected){
+      if(mode==='add'&&!accept(c))continue;
       const current=cells.get(c.key)||0;
       const delta=sign*clamp(strength,0,1)*(.35+.65*c.weight);
       const next=clamp(current+delta,0,1);
       if(next<.02)cells.delete(c.key);else cells.set(c.key,next);
+      if(current!==(cells.get(c.key)||0))onChange(c,cells.get(c.key)||0);
     }
   }
   return affected.length;
