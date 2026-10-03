@@ -26,7 +26,7 @@ test('whale is more than twice as long as orca, with finite geometry and an encl
   const whale=createWhale(),orca=createOrca();
   const wb=new THREE.Box3().setFromObject(whale.root),ob=new THREE.Box3().setFromObject(orca.root);
   const ws=wb.getSize(new THREE.Vector3()),os=ob.getSize(new THREE.Vector3());
-  assert.ok(ws.x>26&&ws.x<29);assert.ok(ws.x>os.x*2.3);
+  assert.ok(ws.x>31&&ws.x<35);assert.ok(ws.x>os.x*2.2);
   for(const p of [wb.min,wb.max]){assert.ok(Math.abs(p.x)<WHALE_EXTENT.x);assert.ok(Math.abs(p.y)<WHALE_EXTENT.y);assert.ok(Math.abs(p.z)<WHALE_EXTENT.z);assert.ok(Math.hypot(p.x,p.z)<WHALE_MARGIN);}
   let triangles=0;whale.root.traverse(o=>{if(o.geometry){assert.ok(o.geometry.attributes.position.array.every(Number.isFinite));triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;}});
   assert.ok(triangles<18000,`geometry budget: ${triangles}`);
@@ -44,13 +44,8 @@ test('whale animation pauses, moves horizontal flukes, uses LOD and composes its
   assert.match(shader.fragmentShader,/#include <lights_fragment_begin>/);assert.match(shader.fragmentShader,/grooves/);assert.match(shader.fragmentShader,/fishMicroNormal/);assert.match(shader.vertexShader,/objectNormal.x-=/);
   let disposed=0;body.material.addEventListener('dispose',()=>disposed++);whale.dispose();whale.dispose();assert.equal(disposed,1);
 });
-test('whale surfaces slowly and produces a mist plume at the blowhole',()=>{
-  const whale=createWhale(),plume=whale.root.getObjectByName('Whale breath plume');
-  whale.animate(.04,77,'high',10);
-  assert.ok(whale.root.position.y>16);assert.equal(plume.visible,true);
-  whale.animate(.04,115,'high',10);
-  assert.equal(plume.visible,false);assert.ok(Math.abs(whale.root.position.y)<.001);
-  whale.dispose();
+test('whale animation leaves navigation position unchanged and exposes controlled breath mist',()=>{
+ const whale=createWhale(),plume=whale.root.getObjectByName('Whale breath plume');whale.root.position.y=7;whale.animate(.04,77);assert.equal(whale.root.position.y,7);assert.equal(plume.visible,false);whale.setBreathing(.5);assert.equal(plume.visible,true);whale.setBreathing(0);assert.equal(plume.visible,false);whale.dispose();
 });
 test('whale route protects the large footprint, seabed, surface and world boundary',()=>{
   const a=new THREE.Vector3(0,0,0),b=new THREE.Vector3(8,0,0);

@@ -31,10 +31,10 @@ test('clown pairs prefer coral; blue shoals prefer grass with rocks; rhythm alte
   assert.ok(Math.max(...speeds)>2);assert.ok(Math.min(...speeds)<.4);
   assert.equal(swimRhythm('reef_0',2,.4),swimRhythm('reef_0',2,.4));
 });
-test('enlarged orca measures about 11 meters and its conservative margin encloses its body',()=>{
+test('enlarged orca measures about 14 meters and its conservative margin encloses its body',()=>{
   const orca=createOrca();orca.root.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(orca.root),size=box.getSize(new THREE.Vector3());
-  assert.equal(orca.root.scale.x,ORCA_SCALE);assert.ok(size.x>10.5&&size.x<11.5);
+  assert.equal(orca.root.scale.x,ORCA_SCALE*1.25);assert.ok(size.x>13&&size.x<14.5);
   for(const p of [box.min,box.max])assert.ok(Math.max(Math.abs(p.x),Math.abs(p.y),Math.abs(p.z))<ORCA_CLEARANCE);
   orca.dispose();
 });

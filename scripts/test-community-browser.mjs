@@ -40,6 +40,10 @@ await page.route('http://127.0.0.1:8765/**',async route=>{
    const nativeRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=cb=>cb.name==='animate'?0:nativeRAF(cb);
    window.__communityQA={state:()=>({id:communityOcean.activeId,busy:communityOcean.busy,cells:worldData().cells,terrain:worldData().terrain,position:camera.position.toArray(),quaternion:camera.quaternion.toArray(),editable:canEditCurrentWorld(),status:communityOcean.lastStatus,floor:terrainHeightAt(camera.position.x,camera.position.z),neighbors:SIDES.map((_,side)=>communityOcean.engine.neighbor(side))}),
     restore:data=>restoreWorld(data),
+    animals:()=>({world:animalSystem.worldId,rows:animalSystem.snapshot().records,models:animalSystem.models.size,follow:selectedFish?.userData.animalId}),
+    residentAnimal:()=>animalSystem.add('orca',[35,0,0])[0].id,
+    migrateAnimal:()=>{const next=normalizeAnimalSettings(animalSystem.settings);next.whale.count=2;animalSystem.configure(next);const rows=animalSystem.add('whale',[0,0,0]);for(const r of rows){r.residence=301;animalSystem.models.get(r.id).root.position.set(0,0,-150);}startFollowing(animalSystem.models.get(rows[0].id).root,'fish');updateMegafauna(.05,0);return rows.map(r=>r.id);},
+
     navigation:()=>{
       const check=(condition,message)=>{if(!condition)throw Error(message);};
       const pose=camera.position.clone(),rotation=camera.quaternion.clone(),zoom=minimapZoom,savedFood=foodSectors;
@@ -140,10 +144,12 @@ assert.ok(atlasLabels.find(e=>e.name==='Diepe buurwereld').y<atlasLabels.find(e=
 await fs.mkdir(artifacts,{recursive:true});
 await page.screenshot({path:artifacts+'/atlas.png'});
 
+const residentAnimalId=await page.evaluate(()=>window.__communityQA.residentAnimal());
 // De primaire atlasknop opent een aangrenzende wereld direct.
 await page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Diepe buurwereld'}).click();
 await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy,null,{timeout:60000});
+assert.equal((await page.evaluate(()=>window.__communityQA.animals())).rows.find(r=>r.id===residentAnimalId)?.worldId,'A','ordinary player travel preserves animals in the source world');
 // A stale local-world placeholder at 0,0 must not hide the connected home world.
 await page.locator('#journeyAtlas').click();
 const homeHex=page.locator('#worldAtlasSvg .atlas-world').filter({hasText:'Mijn koraaltuin'});
@@ -152,6 +158,7 @@ assert.match(await homeHex.textContent(),/VERBONDEN/);
 await homeHex.click();await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual((await page.evaluate(()=>window.__communityQA.state())).cells,own.cells,'atlas round trip preserves own draft');
+assert.equal((await page.evaluate(()=>window.__communityQA.animals())).rows.find(r=>r.id===residentAnimalId)?.worldId,'A');
 
 // De atlas is een transportkaart: ook een bekende wereld die twee hexen verder
 // ligt kan rechtstreeks worden geopend. Zwemmen blijft wel buur-gebonden.
@@ -205,6 +212,10 @@ await homeHex.click();await page.locator('#worldAtlasEnterBtn').click();
 await page.waitForFunction(()=>window.__communityQA.state().id==='A'&&!window.__communityQA.state().busy,null,{timeout:60000});
 assert.deepEqual(errors,[]);
 
+const animalIds=await page.evaluate(()=>window.__communityQA.migrateAnimal());
+await page.waitForFunction(()=>window.__communityQA.state().id==='B'&&!window.__communityQA.state().busy&&window.__communityQA.animals().follow,null,{timeout:60000});
+const migrated=await page.evaluate(()=>window.__communityQA.animals());assert.equal(migrated.world,'B');assert.equal(migrated.follow,animalIds[0]);assert.deepEqual(migrated.rows.filter(r=>animalIds.includes(r.id)).map(r=>r.worldId),['B','B']);
+assert.equal(await page.evaluate(()=>window.__communityQA.visit('A')),true);
 await page.setViewportSize({width:390,height:844});await page.locator('#journeyAtlas').click();
 assert.ok(await page.evaluate(()=>{const e=document.getElementById('worldAtlasDetails');e.scrollTop=e.scrollHeight;return e.clientHeight>0&&e.scrollTop>0;}),'mobile atlas form scrolls');
 await page.screenshot({path:artifacts+'/mobile-atlas.png'});

@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+import {DEFAULT_ANIMAL_SETTINGS} from '../animals/AnimalSettings.js';
+import {hydrofoil} from './AnimalForms.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {addSurfaceRelief} from './FishSurfaceDetail.js';
 
 // Original humpback-inspired character, +X nose; dimensions are world meters.
-export const WHALE_EXTENT=new THREE.Vector3(15,5.5,9);
-export const WHALE_MARGIN=17.5; // radius encloses the horizontal silhouette during turns
+export const WHALE_EXTENT=new THREE.Vector3(18,6.5,12.6);
+export const WHALE_MARGIN=22; // radius encloses the horizontal silhouette during turns
 export function createWhaleBody(rings=64,sides=32){
   const curve=new THREE.CatmullRomCurve3([
     [-10,.18,.20],[-8,.48,.62],[-5,1.30,1.40],[-1,2.40,2.30],
@@ -29,11 +31,11 @@ function fin(points,depth=.20){
   shape.closePath();const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelThickness:.08,bevelSize:.08,bevelSegments:2,steps:1,curveSegments:12});
   g.translate(0,0,-depth/2);return g;
 }
-export function createWhale(){
-  const root=new THREE.Group();root.name='Walvis';
+export function createWhale(settings=DEFAULT_ANIMAL_SETTINGS.whale){
+  const root=new THREE.Group();root.name='Walvis';root.scale.setScalar(settings.size);
   root.userData={isFishRoot:true,isWhale:true,visualSpecies:'Walvis',health:100,phase:.8,velocity:new THREE.Vector3(1.15,0,0)};
   const uniforms={whalePhase:{value:.8},whaleAmplitude:{value:.3}};
-  const skin=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.54});
+  const skin=new THREE.MeshStandardMaterial({color:0xffffff,roughness:settings.roughness});
   skin.onBeforeCompile=s=>{
     Object.assign(s.uniforms,uniforms);
     s.vertexShader=`varying vec3 vWhale;uniform float whalePhase;uniform float whaleAmplitude;
@@ -68,11 +70,17 @@ export function createWhale(){
   const black=new THREE.MeshStandardMaterial({color:0x020608,roughness:.12});
   const near=createWhaleBody(),far=createWhaleBody(32,16);
   const body=new THREE.Mesh(near,skin);body.name='Whale body';root.add(body);
-  const flipperGeo=fin([[0,0],[-.8,1.6],[-2.1,5.2],[-3.5,6.2],[-4.1,6.9],[-4.5,6.4],[-4.1,5.7],[-2.6,2.9],[-1.6,.25],[0,0]],.24);
-  flipperGeo.rotateX(Math.PI/2);
+  const flipperGeo=hydrofoil(6.7,1.05,.30,36);
+  const finColors=[],finPositions=flipperGeo.attributes.position;
+  for(let i=0;i<finPositions.count;i++){const color=new THREE.Color(finPositions.getY(i)<-.12?0xdbddd1:0x7792a0);finColors.push(color.r,color.g,color.b);}
+  flipperGeo.setAttribute('color',new THREE.Float32BufferAttribute(finColors,3));
+  const pectoralMaterial=finMaterial.clone();pectoralMaterial.color.set(0xffffff);pectoralMaterial.vertexColors=true;
+
   const flippers=[];
   for(const side of [-1,1]){
-    const p=new THREE.Mesh(flipperGeo,finMaterial);p.name='Long pectoral';p.position.set(4.1,-1.2,side*2);p.scale.z=side;root.add(p);flippers.push(p);
+    const p=new THREE.Mesh(flipperGeo,pectoralMaterial);p.name='Long pectoral';p.position.set(4.1,-1.2,side*2);p.scale.set(settings.flippers,1,side*settings.flippers);root.add(p);flippers.push(p);
+    const parts=[];for(let i=0;i<9;i++){const u=.15+i*.08,w=1.05*(.24+.76*Math.sin(Math.PI*u)**.7),g=new THREE.SphereGeometry(.12,8,6);g.scale(1,.65,1.25);g.translate(-6.7*u*.52+w*.35,-.12*u*u,6.7*u);parts.push(g);}const tubercles=mergeGeometries(parts);parts.forEach(g=>g.dispose());const edge=new THREE.Mesh(tubercles,finMaterial);edge.name='Pectoral tubercles';p.add(edge);
+
     const eye=new THREE.Mesh(new THREE.SphereGeometry(.145,16,12),eyeRim);eye.name='Whale eye';eye.position.set(7.74,.12,side*2.60);eye.scale.z=.44;root.add(eye);
     const pupil=new THREE.Mesh(new THREE.SphereGeometry(.088,12,8),black);pupil.name='Whale pupil';pupil.position.set(7.80,.10,side*2.67);pupil.scale.z=.38;root.add(pupil);
     const curve=new THREE.CatmullRomCurve3([
@@ -81,9 +89,9 @@ export function createWhale(){
     ]);
     const mouth=new THREE.Mesh(new THREE.TubeGeometry(curve,36,.055,6,false),lipMaterial);mouth.name='Curved mouth';root.add(mouth);
   }
-  const dorsal=new THREE.Mesh(fin([[-5,1.10],[-4.8,2.7],[-3.6,2.8],[-3.0,1.85],[-2.8,1.6],[-4.1,1.3],[-5,1.10]]),finMaterial);dorsal.name='Small dorsal';root.add(dorsal);
+  const dorsal=new THREE.Mesh(fin([[-5,1.10],[-4.8,2.7],[-3.6,2.8],[-3.0,1.85],[-2.8,1.6],[-4.1,1.3],[-5,1.10]]),finMaterial);dorsal.scale.y=settings.dorsal;dorsal.position.y=1.1*(1-settings.dorsal);dorsal.name='Small dorsal';root.add(dorsal);
   const tailGeo=fin([[0,0],[-.6,1.6],[-2,3.8],[-3.6,4.6],[-4.3,4.8],[-4.1,2.1],[-3.4,.35],[-3.0,.18],[-3.0,-.18],[-3.4,-.35],[-4.1,-2.1],[-4.3,-4.8],[-3.6,-4.6],[-2,-3.8],[-.6,-1.6],[0,0]],.2);tailGeo.rotateX(Math.PI/2);
-  const tail=new THREE.Mesh(tailGeo,finMaterial);tail.name='Whale flukes';tail.position.x=-10;root.add(tail);
+  const tail=new THREE.Mesh(tailGeo,finMaterial);tail.scale.z=settings.tail;tail.name='Whale flukes';tail.position.x=-10;root.add(tail);
   // Tubercles on the broad snout, merged into one mesh.
   const lumps=[];
   for(const side of [-1,1])for(let i=0;i<8;i++){
@@ -91,17 +99,19 @@ export function createWhale(){
   }
   const bumpGeometry=mergeGeometries(lumps);lumps.forEach(g=>g.dispose());
   const bumps=new THREE.Mesh(bumpGeometry,finMaterial);bumps.name='Snout tubercles';root.add(bumps);
-  const breath=new THREE.Group();breath.name='Whale breath plume';breath.visible=false;root.add(breath);
+  const breath=new THREE.Group();breath.name='Whale breath plume';breath.visible=false;breath.position.y=2.6;root.add(breath);
+  const blowhole=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),black);blowhole.name='Blowhole';blowhole.position.set(5.85,2.83,0);blowhole.scale.set(.28,.025,.16);root.add(blowhole);
   const breathMaterial=new THREE.MeshStandardMaterial({color:0xdff7f6,transparent:true,opacity:.50,depthWrite:false,roughness:.22});
   for(let i=0;i<11;i++){
     const puff=new THREE.Mesh(new THREE.SphereGeometry(.23+i*.030,10,7),breathMaterial);
     puff.position.set(5.85+i*.14,.30+i*.16,Math.sin(i*1.7)*.12);puff.scale.set(1,1.8,1);breath.add(puff);
   }
-  let disposed=false,lastTime=null,phase=.8,surfaceBaseY=null;
+  let disposed=false,lastTime=null,phase=.8;
   function animate(dt,time,quality='medium',distance=0){
+    if(dt<=0||disposed)return;
     const elapsed=lastTime===null?0:Math.max(0,Math.min(.08,time-lastTime));lastTime=time;
-    const speed=root.userData.velocity.length();phase+=elapsed*(.25+speed*.62);
-    uniforms.whalePhase.value=phase;uniforms.whaleAmplitude.value=.12+Math.min(2,speed)*.23;
+    const speed=root.userData.velocity.length();phase+=elapsed*(.25+speed*.62)*settings.stroke;
+    uniforms.whalePhase.value=phase;uniforms.whaleAmplitude.value=.12+Math.min(2,speed)*.23*settings.stroke;
     tail.position.y=whaleBend(-10,phase,uniforms.whaleAmplitude.value);
     const slope=(whaleBend(-9.999,phase,uniforms.whaleAmplitude.value)-whaleBend(-10.001,phase,uniforms.whaleAmplitude.value))/.002;
     tail.rotation.z=Math.atan(slope);
@@ -109,15 +119,8 @@ export function createWhale(){
     flippers.forEach((p,i)=>p.rotation.x=(i===0?-1:1)*(.11+Math.sin(phase*.75+i*.45)*.08));
     body.geometry=distance<(quality==='low'?30:55)?near:far;
     bumps.visible=quality!=='low'&&distance<40;
-    const cycle=(time+(root.userData.phase||0)*17)%118;
-    const rise=THREE.MathUtils.smoothstep(cycle,72,84)-THREE.MathUtils.smoothstep(cycle,96,110);
-    if(rise>.001&&surfaceBaseY===null)surfaceBaseY=root.position.y;
-    if(surfaceBaseY!==null)root.position.y=THREE.MathUtils.lerp(surfaceBaseY,16.60,rise);
-    if(cycle>110&&surfaceBaseY!==null){root.position.y=surfaceBaseY;surfaceBaseY=null;}
-    const blowing=cycle>87&&cycle<91&&rise>.92;
-    breath.visible=blowing;
-    if(blowing){breath.position.y=2.60;breath.scale.setScalar(.80+(cycle-87)*.22);}
+
   }
   function dispose(){if(disposed)return;disposed=true;const gs=new Set([near,far]),ms=new Set();root.traverse(o=>{if(o.geometry)gs.add(o.geometry);if(o.material)ms.add(o.material);});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());}
-  return {root,animate,dispose};
+  return {root,animate,setBreathing(amount){breath.visible=amount>0;breath.scale.setScalar(.8+amount*.7);},dispose};
 }

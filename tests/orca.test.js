@@ -44,15 +44,9 @@ test('orca simplifies body at distance and composes a lit skin shader',()=>{
   assert.equal(shader.uniforms.orcaPhase.value,12*2.35+.6);orca.dispose();
 });
 
-test('orca raises only its blowhole region and emits a short surface mist plume',()=>{
-  const orca=createOrca(),plume=orca.root.getObjectByName('Orca breath plume');
-  orca.animate(.04,45,'high',5);
-  assert.ok(orca.root.position.y>15);assert.equal(plume.visible,true);
-  orca.animate(.04,70,'high',5);
-  assert.equal(plume.visible,false);assert.ok(Math.abs(orca.root.position.y)<.001);
-  orca.dispose();
+test('orca animation leaves navigation position unchanged and exposes controlled breath mist',()=>{
+ const orca=createOrca(),plume=orca.root.getObjectByName('Orca breath plume');orca.root.position.y=7;orca.animate(.04,45);assert.equal(orca.root.position.y,7);assert.equal(plume.visible,false);orca.setBreathing(.5);assert.equal(plume.visible,true);orca.setBreathing(0);assert.equal(plume.visible,false);orca.dispose();
 });
-
 test('orca clearance rejects rocks, narrow passes, terrain and world edges',()=>{
   const a=new THREE.Vector3(-10,0,0),b=new THREE.Vector3(10,0,0);
   assert.equal(orcaRouteClear(a,b),true);

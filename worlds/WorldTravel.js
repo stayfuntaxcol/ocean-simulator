@@ -1,3 +1,5 @@
+import {normalizeAnimalSettings} from '../animals/AnimalSettings.js';
+import {normalizeAnimalRecords} from '../animals/AnimalSystem.js';
 import { normalizeRockFormationDescriptor } from './RockFormationGenerator.js';
 import { normalizeVolumeSculpt } from './VolumeSculpt.js';
 import { normalizeCurrentFlows } from './CurrentFlowSystem.js';
@@ -18,6 +20,7 @@ function readWorldList(value,field) {
 export function validateWorldRecord(record) {
   if(!record||typeof record!=='object'||!record.world||![1,2,3,4].includes(record.world.version))throw Error('Dit wereldbestand wordt nog niet ondersteund.');
   const w=record.world;
+  const animals=w.animals?{version:1,activeWorld:String(w.animals.activeWorld||''),settings:normalizeAnimalSettings(w.animals.settings),records:normalizeAnimalRecords(w.animals.records)}:undefined;
   const cells=readWorldList(w.cells,'cells'),terrain=readWorldList(w.terrain,'terrain'),lavaVents=readWorldList(w.lavaVents,'lavaVents'),deathMarkers=readWorldList(w.deathMarkers,'deathMarkers');
   const sculpt=normalizeVolumeSculpt(w.sculpt,{worldHalf:HEX.radius});
   const currentFlows=normalizeCurrentFlows(w.currentFlows,{seaLevelY:20});
@@ -41,7 +44,7 @@ export function validateWorldRecord(record) {
     if(layers.some(l=>!l||typeof l.type!=='string'))throw Error(`Een landschapslaag in cells[${c.key}] is ongeldig.`);
     return {...c,layers};
   });
-  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt,rockFormations,currentFlows}};
+  return {...record,world:{...w,cells:normalizedCells,terrain,lavaVents,deathMarkers,sculpt,rockFormations,currentFlows,...(animals?{animals}:{})}};
 }
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,

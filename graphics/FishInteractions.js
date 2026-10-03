@@ -3,11 +3,12 @@ import * as THREE from 'three';
 // Water trough is 19.62; leave a small margin below it, including pitched bodies.
 export const WATER_CEILING=19.55;
 export function fishExtent(fish){
+  if(fish.userData.animalExtent)return new THREE.Vector3(...fish.userData.animalExtent);
   const s=Math.max(fish.scale.x,fish.scale.y,fish.scale.z);
   if(fish.userData.visitorKind==='stingray')return new THREE.Vector3(3.3,.52,1.5);
   if(fish.userData.visitorKind==='turtle')return new THREE.Vector3(1.86,.8,1.95);
   if(fish.userData.isPuffer){const a=fish.userData.pufferInflation||0;return new THREE.Vector3(2.3,.98+a*.75,.87+a*.8).multiplyScalar(s);}
-  if(fish.userData.isWhale)return new THREE.Vector3(15,5.5,9);
+  if(fish.userData.isWhale)return new THREE.Vector3(18,6.5,12.6);
   if(fish.userData.isOrca)return new THREE.Vector3(4,2.6,1.8).multiplyScalar(s);
   if(fish.userData.imported){const r=fish.userData.contactRadius||2.2;return new THREE.Vector3(r,r,r);}
   return new THREE.Vector3(...(fish.userData.speciesId==='reef_6'?[2.5,.8,1.25]:[2.4,1.6,.75])).multiplyScalar(s);
@@ -18,6 +19,7 @@ function support(fish,normal){
 }
 export function waterLimit(fish){return WATER_CEILING-support(fish,new THREE.Vector3(0,1,0));}
 export function constrainWater(fish){
+  if(fish.userData.isDesignedAnimal)return WATER_CEILING;
   const top=waterLimit(fish);
   if(fish.position.y>top){fish.position.y=top;if(fish.userData.velocity)fish.userData.velocity.y=Math.min(0,fish.userData.velocity.y);}
   return top;

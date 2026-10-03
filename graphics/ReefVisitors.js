@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {DEFAULT_ANIMAL_SETTINGS} from '../animals/AnimalSettings.js';
 import {addSurfaceRelief} from './FishSurfaceDetail.js';
 
 export const VISITOR_SPECIES=Object.freeze({
@@ -64,8 +65,9 @@ function rayDisc(rings=22,sides=64){
   for(let j=0;j<sides;j++){const a=rings*(sides+1)+j,b=a+count;indices.push(a,b,a+1,a+1,b,b+1);}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));g.setIndex(indices);g.computeVertexNormals();g.computeBoundingSphere();g.boundingSphere.radius+=.3;return g;
 }
-export function createStingray(){
+export function createStingray(settings=DEFAULT_ANIMAL_SETTINGS.stingray){
   const root=base('stingray'),bodyMat=skin(0xffffff),eyeMat=skin(0x061d24,.2),rim=skin(0x557b82),tailMat=skin(0x395968);
+  root.scale.setScalar(settings.size);for(const m of [bodyMat,rim,tailMat])m.roughness=settings.roughness;
   bodyMat.vertexColors=true;
   const wave={value:0},original=bodyMat.onBeforeCompile;
   bodyMat.onBeforeCompile=s=>{
@@ -91,62 +93,9 @@ export function createStingray(){
   }
   let phase=.4;
   return finish(root,(dt)=>{
-    phase+=dt*(.8+root.userData.velocity.length()*1.8);wave.value=phase;
+    phase+=dt*(.8+root.userData.velocity.length()*1.8)*settings.stroke;wave.value=phase;
     tail.forEach((joint,i)=>{joint.rotation.y=Math.sin(phase*.55-i*.35)*.022;joint.rotation.z=Math.sin(phase*.7-i*.4)*.022;});
   },[bodyMat,eyeMat,rim,tailMat],[[body,near,far]]);
 }
 
-function flipperGeometry(){
-  const shape=new THREE.Shape();shape.moveTo(0,0);shape.bezierCurveTo(-.1,.45,-.45,1.15,-.88,1.3);
-  shape.bezierCurveTo(-1.08,1.25,-.8,.62,-.3,.05);shape.quadraticCurveTo(-.12,-.08,0,0);
-  const g=new THREE.ExtrudeGeometry(shape,{depth:.065,bevelEnabled:true,bevelSize:.035,bevelThickness:.025,bevelSegments:2,steps:1,curveSegments:10});g.rotateX(Math.PI/2);return g;
-}
-export function createSeaTurtle(){
-  const root=base('turtle'),shellMat=skin(0x6e783b),seamMat=skin(0x465732),flesh=skin(0x829b64),belly=skin(0xd5c89a),black=skin(0x071b18,.15),amber=skin(0xa89052),scuteGold=skin(0x83804b);
-  ellipsoid(root,flesh,[0,-.06,0],[1.12,.32,.73],'Body');
-  ellipsoid(root,belly,[-.05,-.18,0],[1.11,.20,.77],'Plastron');
-  const near=new THREE.SphereGeometry(1,40,24,0,Math.PI*2,0,Math.PI/2),far=new THREE.SphereGeometry(1,20,12,0,Math.PI*2,0,Math.PI/2);
-  const shell=new THREE.Mesh(near,seamMat);shell.scale.set(1.22,.64,.86);shell.position.x=-.12;root.add(shell);shell.name='Rigid shell';
-  // Individual curved scutes sit above a darker continuous shell. Tiny gaps
-  // become real seams rather than a flat painted hexagon texture.
-  for(let row=-2;row<=2;row++)for(let col=-3;col<=3;col++){
-    const cx=col*.37+(row%2)*.185,cz=row*.32;
-    if((cx/1.18)**2+(cz/.82)**2>.82)continue;
-    const positions=[],indices=[],ring=[];
-    for(let i=0;i<6;i++)for(let edge=0;edge<4;edge++){
-      const a=i*Math.PI/3+Math.PI/6,b=a+Math.PI/3,f=edge/4;
-      let x=cx+THREE.MathUtils.lerp(Math.cos(a),Math.cos(b),f)*.205,z=cz+THREE.MathUtils.lerp(Math.sin(a),Math.sin(b),f)*.205;
-      const r=Math.hypot(x/1.22,z/.86);if(r>.97){x*=.97/r;z*=.97/r;}ring.push([x,z]);
-    }
-    const surface=(x,z)=>.65*Math.sqrt(Math.max(0,1-(x/1.22)**2-(z/.86)**2))+.015;
-    positions.push(cx-.12,surface(cx,cz),cz);
-    for(let r=1;r<=5;r++)for(const [ex,ez] of ring){const x=THREE.MathUtils.lerp(cx,ex,r/5),z=THREE.MathUtils.lerp(cz,ez,r/5);positions.push(x-.12,surface(x,z),z);}
-    const n=ring.length;
-    for(let j=0;j<n;j++)indices.push(0,1+(j+1)%n,1+j);
-    for(let r=0;r<4;r++)for(let j=0;j<n;j++){const a=1+r*n+j,b=1+r*n+(j+1)%n;indices.push(a,b,b+n,a,b+n,a+n);}
-    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));g.setIndex(indices);g.computeVertexNormals();
-    const scute=new THREE.Mesh(g,(col+row)%3===0?scuteGold:shellMat);scute.name='Curved shell scute';root.add(scute);
-  }
-  const head=new THREE.Group();head.position.set(.91,.02,0);root.add(head);
-  ellipsoid(head,flesh,[.15,0,0],[.48,.24,.28],'Neck');
-  ellipsoid(head,flesh,[.55,.07,0],[.34,.27,.29],'Head');
-  ellipsoid(head,belly,[.76,-.01,0],[.16,.15,.25],'Rounded beak');
-  for(const side of [-1,1]){
-    ellipsoid(head,amber,[.65,.16,side*.23],[.12,.115,.065],'Eye rim');
-    ellipsoid(head,black,[.68,.17,side*.27],[.071,.08,.034],'Turtle eye');
-    ellipsoid(head,black,[.86,.115,side*.085],[.019,.015,.015],'Nostril');
-  }
-  const flippers=[],geo=flipperGeometry();
-  for(const side of [-1,1])for(const front of [true,false]){
-    const pivot=new THREE.Group();pivot.position.set(front?.6:-.9,-.14,side*(front?.55:.48));root.add(pivot);
-    const fin=new THREE.Mesh(geo,flesh);fin.scale.set(front?1:.45,1,side*(front?1:.48));pivot.add(fin);flippers.push({pivot,side,front});
-  }
-  ellipsoid(root,flesh,[-1.31,-.05,0],[.25,.065,.075],'Short tail');
-  let phase=0;
-  return finish(root,(dt,time)=>{
-    phase+=dt*(.65+root.userData.velocity.length()*1.3);
-    const stroke=Math.sin(phase),glide=.45+.55*Math.max(0,Math.sin(phase*.31));
-    for(const {pivot,side,front} of flippers){pivot.rotation.x=side*(front?stroke*.38*glide:.06*Math.sin(phase*.6+side));pivot.rotation.y=side*(front?.12+.08*Math.cos(phase):.12*Math.sin(phase*.4));}
-    head.rotation.y=Math.sin(time*.35)*.045;head.rotation.z=Math.sin(time*.6)*.025;
-  },[shellMat,seamMat,flesh,belly,black,amber,scuteGold],[[shell,near,far]]);
-}
+export {createSeaTurtle} from './SeaTurtle.js';

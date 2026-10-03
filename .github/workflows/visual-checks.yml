@@ -4,6 +4,9 @@ on:
     paths:
       - 'index.html'
       - 'graphics/**'
+      - 'animals/**'
+      - 'animal-studio/**'
+      - 'worlds/**'
       - 'tests/**'
       - 'package*.json'
       - '.github/workflows/visual-checks.yml'
