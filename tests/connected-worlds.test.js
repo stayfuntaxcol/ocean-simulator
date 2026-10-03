@@ -1,10 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {HEX,SIDES,apothem,axialPosition,fixedHexMeta,containsHex,exitSide,arrivalPosition,connectionSeed} from '../worlds/HexWorld.js';
-import {createTerrainBlend,createHexTerrainGeometry} from '../worlds/HexTerrain.js';
+import {terrainFromRecord,createTerrainBlend,createHexTerrainGeometry} from '../worlds/HexTerrain.js';
 import {createWorldTravel,validateWorldRecord} from '../worlds/WorldTravel.js';
 const record=(name,ownerId='me')=>({name,ownerId,visibility:'link',world:{version:4,worldHalf:144,cells:[],terrain:[]}});
 const a={hexQ:0,hexR:0};
+test('deep canyon retains its height in connected terrain, including the lower depth layer',()=>{
+ const deep=record('Deep');deep.world.terrain=[{key:'0,0',offset:-180},{key:'1,0',offset:-400},{key:'0,1',offset:-540}];
+ const height=terrainFromRecord(deep);
+ assert.ok(Math.abs(height(0,0)-(-196.7))<1e-9);
+ const blend=createTerrainBlend([{id:'A',...a,height},{id:'B',hexQ:1,hexR:0,height:()=>-18}]);
+ for(const [x,z] of [[0,0],[12,0],[0,12],[4,6]])assert.equal(blend('A',x,z),height(x,z));
+ assert.ok(height(12,0)<-288);
+});
+test('complete landscape draft survives travel and a fresh travel engine without altering source data',async()=>{
+ const saved=new Map(),deep=record('Deep');
+ Object.assign(deep.world,{terrain:[{key:'0,0',offset:-180}],cells:[{key:'0,0',layers:[{id:1,type:'rocks'}]}],
+  sculpt:{format:'ocean-volume-sculpt-v1',cellSize:3,cells:[{ix:0,iy:-10,iz:0,density:1}]},
+  rockFormations:[],currentFlows:[],lavaVents:[{id:'vent',x:0,z:0,amount:2}],deathMarkers:[[1,2]]});
+ let active=deep;
+ const build=()=>createWorldTravel({readWorld:async id=>record(id),capture:()=>active,getUserId:()=> 'me',
+  writeDraft:async(id,r)=>saved.set(id,structuredClone(r)),readDraft:async id=>saved.get(id),deleteDraft:async id=>saved.delete(id),
+  activate:async(id,r)=>{active=r;}});
+ const first=build();first.setCurrent('A',deep,a);first.setPosition('B',{hexQ:1,hexR:0});
+ assert.equal(await first.travelTo('B',{x:144,y:0,z:0}),true);first.dispose();
+ const fresh=build();fresh.setCurrent('B',active,{hexQ:1,hexR:0});fresh.setPosition('A',a);
+ assert.equal(await fresh.travelTo('A',{x:-144,y:0,z:0}),true);
+ assert.deepEqual(active.world,validateWorldRecord(deep).world);
+ assert.equal(terrainFromRecord(active)(0,0),-196.7);fresh.dispose();
+});
+test('failed durable saving keeps the active world and prevents destination activation',async()=>{
+ let activations=0;const active=record('Deep');active.world.terrain=[{key:'0,0',offset:-180}];
+ const engine=createWorldTravel({readWorld:async()=>record('B'),capture:()=>active,getUserId:()=> 'me',
+  writeDraft:async()=>{throw Error('Storage full');},activate:async()=>{activations++;}});
+ engine.setCurrent('A',active,a);engine.setPosition('B',{hexQ:1,hexR:0});
+ assert.equal(await engine.travelTo('B',{x:144,y:0,z:0}),false);
+ assert.equal(activations,0);assert.equal(engine.current.id,'A');assert.equal(active.world.terrain[0].offset,-180);engine.dispose();
+});
 test('fixed hex area, six shared edges and opposite arrival entrances',()=>{
  assert.equal(fixedHexMeta(null).outerRadius,144);
  assert.equal(fixedHexMeta({outerRadius:900,innerScale:.3}).innerScale,Math.sqrt(.9));

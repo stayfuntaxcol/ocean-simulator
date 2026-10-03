@@ -50,7 +50,7 @@ test('actual fish update follows a sloping seabed without sinking, and pauses di
   const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,advanceFinPhase,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,whale:null,schools:new Map([['bottom',school]]),schoolThinkAccumulator:0,
     camera:new THREE.PerspectiveCamera(),CULL_RADIUS:60,FISH_ANIMATION_RADIUS:45,WORLD_HALF:144,FISH_RADIUS:.38,
     editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:terrain,cellHasRockAt:()=>false,
-    segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};
+    segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,applyCurrentToFish:()=>{},orientFishForward:()=>{}};
   ctx.camera.position.copy(fish.position);
   for(const name of ['targetV','collisionTmp','collisionTmp2','sepV','aliV','cohV','tmpV','desiredV','wanderV'])ctx[name]=new THREE.Vector3();
   ctx.collisionBox=new THREE.Box3();vm.createContext(ctx);vm.runInContext(code,ctx);
@@ -73,7 +73,7 @@ test('adult and juvenile reunite after separation without changing pair membersh
   const ctx={THREE,SPECIES_POLICY,swimRhythm,bottomClearance,advanceBottomRest,advanceFinPhase,constrainWater,waterLimit,createFishNeighborhood,avoidFish,resolveFishContacts,orca:null,whale:null,schools:new Map([['pair',school]]),schoolThinkAccumulator:0,
     camera:new THREE.PerspectiveCamera(),CULL_RADIUS:60,FISH_ANIMATION_RADIUS:45,WORLD_HALF:144,FISH_RADIUS:.38,
     editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:()=>-18,cellHasRockAt:()=>false,
-    segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};
+    segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,applyCurrentToFish:()=>{},orientFishForward:()=>{}};
   for(const name of ['targetV','collisionTmp','collisionTmp2','sepV','aliV','cohV','tmpV','desiredV','wanderV'])ctx[name]=new THREE.Vector3();
   ctx.collisionBox=new THREE.Box3();vm.createContext(ctx);vm.runInContext(code,ctx);
   for(let i=0;i<600;i++)ctx.updateFish(.04,i*.04);

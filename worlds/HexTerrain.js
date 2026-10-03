@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { HEX, apothem, axialPosition, containsHex, closestInHex } from './HexWorld.js';
+import { TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,WORLD_MIN_Y,SEA_LEVEL_Y } from './DepthLayers.js';
 
 export function terrainFromRecord(record) {
-  const offsets=new Map((record.world.terrain??[]).map(t=>[String(t.key),Math.max(-12,Math.min(10,t.offset))]));
+  const offsets=new Map((record.world.terrain??[]).map(t=>[String(t.key),Math.max(TERRAIN_OFFSET_MIN,Math.min(TERRAIN_OFFSET_MAX,t.offset))]));
   return (x,z)=>{
     const gx=x/12,gz=z/12,ix=Math.floor(gx),iz=Math.floor(gz),fx=gx-ix,fz=gz-iz;
     const at=(i,j)=>offsets.get(`${i},${j}`)??0;
     const a=at(ix,iz)*(1-fx)+at(ix+1,iz)*fx,b=at(ix,iz+1)*(1-fx)+at(ix+1,iz+1)*fx;
-    return -18+Math.sin(x*.035)+Math.cos(z*.028)*1.3+Math.sin((x-z)*.017)*.9+a*(1-fz)+b*fz;
+    const y=-18+Math.sin(x*.035)+Math.cos(z*.028)*1.3+Math.sin((x-z)*.017)*.9+a*(1-fz)+b*fz;
+    return Math.max(WORLD_MIN_Y+.75,Math.min(SEA_LEVEL_Y-2,y));
   };
 }
 

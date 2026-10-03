@@ -117,7 +117,7 @@ test('actual simulation gives the new species distinct pace, safe depth and froz
     const fish=new THREE.Group();new THREE.Scene().add(fish);fish.position.set(0,-14,0);fish.scale.setScalar(.32);
     fish.userData={speciesId:id,velocity:new THREE.Vector3(),personality:1,phase:.3,wanderPhase:.2};
     const school={...behavior.SPECIES_POLICY[id],speciesId:id,members:[fish],center:fish.position.clone(),avgVelocity:new THREE.Vector3(),target:new THREE.Vector3(25,-14,0),behaviorPhase:.2};
-    const ctx={THREE,...behavior,...interactions,orca:null,whale:null,schools:new Map([['reef',school]]),schoolThinkAccumulator:0,camera:new THREE.PerspectiveCamera(),CULL_RADIUS:80,FISH_ANIMATION_RADIUS:80,WORLD_HALF:144,FISH_RADIUS:.38,editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:()=>-17,cellHasRockAt:()=>false,segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,orientFishForward:()=>{}};
+    const ctx={THREE,...behavior,...interactions,orca:null,whale:null,schools:new Map([['reef',school]]),schoolThinkAccumulator:0,camera:new THREE.PerspectiveCamera(),CULL_RADIUS:80,FISH_ANIMATION_RADIUS:80,WORLD_HALF:144,FISH_RADIUS:.38,editMode:false,visibleFishText:{},updateSchoolBrains:()=>{},terrainHeightAt:()=>-17,cellHasRockAt:()=>false,segmentRockHit:()=>null,disturbanceLevel:()=>0,simulationTime:()=>0,applyCurrentToFish:()=>{},orientFishForward:()=>{}};
     for(const name of ['targetV','collisionTmp','collisionTmp2','sepV','aliV','cohV','tmpV','desiredV','wanderV'])ctx[name]=new THREE.Vector3();ctx.collisionBox=new THREE.Box3();
     ctx.steerImport=()=>1;ctx.moveImportSafely=(f,next)=>f.position.copy(next);
     vm.createContext(ctx);vm.runInContext(code,ctx);const speeds=[];

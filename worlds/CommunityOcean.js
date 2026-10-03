@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HEX, SIDES, axialPosition, apothem, fixedHexMeta, containsHex, closestInHex, edgeDistances, exitSide, neighborSide, parseWorldId } from './HexWorld.js';
 import { createWorldTravel, validateWorldRecord } from './WorldTravel.js';
 import { createTerrainBlend, terrainFromRecord, createHexTerrainGeometry } from './HexTerrain.js';
+import { readWorldDraft,writeWorldDraft,deleteWorldDraft } from './WorldDraftStore.js';
 
 const ROUTES_KEY='fiveLoavesOceanVisitRoutesV1';
 export function installCommunityOcean(api) {
@@ -37,7 +38,10 @@ export function installCommunityOcean(api) {
       }
     }finally{rebuilding=false;}
   }
-  const engine=createWorldTravel({readWorld,capture,getUserId,onStatus:say,onCache:id=>{
+  const engine=createWorldTravel({readWorld,capture,getUserId,onStatus:say,
+    readDraft:id=>readWorldDraft(getUserId(),id),
+    writeDraft:(id,record)=>writeWorldDraft(getUserId(),id,record),
+    deleteDraft:id=>deleteWorldDraft(getUserId(),id),onCache:id=>{
     const record=engine.cached(id),position=engine.positions.get(id);
     if(record&&position)api.registerAtlas?.({id,name:record.name,ownerId:record.ownerId,visibility:record.visibility,...position,map:api.mapForWorld?.(record.world)});
     rebuild();refreshHUD();

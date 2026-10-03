@@ -46,7 +46,7 @@ export function validateWorldRecord(record) {
 
 // At most seven fetched worlds: current + six neighbours. Drafts are separate,
 // never evicted silently. Existing v1-v4 records are read without rewriting them.
-export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null,onStatus=()=>{},onCache=()=>{},timeout=15000}) {
+export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null,onStatus=()=>{},onCache=()=>{},readDraft=async()=>null,writeDraft=async()=>{},deleteDraft=async()=>{},timeout=15000}) {
   const cache=new Map(),pending=new Map(),drafts=new Map(),positions=new Map();
   let current=null,busy=false,disposed=false;
   const copy=value=>structuredClone(value);
@@ -91,7 +91,12 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
       if(owned(previous)){
         const snapshot=copy(previous);const budget=[...drafts].filter(([key])=>key!==from.id).reduce((n,[,v])=>n+JSON.stringify(v).length,0)+JSON.stringify(snapshot).length;
         if(budget>32000000)throw Error('Bewaar of exporteer eerst je open bouwwerken; de reisbuffer is vol.');
+        await writeDraft(from.id,snapshot);
         drafts.set(from.id,snapshot);
+      }
+      if(owned(remote)&&!drafts.has(id)){
+        const saved=await readDraft(id);
+        if(saved){const draft=validateWorldRecord(saved);if(owned(draft))drafts.set(id,copy(draft));}
       }
       const destination=owned(remote)&&drafts.has(id)?copy(drafts.get(id)):remote;
       // Always honor the fresh owner's identity, even when an old local draft exists.
@@ -115,6 +120,6 @@ export function createWorldTravel({readWorld,capture,activate,getUserId=()=>null
     get current(){return current;},get busy(){return busy;},get cacheSize(){return cache.size;},
     cached:id=>cache.has(id)?copy(cache.get(id)):null,
     draft:id=>drafts.has(id)?copy(drafts.get(id)):null,
-    forgetDraft:id=>drafts.delete(id),
+    forgetDraft:async id=>{await deleteDraft(id);drafts.delete(id);},
     dispose(){disposed=true;cache.clear();drafts.clear();positions.clear();}};
 }

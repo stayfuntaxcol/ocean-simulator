@@ -660,6 +660,8 @@ import { createJellyfishSwarm } from './graphics/JellyfishSwarm.js';
 import { createVolumeSculptEditor } from './graphics/VolumeSculptEditor.js';
 import { createDepthLayerGuide } from './graphics/DepthLayerGuide.js';
 import { SEA_LEVEL_Y,DEPTH_LAYER_HEIGHT,WORLD_MIN_Y,TERRAIN_OFFSET_MIN,TERRAIN_OFFSET_MAX,depthFromWorldY,depthLayerForY,worldYFromDepth } from './worlds/DepthLayers.js';
+import { readWorldDraft } from './worlds/WorldDraftStore.js';
+import { advanceRockRecovery,recoverySleeping,reachableFishGroups } from './graphics/ImportedRecovery.js';
 import { terrainFeatureCells,canyonWorldY,dropoffWorldY } from './worlds/TerrainFeatures.js';
 import { splitSculptFormations,normalizeRockFormationDescriptor } from './worlds/RockFormationGenerator.js';
 import { createRockFormationMeshSystem } from './graphics/RockFormationMeshes.js';
@@ -3572,7 +3574,11 @@ async function loadCloudWorld(worldId){
   try{
     const snapshot=await get(ref(firebaseDatabase,`worlds/${worldId}`));
     if(!snapshot.exists())throw new Error('Wereld niet gevonden');
-    const record=validateWorldRecord(snapshot.val());
+    let record=validateWorldRecord(snapshot.val());
+    if(record.ownerId===firebaseUser.uid){
+      const draft=await readWorldDraft(firebaseUser.uid,worldId);
+      if(draft){const saved=validateWorldRecord(draft);if(saved.ownerId===firebaseUser.uid)record={...record,world:saved.world};}
+    }
     if(record.world.orca&&!validateOrcaRecord(record.world.orca))throw Error('Ongeldige orkapositie');
     if(record.world.whale&&!validateWhaleRecord(record.world.whale))throw Error('Ongeldige walvispositie');
     validateVisitorRecords(record.world.reefVisitors);
@@ -3620,7 +3626,7 @@ async function saveCloudWorld(){
     currentCloudOwnerId=firebaseUser.uid;
     cloudWorldLoaded=true;
     communityOcean?.syncCurrent();
-    communityOcean?.engine.forgetDraft(worldId);
+    await communityOcean?.engine.forgetDraft(worldId);
     refreshWorldPermissions();
     syncCurrentAtlasWorld();
     refreshCurrentAtlasMap(false);
@@ -4930,14 +4936,14 @@ function moveImportSafely(fish,next,dt,school){
     else next.y=ground+radius;
   }
   const result=moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+radius+4),radius,
-    {minY:terrainHeightAt(fish.position.x,fish.position.z)+radius,maxY:waterLimit(fish)});
+    {minY:terrainHeightAt(fish.position.x,fish.position.z)+radius,maxY:waterLimit(fish),sculptCollision:(a,b,r)=>rockFormationMeshes.segmentHit(a,b,r)});
   // Streaming, growth or a new import can enclose the start. Return to the last
   // safe side instead of jumping through to the opposite face of the stone.
-  if(result.recovered&&fish.userData.lastRockSafe){
+  if((result.recovered||result.trapped)&&fish.userData.lastRockSafe){
     const previous=fish.userData.lastRockSafe;
     const safe=moveImportedFish(previous,previous,nearbyImportRocks(previous,radius+4),radius,
-      {minY:terrainHeightAt(previous.x,previous.z)+radius,maxY:waterLimit(fish)});
-    if(!safe.blocked)result.position.copy(previous);
+      {minY:terrainHeightAt(previous.x,previous.z)+radius,maxY:waterLimit(fish),sculptCollision:(a,b,r)=>rockFormationMeshes.segmentHit(a,b,r)});
+    if(!safe.blocked){result.position.copy(previous);result.trapped=false;}
   }
   const moved=fish.position.distanceTo(result.position);
   fish.position.copy(result.position);
@@ -4946,17 +4952,23 @@ function moveImportSafely(fish,next,dt,school){
     const inward=fish.userData.velocity.dot(result.normal);
     if(inward<0)fish.userData.velocity.addScaledVector(result.normal,-inward);
   }
-  const state=fish.userData.rockRoute;
-  fish.userData.blockedSeconds=result.blocked&&moved<dt*.15?(fish.userData.blockedSeconds||0)+dt:0;
-  if(fish.userData.blockedSeconds>3){
-    if(state){state.route=null;state.tangent=null;state.nextSense=0;}
-    const now=simulationTime();
-    const stuck=school.members.filter(f=>f.parent&&!f.userData.dead&&(f.userData.blockedSeconds||0)>2).length;
-    if(stuck>=Math.max(1,Math.ceil(school.members.length/2))&&now>=(school.routeResetAt||0)){
-      school.routeResetAt=now+12;school.forceMigration=true;school.retargetAt=0;
-      school.navWaypoint=null;school.navRemaining=null;school.navRetryAt=0;
+  if(!fish.userData.imported){
+    const state=fish.userData.rockRoute;
+    fish.userData.blockedSeconds=result.blocked&&moved<dt*.15?(fish.userData.blockedSeconds||0)+dt:0;
+    if(fish.userData.blockedSeconds>3){
+      if(state){state.route=null;state.tangent=null;state.nextSense=0;}
+      const now=simulationTime();
+      const stuck=school.members.filter(f=>f.parent&&!f.userData.dead&&(f.userData.blockedSeconds||0)>2).length;
+      if(stuck>=Math.max(1,Math.ceil(school.members.length/2))&&now>=(school.routeResetAt||0)){
+        school.routeResetAt=now+12;school.forceMigration=true;school.retargetAt=0;
+        school.navWaypoint=null;school.navRemaining=null;school.navRetryAt=0;
+      }
+      fish.userData.blockedSeconds=0;
     }
-    fish.userData.blockedSeconds=0;
+  }
+  if(result.blocked){
+    fish.userData.rockContactAt=simulationTime();
+    if(result.normal)fish.userData.rockContactNormal=result.normal.clone();
   }
 }
 function migrationCells(candidates,school){
@@ -5282,6 +5294,68 @@ function markSchoolRouteProgress(school,t){
   school.navLastProgressAt=t;
 }
 
+function livingSchoolMembers(school){
+  return school.members.filter(f=>f.parent&&!f.userData.dead&&!['sinking','burial'].includes(f.userData.vitalState));
+}
+function schoolFishConnected(a,b){
+  return !segmentRockHit(a.position,b.position,Math.max(FISH_RADIUS,a.userData.contactRadius||FISH_RADIUS,b.userData.contactRadius||FISH_RADIUS));
+}
+function splitOffImportedGroup(school,members,t){
+  const child=makeSchool(school.speciesId,{cohesion:school.cohesion,alignment:school.alignment,separation:school.separation,
+    habitatPull:school.habitatPull,exploration:school.exploration,cruiseSpeed:school.cruiseSpeed});
+  for(const key of ['importTemplate','sourceName','libraryId','sourceRecord','oceanProfile','foodSeekThreshold'])child[key]=school[key];
+  const share=members.length/Math.max(1,livingSchoolMembers(school).length);
+  child.birthCredit=(school.birthCredit||0)*share;school.birthCredit=(school.birthCredit||0)-child.birthCredit;
+  child.recentFoodSectors=[...school.recentFoodSectors];child.currentFoodSector=school.currentFoodSector;
+  child.recoveryFamily=school.recoveryFamily||school.id;child.recoveryDetached=true;child.rejoinAfter=t+30;
+  for(const fish of members){
+    school.members.splice(school.members.indexOf(fish),1);child.members.push(fish);
+    fish.userData.schoolId=child.id;fish.userData.behaviorPhase=child.behaviorPhase;
+  }
+  return child;
+}
+function releaseBlockedSchool(school,t){
+  const members=livingSchoolMembers(school);if(!members.length)return;
+  const family=school.recoveryFamily||school.id;school.recoveryFamily=family;
+  const groups=reachableFishGroups(members,schoolFishConnected);
+  const parts=[school];
+  for(const group of groups.slice(1))parts.push(splitOffImportedGroup(school,group,t));
+  for(const part of parts){
+    const active=livingSchoolMembers(part);part.center.set(0,0,0);
+    for(const fish of active){
+      part.center.add(fish.position);fish.userData.schoolBarrier=false;
+      if(fish.userData.rockRecovery)fish.userData.rockRecovery.cooldownUntil=t+30;
+    }
+    part.center.multiplyScalar(1/active.length);
+    part.independentUntil=t+20;part.rejoinAfter=t+30;part.detachRequested=false;
+    part.navWaypoint=null;part.navRemaining=null;part.forceMigration=false;
+    // A fresh local destination never points at the inaccessible old school center.
+    importedExploreTarget(part,t);
+  }
+}
+let nextRecoveryRejoinAt=0;
+function updateRecoverySchools(t){
+  if(importedDayPhase(currentWeatherState.hour).sleeping)return;
+  for(const school of [...schools.values()])if(school.importTemplate&&school.detachRequested&&!school.sleeping)releaseBlockedSchool(school,t);
+  if(t<nextRecoveryRejoinAt)return;nextRecoveryRejoinAt=t+3;
+  for(const small of [...schools.values()]){
+    if(!small.recoveryDetached||small.sleeping||t<(small.rejoinAfter||0))continue;
+    const active=livingSchoolMembers(small);
+    // Eight members establish a permanent school; growth still splits at sixteen.
+    if(active.length>=8){small.recoveryDetached=false;continue;}
+    if(!active.length)continue;
+    const target=[...schools.values()].find(s=>s!==small&&s.recoveryFamily===small.recoveryFamily&&!s.sleeping&&t>=(s.rejoinAfter||0)
+      &&livingSchoolMembers(s).length+active.length<16
+      &&active.some(a=>livingSchoolMembers(s).some(b=>a.position.distanceToSquared(b.position)<100&&schoolFishConnected(a,b))));
+    if(!target)continue;
+    for(const fish of active){small.members.splice(small.members.indexOf(fish),1);target.members.push(fish);fish.userData.schoolId=target.id;fish.userData.behaviorPhase=target.behaviorPhase;}
+    target.birthCredit=(target.birthCredit||0)+(small.birthCredit||0);small.birthCredit=0;
+    target.rejoinAfter=t+30;
+    if(livingSchoolMembers(target).length>=8)target.recoveryDetached=false;
+    if(!small.members.length)schools.delete(small.id);
+  }
+}
+
 function splitImportedSchools(t){
   for(const school of [...schools.values()]){
     if(!school.importTemplate)continue;
@@ -5289,6 +5363,7 @@ function splitImportedSchools(t){
     if(active.length<16)continue;
     const child=makeSchool(school.speciesId,{cohesion:school.cohesion,alignment:school.alignment,separation:school.separation,
       habitatPull:school.habitatPull,exploration:school.exploration,cruiseSpeed:school.cruiseSpeed});
+    child.recoveryFamily=school.recoveryFamily;child.rejoinAfter=school.rejoinAfter;
     child.importTemplate=school.importTemplate;child.sourceName=school.sourceName;child.libraryId=school.libraryId;
     child.sourceRecord=school.sourceRecord;child.oceanProfile=school.oceanProfile;child.foodSeekThreshold=school.foodSeekThreshold;
     child.birthCredit=(school.birthCredit||0)/2;school.birthCredit=child.birthCredit;
@@ -5312,6 +5387,7 @@ function splitImportedSchools(t){
 }
 
 function updateSchoolBrains(t){
+  updateRecoverySchools(t);
   splitImportedSchools(t);
   for(const school of schools.values()){
     if(school.speciesId==='orca'||school.speciesId==='whale'||school.members[0]?.userData.isReefVisitor)continue;
@@ -5605,6 +5681,58 @@ function disturbanceLevel(fish,now){
   return (u.panicStrength||1)*(1-k)*(1-k);
 }
 
+function setFishStartle(fish,direction,now,strength=1,delay=0,duration=5){
+  const u=fish.userData;
+  u.panicDir.copy(direction);u.panicStart=now+delay;
+  u.panicPeakUntil=u.panicStart+.85;u.panicEnd=u.panicPeakUntil+duration;
+  u.panicStrength=strength;
+}
+function recoveryPathClear(fish,to){
+  const r=Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS);
+  const floor=terrainHeightAt(to.x,to.z)+r;
+  return containsHex(to,HEX.radius-1)&&to.y>=floor&&to.y<=waterLimit(fish)&&!segmentRockHit(fish.position,to,r);
+}
+function startleStuckFish(fish,t){
+  const school=schools.get(fish.userData.schoolId);
+  if(!school||recoverySleeping(currentWeatherState.hour,fish.userData,school))return false;
+  const normal=fish.userData.rockContactNormal;
+  const headings=[];
+  if(normal){headings.push(normal.clone(),new THREE.Vector3(-normal.z,.15,normal.x),new THREE.Vector3(normal.z,.15,-normal.x));}
+  for(let i=0;i<12;i++)headings.push(new THREE.Vector3(Math.cos(i*Math.PI/6),i%3===0?.35:0,Math.sin(i*Math.PI/6)).normalize());
+  for(const direction of headings){
+    const to=fish.position.clone().addScaledVector(direction,1.6);
+    if(!recoveryPathClear(fish,to))continue;
+    setFishStartle(fish,direction,t,1.05,0,3);
+    fish.userData.autoStartleUntil=t+4;
+    // This impulse uses the ordinary collision-checked movement next frame.
+    fish.userData.velocity.copy(direction).multiplyScalar(school.cruiseSpeed*1.6);
+    fish.userData.rockRoute=null;fish.userData.grazeUntil=0;
+    return true;
+  }
+  return false;
+}
+function updateImportedRecovery(fish,t){
+  const u=fish.userData,school=schools.get(u.schoolId);if(!school)return;
+  const sleeping=recoverySleeping(currentWeatherState.hour,u,school);
+  if(sleeping&&u.autoStartleUntil){u.panicEnd=0;u.autoStartleUntil=0;}
+  const state=u.rockRecovery||(u.rockRecovery={});
+  if(sleeping){
+    advanceRockRecovery(state,{now:t,position:fish.position,blocked:false,sleeping:true});
+    return;
+  }
+  if(t>=(u.nextSchoolBarrierCheck||0)){
+    u.nextSchoolBarrierCheck=t+.75;
+    u.schoolBarrier=school.members.some(other=>other!==fish&&other.parent&&!other.userData.dead
+      &&other.position.distanceToSquared(fish.position)<225
+      &&!!segmentRockHit(fish.position,other.position,Math.max(FISH_RADIUS,u.contactRadius||FISH_RADIUS)));
+  }
+  const blocked=t-(u.rockContactAt??-Infinity)<.5||u.schoolBarrier;
+  const trying=!u.dead&&!['sinking','burial'].includes(u.vitalState)&&(u.health??100)>5;
+  const action=advanceRockRecovery(state,{now:t,position:fish.position,blocked,trying,sleeping});
+  if(action==='startle')startleStuckFish(fish,t);
+  if(action==='detach')school.detachRequested=true;
+}
+
 function disturbSchool(clickedFish,wholeSchool=false){
   if(!clickedFish?.parent)return;
   const school=schools.get(clickedFish.userData.schoolId);
@@ -5636,11 +5764,7 @@ function disturbSchool(clickedFish,wholeSchool=false){
     outward.normalize();
 
     const strength=baseStrength*distanceFalloff*(.82+oceanRandom()*.28)*(fish.userData.panicSensitivity||1);
-    fish.userData.panicDir.copy(outward);
-    fish.userData.panicStart=now+delay;
-    fish.userData.panicPeakUntil=fish.userData.panicStart+(wholeSchool?.95:.72)+oceanRandom()*.28;
-    fish.userData.panicEnd=fish.userData.panicPeakUntil+(wholeSchool?5.8:4.8)+oceanRandom()*1.8;
-    fish.userData.panicStrength=strength;
+    setFishStartle(fish,outward,now,strength,delay,(wholeSchool?5.8:4.8)+oceanRandom()*1.8);
     affected++;
   }
 
@@ -5686,6 +5810,7 @@ function updateFish(dt,t){
         if(fish.visible)visibleCount++;
         updateDyingFish(fish,dt,t);continue;
       }
+      if(fish.userData.imported&&!importedDayPhase(currentWeatherState.hour).sleeping)fish.userData.sleeping=false;
       const vitalityPace=fish.userData.imported?healthMotionFactor(fish.userData.health):1;
       const useRockNavigator=policy?.kind==='cardinal';
       const contactRadius=fish.userData.imported?Math.max(FISH_RADIUS,fish.userData.contactRadius||FISH_RADIUS):fish.userData.isPuffer?Math.max(FISH_RADIUS,(.98+(fish.userData.pufferInflation||0)*.8)*fish.scale.x):Math.max(FISH_RADIUS,(policy?.bodyClearance||0)*fish.scale.x);
@@ -5697,12 +5822,15 @@ function updateFish(dt,t){
       // Ver weg: alleen goedkope schoolsimulatie. Dichtbij: volledige boids.
       if(!visible){
         if(policy&&!useRockNavigator)continue;
+        if(fish.userData.imported&&importedDayPhase(currentWeatherState.hour).sleeping&&fish.userData.sleeping){fish.userData.velocity.set(0,0,0);continue;}
         targetV.copy(school.navWaypoint||school.target).sub(p); if(targetV.lengthSq()>1) targetV.normalize();
+        const panic=fish.userData.imported?disturbanceLevel(fish,t):0;
+        if(panic)targetV.multiplyScalar(1-panic*.72).addScaledVector(fish.userData.panicDir,2.45*panic).normalize();
         const importPace=useRockNavigator?steerImport(fish,targetV,school,dt):1;
         fish.userData.velocity.lerp(targetV.multiplyScalar(school.cruiseSpeed*vitalityPace*importPace),Math.min(1,dt*(fish.userData.imported?1.45:.16)));
         collisionTmp2.copy(p).addScaledVector(fish.userData.velocity,dt);
         applyCurrentToFish(fish,p,collisionTmp2,dt,t);
-        if(useRockNavigator){
+        if(useRockNavigator||fish.userData.imported){
           moveImportSafely(fish,collisionTmp2,dt,school);
         }else if(cellHasRockAt(collisionTmp2.x,collisionTmp2.z)){
           // Buiten beeld vermijden we de cel conservatief zonder automatisch omhoog te sturen.
@@ -5736,8 +5864,8 @@ function updateFish(dt,t){
 
         // Tijdens paniek valt cohesion bijna weg, alignment sterk terug.
         // In de herstelfase komen beide automatisch vloeiend terug.
-        const alignmentWeight=school.alignment*(1-panic*.82);
-        const cohesionWeight=school.cohesion*(1-panic*.96);
+        const alignmentWeight=school.alignment*(t<(school.independentUntil||0)?0:1)*(1-panic*.82);
+        const cohesionWeight=school.cohesion*(t<(school.independentUntil||0)?0:1)*(1-panic*.96);
         desiredV.addScaledVector(aliV,alignmentWeight).addScaledVector(cohV,cohesionWeight);
       }
       if(close && sepV.lengthSq()){
@@ -5836,7 +5964,7 @@ function updateFish(dt,t){
         else collisionTmp2.y=ground+clearance;
       }
       const fishHit=useRockNavigator?null:segmentRockHit(collisionTmp,collisionTmp2,contactRadius);
-      if(useRockNavigator){
+      if(useRockNavigator||fish.userData.imported){
         moveImportSafely(fish,collisionTmp2,dt,school);
       }else if(fishHit){
         const travel=collisionTmp2.clone().sub(collisionTmp);
@@ -5896,13 +6024,14 @@ function updateFish(dt,t){
     const clearance=fish.userData.speciesId==='reef_6'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:Math.max(.45,(SPECIES_POLICY[fish.userData.speciesId]?.bodyClearance||0)*fish.scale.x);
     const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||(fish.userData.speciesId==='reef_5'?fishExtent(fish).length():FISH_RADIUS));
     return next.y<=waterLimit(fish)&&next.y>=terrainHeightAt(next.x,next.z)+clearance
-      && (fish.userData.imported||fish.userData.speciesId==='reef_5'?!moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+radius+4),radius,{minY:terrainHeightAt(next.x,next.z)+clearance,maxY:waterLimit(fish)}).blocked:!segmentRockHit(fish.position,next,FISH_RADIUS));
+      && (fish.userData.imported||fish.userData.speciesId==='reef_5'?!moveImportedFish(fish.position,next,nearbyImportRocks(fish.position,fish.position.distanceTo(next)+radius+4),radius,{minY:terrainHeightAt(next.x,next.z)+clearance,maxY:waterLimit(fish),sculptCollision:(a,b,r)=>rockFormationMeshes.segmentHit(a,b,r)}).blocked:!segmentRockHit(fish.position,next,FISH_RADIUS));
   });
   for(const f of frameFish){
     if(f.userData.burialComplete){removeBuriedFish(f);continue;}
     if(['sinking','burial'].includes(f.userData.vitalState))continue;
     constrainWater(f);
     f.userData.motionSpeed=f.position.distanceTo(previous.get(f))/dt;
+    if(f.userData.imported)updateImportedRecovery(f,t);
     const speed=Math.min(3,f.userData.motionSpeed);
     f.userData.swimPhase=(f.userData.swimPhase??f.userData.phase??0)+dt*speed*(SPECIES_POLICY[f.userData.speciesId]?.swimRate??(f.userData.speciesId==='reef_0'?7:4));
     if(SPECIES_POLICY[f.userData.speciesId]?.finRate)advanceFinPhase(f,dt);
