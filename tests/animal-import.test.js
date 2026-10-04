@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {importAnimalFiles,normalizeImportedAsset,validateGltf,gltfDocument} from '../animals/design/ImportedAsset.js';
+import {ASSET_MAX_BYTES,importAnimalFiles,normalizeImportedAsset,validateGltf,gltfDocument} from '../animals/design/ImportedAsset.js';
 import {normalizeAnimalDesign,parseAnimalDesign} from '../animals/design/AnimalDesign.js';
 import {normalizeAnimalSettings} from '../animals/AnimalSettings.js';
 import {animalExtent} from '../animals/AnimalSystem.js';
@@ -14,4 +14,11 @@ test('missing, ambiguous, remote, corrupt or overly complex models fail clearly'
  await assert.rejects(importAnimalFiles([file('orca.gltf',JSON.stringify({...doc,images:[{uri:'https://untrusted.example/skin.png'}]}))]),/externe links/);
  assert.throws(()=>normalizeImportedAsset({kind:'gltf',data:JSON.stringify(doc)}),/lokale/);assert.throws(()=>gltfDocument(new Uint8Array([1,2]).buffer),/GLB/);assert.throws(()=>validateGltf({asset:{version:'1.0'}}),/2.0/);assert.throws(()=>validateGltf({asset:{version:'2.0'},accessors:[{count:1000001}]}),/complex/);
  assert.throws(()=>validateGltf({asset:{version:'2.0'},extensionsRequired:['KHR_texture_basisu']}),/PNG\/JPEG/);
+});
+
+test('large imports pass the former 12 MB limit and irrelevant folder files do not count',async()=>{
+ const bytes=new Uint8Array(13*1024*1024),doc={asset:{version:'2.0'},buffers:[{uri:'mesh.bin',byteLength:bytes.length}]};
+ const asset=await importAnimalFiles([file('large.gltf',JSON.stringify(doc)),file('mesh.bin',bytes),{name:'unused.fbx',size:200*1024*1024}]);
+ assert(asset.data.length>12*1024*1024);assert.deepEqual(parseAnimalDesign(JSON.stringify(normalizeAnimalDesign({asset}))).asset,asset);
+ await assert.rejects(importAnimalFiles([{name:'too-large.glb',size:ASSET_MAX_BYTES+1}]),/100 MB/);
 });

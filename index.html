@@ -4226,7 +4226,7 @@ function syncAnimalControls(){
  if(fishCountEl.textContent!==String(fishes.length))fishCountEl.textContent=fishes.length;if(schoolCountText.textContent!==String(schools.size))schoolCountText.textContent=schools.size;
 }
 const openAnimalStudioBtn=document.createElement('button');openAnimalStudioBtn.id='openAnimalStudio';openAnimalStudioBtn.textContent='Animal Design Studio · modellen en gedrag';openAnimalStudioBtn.type='button';
-openAnimalStudioBtn.onclick=()=>{const world=currentAtlasWorldId();try{localStorage.setItem(`ocean-animal-settings:${world}`,JSON.stringify(animalSystem.settings));}catch{}const url=new URL('./animal-studio/',location.href);url.searchParams.set('world',world);url.searchParams.set('session',animalStudioSession);window.open(url,'ocean-animal-studio');};
+openAnimalStudioBtn.onclick=()=>{const world=currentAtlasWorldId();try{if(animalSystem.settings.orca.design?.asset?.data.length>2000000)throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${world}`,JSON.stringify(animalSystem.settings));}catch{}const url=new URL('./animal-studio/',location.href);url.searchParams.set('world',world);url.searchParams.set('session',animalStudioSession);window.open(url,'ocean-animal-studio');};
 document.querySelector('#designDialog .menu-panel-body').prepend(openAnimalStudioBtn);
 for(const [kind,suffix] of Object.entries({orca:'Orca',whale:'Whale',stingray:'Stingray'})){
  const label=document.createElement('label');label.textContent='Aantal '+({orca:'volwassen orka’s',whale:'walvissen',stingray:'roggen'}[kind])+' ';const select=document.createElement('select');select.id='animal-count-'+kind;
@@ -4240,7 +4240,7 @@ for(const [key,text] of [['feeding','Orka’s eten dode importvissen · moeder m
 const animalStudioChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('ocean-animal-studio'):null;
 function applyAnimalStudioSettings(data){if(data?.type!=='animal-settings'||data.world!==currentAtlasWorldId()||data.session!==animalStudioSession)return;if(animalStudioLastRequest===data.requestId)return;animalStudioLastRequest=data.requestId;
  const allowed=canEditCurrentWorld()&&!cloudBusy&&!communityOcean?.busy;
- if(allowed){animalSystem.configure(data.settings);syncAnimalControls();for(const key of ['feeding','turtleHunting'])document.getElementById('animal-'+key).checked=animalSystem.settings.orca[key];try{localStorage.setItem(`ocean-animal-settings:${data.world}`,JSON.stringify(animalSystem.settings));}catch{}}
+ if(allowed){animalSystem.configure(data.settings);syncAnimalControls();for(const key of ['feeding','turtleHunting'])document.getElementById('animal-'+key).checked=animalSystem.settings.orca[key];try{if(animalSystem.settings.orca.design?.asset?.data.length>2000000)throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${data.world}`,JSON.stringify(animalSystem.settings));}catch{}}
  animalStudioChannel?.postMessage({type:'animal-settings-result',world:data.world,session:data.session,message:allowed?'Toegepast in je oceaan. Bewaar de wereld met Save Local of Save Online.':'Deze wereld is alleen-lezen of wordt momenteel geladen. Probeer je eigen wereld.'});
 }
 animalStudioChannel?.addEventListener('message',event=>applyAnimalStudioSettings(event.data));

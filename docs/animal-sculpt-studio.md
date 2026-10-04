@@ -58,7 +58,7 @@ Open **5 · Model importeren** in de workbench. Selecteer één `.glb`, of één
 uitgepakte map selecteren. ZIP-bestanden eerst uitpakken. Ontbrekende of dubbelzinnige
 bestanden worden gemeld; een mislukte import vervangt het huidige ontwerp niet.
 
-- Model en textures samen maximaal 12 MB; maximaal 300.000 driehoeken en 5.000 nodes.
+- Model en textures samen maximaal 100 MB; maximaal 300.000 driehoeken en 5.000 nodes.
 - Materialen, textures, skeletten, morph targets en ingebouwde clips worden geladen.
   Draco en Meshopt worden ondersteund; KTX2/Basis-textures en onbekende verplichte
   extensies vragen een gewone GLB-export met PNG/JPEG-textures.

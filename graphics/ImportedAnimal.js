@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
 import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+import {base64ArrayBuffer} from '../animals/design/ImportedAsset.js';
 import {normalizeAnimalDesign} from '../animals/design/AnimalDesign.js';
 export function disposeImportedScene(scene){const geometries=new Set(),materials=new Set(),textures=new Set(),skeletons=new Set();scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.skeleton)skeletons.add(o.skeleton);for(const m of o.material?(Array.isArray(o.material)?o.material:[o.material]):[]){materials.add(m);for(const value of Object.values(m))if(value?.isTexture)textures.add(value);}});textures.forEach(t=>{t.source?.data?.close?.();t.dispose();});materials.forEach(m=>m.dispose());geometries.forEach(g=>g.dispose());skeletons.forEach(s=>s.dispose());}
 export function createImportedAnimal(input,{studio=false,settings={size:1.25}}={}){
@@ -13,7 +14,7 @@ export function createImportedAnimal(input,{studio=false,settings={size:1.25}}={
  const draco=new DRACOLoader();draco.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.179.1/examples/jsm/libs/draco/');
  const loader=new GLTFLoader(manager).setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder);
  model.ready=(async()=>{try{
-  const data=asset.kind==='glb'?Uint8Array.from(atob(asset.data),c=>c.charCodeAt(0)).buffer:asset.data;
+  const data=asset.kind==='glb'?base64ArrayBuffer(asset.data):asset.data;
   gltf=await loader.parseAsync(data,'');if(disposed){disposeImportedScene(gltf.scene);return model;}
   // An imported camera or light must not change the studio/ocean lighting.
   gltf.scene.traverse(o=>{if(o.isLight||o.isCamera)o.visible=false;if(o.isBone){model.bones.push(o);model.byName.set(o.name,o);}if(o.isMesh){model.stats.triangles+=(o.geometry.index?.count||o.geometry.attributes.position?.count||0)/3;o.frustumCulled=false;}});
