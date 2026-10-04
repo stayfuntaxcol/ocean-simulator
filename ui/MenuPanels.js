@@ -34,7 +34,7 @@ export function installMenuPanels({beforeOpen,onExpert}={}){
   move(modules,'weatherOptionsPanel','currentFlowPanel');
   // Put style and the four large animals first; sample-fish controls remain reachable.
   detailGroup.append(byId('fishRenderStyle').closest('label'),byId('fishStyleStatus'));
-  for(const [suffix,label,status] of [['Whale','Whale · walvis','whaleStatus'],['Orca','Orca · orka','orcaStatus'],['Stingray','Stingray · rog','stingrayStatus'],['Turtle','Sea Turtle · zeeschildpad','turtleStatus']]){
+  for(const [suffix,label,status] of [['Whale','Whale · walvis','whaleStatus'],['Orca','Orca · orka','orcaStatus'],['Stingray','Stingray · rog','stingrayStatus'],['Turtle','Sea Turtle · zeeschildpad','turtleStatus'],['Squid','Squid · inktvis','squidStatus']]){
     const animal=section(detailGroup,'Show '+label);
     for(const action of ['place','follow','remove']){const button=byId(action+suffix);if(button)animal.append(button);}
     move(animal,status);
