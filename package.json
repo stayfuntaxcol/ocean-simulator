@@ -14,7 +14,8 @@
     "benchmark:sculpt": "node scripts/benchmark-sculpt.mjs",
     "test:animal-browser": "node scripts/test-animal-browser.mjs",
     "studio:ai": "node scripts/animal-ai-server.mjs",
-    "test:animal-sculpt-browser": "node scripts/test-animal-sculpt-browser.mjs"
+    "test:animal-sculpt-browser": "node scripts/test-animal-sculpt-browser.mjs",
+    "test:animal-import-browser": "node scripts/test-animal-import-browser.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

@@ -1,3 +1,4 @@
+import {normalizeImportedAsset,ASSET_MAX_TEXT} from './ImportedAsset.js';
 // Editable, portable source of truth. No generated meshes or executable AI code in saves.
 export const DESIGN_FORMAT='ocean-animal-design-v1';
 export const DESIGN_LIMITS={strokes:500,paint:64,keys:120,textureBytes:1400000};
@@ -23,9 +24,9 @@ export function normalizeAnimalDesign(input={}){
  if(keyRows.some(k=>!allowedBones.has(k?.bone)))throw Error('Een bewegingshouding verwijst naar een onbekend bot.');
  const duration=num(m.duration,3.1,.8,12);
  const motion={duration:num(m.duration,3.1,.8,12),amplitude:num(m.amplitude,.23,0,.55),frequency:num(m.frequency,1,.2,3),flipper:num(m.flipper,.15,0,.65),lag:num(m.lag,.65,0,1.8),roll:num(m.roll,.025,0,.15),keys:keyRows.map(k=>({time:num(k?.time,0,0,duration),bone:String(k?.bone||'tail-1').slice(0,40),rotation:vec(k?.rotation,[0,0,0],-.8,.8)})).sort((a,b)=>a.time-b.time)};
- return {format:DESIGN_FORMAT,species:'orca',name:String(input.name||'Orka · sculpt').slice(0,80),resolution:num(input.resolution,.4,.28,.7),worldLength:num(input.worldLength,12,6,14),form,strokes,skin,motion};
+ return {format:DESIGN_FORMAT,species:'orca',name:String(input.name||'Orka · sculpt').slice(0,80),resolution:num(input.resolution,.4,.28,.7),worldLength:num(input.worldLength,12,input.asset ? .2 : 6,input.asset?30:14),form,strokes,skin,motion,...(input.asset?{asset:normalizeImportedAsset(input.asset)}:{})};
 }
-export function parseAnimalDesign(text){if(text.length>2200000)throw Error('Dierontwerp is te groot.');const input=JSON.parse(text);if(input.format!==DESIGN_FORMAT)throw Error('Geen Animal Design-bestand.');return normalizeAnimalDesign(input);}
+export function parseAnimalDesign(text){if(text.length>ASSET_MAX_TEXT+2200000)throw Error('Dierontwerp is te groot.');const input=JSON.parse(text);if(input.format!==DESIGN_FORMAT)throw Error('Geen Animal Design-bestand.');return normalizeAnimalDesign(input);}
 export function designPrompt(design,instruction=''){
  const d=normalizeAnimalDesign(design);d.skin.texture=null;
  return `Ontwerp een overtuigende anatomische orka voor Ocean Animal Design Studio. Beoordeel meegegeven afbeeldingen en tijdgecodeerde videoframes. Retourneer uitsluitend het volledige JSON-ontwerp in onderstaand formaat, geen code. +X is de kop, -X de staart, +Y boven, Z links/rechts. Ontwerplengte 32–48, los van worldLength 6–14 meter. Behoud bewerkingen tenzij wijziging gevraagd. Gebruik form voor grote verhoudingen en strokes voor lokale add/remove/smooth-bewerkingen (punt in ontwerpeenheden, radius .3–5, strength .05–1, mirror). Maximaal 500 strokes. Skin: kleuren, pores/scars 0–1, patchSize .65–1.35, en max 64 paint-stippen op lokale 3D-punten met radius .15–5, color, opacity, mirror. Gebruik geen texture-data in je antwoord. Skeletnamen: torso, neck, head, jaw, dorsal, tail-1 t/m tail-7, fluke-left, fluke-right, flipper-left-1 t/m flipper-left-3 en flipper-right-1 t/m flipper-right-3. motion.keys bevat max 120 {time,bone,rotation:[x,y,z]} in radialen (max ±.8). Herhaal de zwemcyclus met motion.duration .8–12 seconden. Dat is een interpretatie van referenties, geen exacte 3D-motioncapture. Maak alle velden expliciet. Opdracht: ${instruction.slice(0,3000)}\nHuidig ontwerp:\n${JSON.stringify(d)}`;
