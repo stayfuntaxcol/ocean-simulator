@@ -5,6 +5,7 @@ let sequence=0;
 const id=()=>`animal-${Date.now().toString(36)}-${(++sequence).toString(36)}`;
 const clamp=THREE.MathUtils.clamp;
 export function animalExtent(kind,s,age=0,role='adult'){
+ if(kind==='orca'&&s.design){const d=s.design,f=d.form,scale=d.worldLength/f.length*s.size/1.25*(role==='calf'?s.calfSize:1),extent=[f.length/2+3,Math.max(3.2+6*f.dorsal,11),2.1+7.9*f.flippers];for(const b of d.strokes)if(b.mode==='add')b.point.forEach((v,i)=>extent[i]=Math.max(extent[i],Math.abs(v)+b.radius));return new THREE.Vector3(...extent).multiplyScalar(scale);}
  const scale=kind==='turtle'?turtleLife(age,s).scale:s.size*(role==='calf'?s.calfSize:1);
  return new THREE.Vector3(...({orca:[6.6,1.65*(.7+1.75*s.dorsal)+.25,1.65*Math.max(1.4*s.tail,.48+1.5*s.flippers)+.2],whale:[14.8,Math.max(3.6,1.1+1.7*s.dorsal),2+6.7*s.flippers+.4],turtle:[1.9,.55,2.3],stingray:[3.3,.52,1.5]}[kind])).multiplyScalar(scale);
 }
@@ -89,7 +90,7 @@ export function createAnimalSystem({settings={},factory,worldId='local-world',te
  const calf=group.find(a=>a.role==='calf'),cm=calf&&models.get(calf.id);if(r.role==='mother'&&cm&&p.distanceTo(cm.root.position)>s.familyDistance*2){prey=null;desired=cm.root.position.clone();speed=s.speed*.8;}
  if(r!==leader&&!desired){const forward=lm.root.userData.velocity.clone().setY(0).normalize(),side=new THREE.Vector3(-forward.z,0,forward.x),spacing=r.kind==='whale'?s.groupDistance:r.kind==='turtle'?s.groupDistance:s.familyDistance;desired=lm.root.position.clone().addScaledVector(r.role==='calf'?side:forward,r.role==='calf'?spacing:-i*spacing);speed*=clamp(p.distanceTo(desired)/Math.max(1,spacing)+.4,.5,1.4);}
  if(!prey&&r.role!=='calf'&&['orca','whale'].includes(r.kind)){
- const surfaceY=19.8-(r.kind==='orca'?1.45*s.size:2.9*s.size),hold=s.surfaceDuration;
+ const surfaceY=19.8-(r.kind==='orca'?(s.design?4.07*s.design.form.girth*s.design.worldLength/s.design.form.length*s.size/1.25:1.45*s.size):2.9*s.size),hold=s.surfaceDuration;
  if(r.phase==='cruise'&&r.surfaceClock>=s.surfaceInterval){r.phase='ascend';r.baseY=p.y;targets.delete(r.id);}
  if(r.phase==='ascend'){desired=(desired||p.clone().add(new THREE.Vector3(Math.cos(r.heading)*12,0,Math.sin(r.heading)*12))).clone();desired.y=surfaceY;speed=Math.min(speed,1.4);if(Math.abs(p.y-surfaceY)<.3){r.phase='breathe';r.surfaceClock=0;}}
  if(r.phase==='breathe'){desired=(desired||p.clone().add(new THREE.Vector3(Math.cos(r.heading)*10,0,Math.sin(r.heading)*10))).clone();desired.y=surfaceY;speed*=.45;if(r.surfaceClock>hold)r.phase='descend';}
