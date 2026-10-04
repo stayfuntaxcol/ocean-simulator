@@ -11,7 +11,8 @@
     "test:sculpt-browser": "node scripts/test-sculpt-browser.mjs",
     "test:recovery-browser": "node scripts/test-recovery-browser.mjs",
     "test:menu-browser": "node scripts/test-menu-browser.mjs",
-    "benchmark:sculpt": "node scripts/benchmark-sculpt.mjs"
+    "benchmark:sculpt": "node scripts/benchmark-sculpt.mjs",
+    "test:animal-browser": "node scripts/test-animal-browser.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import {DEFAULT_ANIMAL_SETTINGS} from '../animals/AnimalSettings.js';
+import {hydrofoil} from './AnimalForms.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {addSurfaceRelief} from './FishSurfaceDetail.js';
 
 export const ORCA_SCALE=1.65;
-export const ORCA_CLEARANCE=4*ORCA_SCALE;
+export const ORCA_CLEARANCE=8.7;
 const profile=[[-3,.09,.08],[-2.5,.18,.15],[-1.8,.48,.38],[-.8,.82,.67],
   [.3,.94,.76],[1.2,.78,.62],[1.9,.51,.43],[2.5,.28,.27],[2.85,.08,.08]];
 
@@ -84,11 +86,11 @@ function teeth(lower=false) {
   for(const p of parts)p.dispose();return result;
 }
 
-export function createOrca() {
-  const root=new THREE.Group();root.name='Orka';root.scale.setScalar(ORCA_SCALE);
+export function createOrca(settings=DEFAULT_ANIMAL_SETTINGS.orca) {
+  const root=new THREE.Group();root.name='Orka';root.scale.setScalar(ORCA_SCALE*settings.size);
   root.userData={isFishRoot:true,isOrca:true,visualSpecies:'Orka',phase:.6,speed:1.7,
     velocity:new THREE.Vector3(1.7,0,0),health:100};
-  const black=new THREE.MeshStandardMaterial({color:0x071219,roughness:.32,metalness:.02});
+  const black=new THREE.MeshStandardMaterial({color:0x071219,roughness:settings.roughness,metalness:.02});
   const white=new THREE.MeshStandardMaterial({color:0xe8e6cd,roughness:.4});
   const mouthMaterial=new THREE.MeshStandardMaterial({color:0x382124,roughness:.75});
   const toothMaterial=new THREE.MeshStandardMaterial({color:0xf2eed6,roughness:.38});
@@ -136,13 +138,12 @@ export function createOrca() {
   const dorsal=new THREE.Mesh(extrudedFin([[.65,.72],[.20,1.25],[.05,2.2],[-.35,2.45],
     [-.28,1.65],[-.43,1.12],[-.95,.70],[-.48,.73],[.18,.72],[.65,.72]]),black);
   dorsal.name='Dorsal fin';root.add(dorsal);
-  const flipperGeometry=extrudedFin([[0,0],[-.25,.44],[-.63,1.17],[-1.02,1.19],
-    [-1.25,1.02],[-.86,.26],[-.42,.06],[-.22,.02],[-.1,0],[0,0]]);
-  flipperGeometry.rotateX(Math.PI/2);
+  dorsal.scale.y=settings.dorsal;dorsal.position.y=.70*(1-settings.dorsal);
+  const flipperGeometry=hydrofoil(1.5,.48,.14);
   const pectorals=[];
   for(const side of [-1,1]) {
     const fin=new THREE.Mesh(flipperGeometry,finSkin);fin.name='Pectoral fin';
-    fin.position.set(1,-.37,side*.48);fin.scale.z=side;root.add(fin);pectorals.push(fin);
+    fin.position.set(1,-.37,side*.48);fin.scale.set(settings.flippers,1,side*settings.flippers);root.add(fin);pectorals.push(fin);
     const eye=new THREE.Mesh(new THREE.SphereGeometry(.065,12,8),eyeMaterial);
     eye.position.set(1.79,.14,side*.44);root.add(eye);
   }
@@ -150,7 +151,7 @@ export function createOrca() {
     [-.90,1.18],[-.79,.38],[-.71,.08],[-.84,.035],[-.84,-.035],[-.71,-.08],
     [-.79,-.38],[-.90,-1.18],[-.65,-1.4],[-.38,-1.26],[-.17,-.7],[0,0]],.075);
   flukesGeometry.rotateX(Math.PI/2);
-  const flukes=new THREE.Mesh(flukesGeometry,finSkin);flukes.name='Horizontal flukes';flukes.position.x=-3;root.add(flukes);
+  const flukes=new THREE.Mesh(flukesGeometry,finSkin);flukes.scale.z=settings.tail;flukes.name='Horizontal flukes';flukes.position.x=-3;root.add(flukes);
   const jaw=new THREE.Group();jaw.name='Lower jaw';jaw.position.set(1.18,-.18,0);root.add(jaw);
   const lower=new THREE.Mesh(createOrcaJaw(),white);lower.name='Rounded mandible';jaw.add(lower);
   const gums=new THREE.Mesh(new THREE.SphereGeometry(1,16,8),mouthMaterial);
@@ -162,14 +163,16 @@ export function createOrca() {
   // During a short surface visit the body remains in the water and only the
   // blowhole reaches the ceiling. The plume is a translucent, rising mist.
   const breath=new THREE.Group();breath.name='Orca breath plume';breath.visible=false;root.add(breath);
+  const blowhole=new THREE.Mesh(new THREE.SphereGeometry(1,12,8),eyeMaterial);blowhole.name='Blowhole';blowhole.position.set(1.03,.825,0);blowhole.scale.set(.11,.014,.065);root.add(blowhole);
   const breathMaterial=new THREE.MeshStandardMaterial({color:0xd8f4f2,transparent:true,opacity:.52,depthWrite:false,roughness:.25});
   for(let i=0;i<7;i++){
     const puff=new THREE.Mesh(new THREE.SphereGeometry(.12+i*.025,10,7),breathMaterial);
     puff.position.set(1.03+i*.07,.87+i*.18,(i%2?1:-1)*i*.028);puff.scale.set(1,1.5,1);breath.add(puff);
   }
-  let jawTimer=0,jawAmount=0,disposed=false,surfaceBaseY=null;
+  let jawTimer=0,jawAmount=0,disposed=false;
   function animate(dt,time,quality='medium',distance=0) {
-    uniforms.orcaPhase.value=time*2.35+.6;
+    if(dt<=0||disposed)return;
+    uniforms.orcaPhase.value=time*2.35*settings.stroke+.6;
     uniforms.orcaAmplitude.value=.13+Math.min(2.5,root.userData.velocity.length())*.035;
     flukes.position.y=orcaBend(-3,uniforms.orcaPhase.value,uniforms.orcaAmplitude.value);
     const slope=(orcaBend(-2.999,uniforms.orcaPhase.value,uniforms.orcaAmplitude.value)-
@@ -182,14 +185,7 @@ export function createOrca() {
     upperTeeth.visible=lowerTeeth.visible=jawAmount>.08;
     const detailed=distance<(quality==='low'?20:40);
     body.geometry=detailed?near:far;
-    const cycle=(time+(root.userData.phase||0)*11)%74;
-    const rise=THREE.MathUtils.smoothstep(cycle,42,49)-THREE.MathUtils.smoothstep(cycle,57,65);
-    if(rise>.001&&surfaceBaseY===null)surfaceBaseY=root.position.y;
-    if(surfaceBaseY!==null)root.position.y=THREE.MathUtils.lerp(surfaceBaseY,15.45,rise);
-    if(cycle>65&&surfaceBaseY!==null){root.position.y=surfaceBaseY;surfaceBaseY=null;}
-    const blowing=cycle>50&&cycle<53&&rise>.92;
-    breath.visible=blowing;
-    if(blowing){breath.position.set(0,2.05,0);breath.scale.setScalar(.72+(cycle-50)*.30);}
+
   }
   function dispose() {
     if(disposed)return;disposed=true;
@@ -197,5 +193,5 @@ export function createOrca() {
     root.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)materials.add(o.material);});
     geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());
   }
-  return {root,animate,openMouth(){jawTimer=3.2;},dispose};
+  return {root,animate,setBreathing(amount){breath.visible=amount>0;breath.scale.setScalar(.8+amount*.6);},openMouth(){jawTimer=3.2;},dispose};
 }

@@ -2,7 +2,7 @@
 export function installMenuPanels({beforeOpen,onExpert}={}){
   const byId=id=>document.getElementById(id),hud=byId('hud');
   const dialogs=new Map();
-  const labels={settings:['Settings','Beeld, details en modules'],design:['Design','Fish Studio en Fish Library'],build:['Build','Bodem, landschap en biodiversiteit'],save:['Save options','Bewaren, delen en de wereldatlas']};
+  const labels={settings:['Settings','Beeld, details en modules'],design:['Design','Animal Studio, Fish Studio en Fish Library'],build:['Build','Bodem, landschap en biodiversiteit'],save:['Save options','Bewaren, delen en de wereldatlas']};
   const navigation=document.createElement('nav');navigation.className='menu-clusters';navigation.setAttribute('aria-label','Hoofdmenu');
   hud.insertBefore(navigation,byId('ecosystemPanel'));
   for(const [name,[title,description]] of Object.entries(labels)){
