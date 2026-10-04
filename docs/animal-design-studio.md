@@ -52,3 +52,7 @@ Controle: `npm test`, `npm run test:animal-browser`, `npm run test:menu-browser`
 In het headless scenario met 40 dieren kostte de dierupdate mediaan 0,5 ms en op het 95e percentiel 0,9 ms. De gemeten camera zag 93 draw calls en 123.030 triangles. Dit beschrijft één lokale scène en camera, geen zwaar volledig rif of garantie voor een andere computer.
 
 De bestaande brede `test:ecosystem-browser` faalt nog bij `splitSchool.currentFoodSector` (`null`), dezelfde fout als op de eerdere `main`. De streaming-, rots- en dieptecontroles vóór die assertion slagen. Deze bestaande importschoolfout is niet gewijzigd in deze dierenupgrade.
+
+## Sculpt, skin and skeleton workbench
+
+The orca now has an independent sculpt workflow linked from the studio. See [animal-sculpt-studio.md](animal-sculpt-studio.md) for object-local brushes, skin painting, named bones, reference/video import, AI gateway setup and current limitations.

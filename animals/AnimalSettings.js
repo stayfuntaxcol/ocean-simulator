@@ -1,3 +1,4 @@
+import {normalizeAnimalDesign} from './design/AnimalDesign.js';
 // One schema drives the studio, world saves and model/behaviour limits.
 const n=(label,value,min,max,step=.01,group='Beweging')=>({label,value,min,max,step,group,type:'number'});
 const b=(label,value,group='Gedrag')=>({label,value,group,type:'boolean'});
@@ -13,7 +14,9 @@ export function normalizeAnimalSettings(input={}){
  const out={version:1};
  for(const kind of ANIMAL_KINDS){out[kind]={};for(const [key,s] of Object.entries(ANIMAL_SCHEMA[kind])){
   const v=input?.[kind]?.[key];out[kind][key]=s.type==='boolean'?(typeof v==='boolean'?v:s.value):s.type==='select'?(s.options.includes(Number(v))?Number(v):s.value):(typeof v==='number'&&Number.isFinite(v)?Math.max(s.min,Math.min(s.max,v)):s.value);
- }}return out;
+ }}
+ if(input?.orca?.design){out.orca.design=normalizeAnimalDesign(input.orca.design);}
+ return out;
 }
 export const DEFAULT_ANIMAL_SETTINGS=normalizeAnimalSettings();
 export function turtleLife(age,settings=DEFAULT_ANIMAL_SETTINGS.turtle){
