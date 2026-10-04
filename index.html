@@ -200,7 +200,8 @@
       #worldAtlasDetails{border-left:0;border-top:1px solid rgba(255,255,255,.13);max-height:240px}
       #worldAtlasMap,#worldAtlasSvg{min-height:330px}
     }
-  </style>
+  .animal-manager label{display:block;margin:10px 0}.animal-manager input{max-width:100px}.animal-manager select{max-width:100%}.animal-manager button{margin:5px 3px 5px 0}.animal-manager{margin-top:18px}
+</style>
 
   <script type="importmap">
   {
@@ -677,6 +678,7 @@ import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { createReefSpeciesLibrary, REEF_SPECIES } from './graphics/ReefSpecies.js';
 import { createMicroLife } from './graphics/MicroLife.js';
 import { createMicroGeometry } from './graphics/MicroLifeAnatomy.js';
+import {createAnimalManager} from './animal-studio/AnimalManager.js';
 import {saveDesign as saveAnimalDesign} from './animal-studio/DesignStore.js';
 import {createAnimalSystem,animalExtent} from './animals/AnimalSystem.js';
 import {createAnimalModel} from './animals/AnimalModels.js';
@@ -3567,8 +3569,9 @@ document.addEventListener('click',event=>{
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
+ for(const control of document.querySelectorAll('#animalManager input,#animalManager select,#animalManager button'))control.disabled=!canEditCurrentWorld();
   if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
-  for(const id of ['animal-count-orca','animal-count-whale','animal-count-stingray','animal-feeding','animal-turtleHunting','editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','placeSquid','removeSquid','currentFlowAdd','currentFlowPlace','currentFlowDelete']){
+  for(const id of ['animal-count-orca','animal-count-whale','animal-count-stingray','animal-count-squid','animal-feeding','animal-turtleHunting','editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','placeSquid','removeSquid','currentFlowAdd','currentFlowPlace','currentFlowDelete']){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
   const flowReadOnly=!canEditCurrentWorld();
@@ -4214,7 +4217,7 @@ const animalSystem=createAnimalSystem({factory:createAnimalModel,worldId:current
  },onDeparture:event=>{migratedFollowId=selectedFish&&event.ids.includes(selectedFish.userData.animalId)?selectedFish.userData.animalId:null;},onMigration:event=>{
   if(event.from!==currentAtlasWorldId())return;
   if(event.to&&migratedFollowId&&event.ids.includes(migratedFollowId)){const followId=migratedFollowId;migratedFollowId=null;queueMicrotask(async()=>{const ok=await communityOcean?.visit(event.to);const animal=animalSystem.models.get(followId);if(ok&&animal)startFollowing(animal.root,'fish');});}
-  const name=event.kind==='whale'?'Walvissen':event.kind==='squid'?'Inktvissen':'Zeeschildpadden';document.getElementById(event.kind+'Status').textContent=event.to?`${name} migreren samen naar een buurwereld.`:`${name} reizen buiten beeld en keren later terug.`;
+  const name=event.kind==='whale'?'Walvissen':event.kind==='squid'?'Inktvissen':'Zeeschildpadden';(document.getElementById(event.kind+'Status')||document.getElementById('squidStatus')).textContent=event.to?`${name} migreren samen naar een buurwereld.`:`${name} reizen buiten beeld en keren later terug.`;
  }});
 function syncAnimalControls(){
  const first=kind=>[...animalSystem.models.values()].find(a=>a.root.userData.animalKind===kind&&a.root.userData.role!=='calf');
@@ -4242,9 +4245,14 @@ for(const [key,text] of [['feeding','Orka’s eten dode importvissen · moeder m
 const animalStudioChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('ocean-animal-studio'):null;
 function applyAnimalStudioSettings(data){if(data?.type!=='animal-settings'||data.world!==currentAtlasWorldId()||data.session!==animalStudioSession)return;if(animalStudioLastRequest===data.requestId)return;animalStudioLastRequest=data.requestId;
  const allowed=canEditCurrentWorld()&&!cloudBusy&&!communityOcean?.busy;
- if(allowed){animalSystem.configure(data.settings);if(data.activeKind&&animalSystem.settings[data.activeKind]?.design?.asset&&!animalSystem.hasKind(data.activeKind)){animalSystem.add(data.activeKind,camera.position.toArray(),0);}saveAnimalDesign('settings:'+data.world,animalSystem.settings).catch(()=>{});syncAnimalControls();for(const key of ['feeding','turtleHunting'])document.getElementById('animal-'+key).checked=animalSystem.settings.orca[key];try{if(Object.values(animalSystem.settings).some(s=>s?.design?.asset?.data.length>2000000))throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${data.world}`,JSON.stringify(animalSystem.settings));}catch{}}
+ if(allowed){animalSystem.configure(data.settings);if(data.activeKind&&animalSystem.settings[data.activeKind]?.design?.asset&&(data.release||!animalSystem.hasKind(data.activeKind))){animalSystem.add(data.activeKind,camera.position.toArray(),0);}saveAnimalDesign('settings:'+data.world,animalSystem.settings).catch(()=>{});syncAnimalControls();for(const key of ['feeding','turtleHunting'])document.getElementById('animal-'+key).checked=animalSystem.settings.orca[key];try{if(Object.values(animalSystem.settings).some(s=>s?.design?.asset?.data.length>2000000))throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${data.world}`,JSON.stringify(animalSystem.settings));}catch{}}
+ if(allowed)animalManager.refresh();
  animalStudioChannel?.postMessage({type:'animal-settings-result',world:data.world,session:data.session,message:allowed?'Toegepast in je oceaan. Bewaar de wereld met Save Local of Save Online.':'Deze wereld is alleen-lezen of wordt momenteel geladen. Probeer je eigen wereld.'});
 }
+const animalManagerPanel=document.createElement('section');animalManagerPanel.id='animalManager';document.getElementById('squidStatus').closest('.graphics-panel').prepend(animalManagerPanel);
+function releaseManagedAnimal(kind){if(!canEditCurrentWorld()||cloudBusy||communityOcean?.busy)return;const rows=animalSystem.add(kind,camera.position.toArray(),0);syncAnimalControls();const visible=rows.filter(r=>animalSystem.models.has(r.id)).length;document.getElementById('squidStatus').textContent=`${animalSystem.settings[kind].design?.name||kind}: ${visible}/${rows.length} vrijgelaten. Geen ruimte? Zwem naar open water.`;}
+const animalManager=createAnimalManager(animalManagerPanel,{getSettings:()=>animalSystem.settings,canEdit:()=>canEditCurrentWorld()&&!cloudBusy&&!communityOcean?.busy,applySettings:next=>{if(!canEditCurrentWorld())return;animalSystem.configure(next);saveAnimalDesign('settings:'+currentAtlasWorldId(),animalSystem.settings).catch(()=>{});syncAnimalControls();},release:releaseManagedAnimal,remove:kind=>{animalSystem.removeKind(kind);syncAnimalControls();},edit:kind=>{const world=currentAtlasWorldId();saveAnimalDesign('settings:'+world,animalSystem.settings).catch(()=>{});const url=new URL('./animal-studio/',location.href);url.searchParams.set('world',world);url.searchParams.set('session',animalStudioSession);url.searchParams.set('species',kind);window.open(url,'ocean-animal-studio');},status:text=>document.getElementById('squidStatus').textContent=text});
+addEventListener('focus',()=>animalManager.refresh());
 animalStudioChannel?.addEventListener('message',event=>applyAnimalStudioSettings(event.data));
 addEventListener('storage',event=>{if(event.key===`ocean-animal-pending:${currentAtlasWorldId()}`){try{applyAnimalStudioSettings(JSON.parse(event.newValue));}catch{}}});
 addEventListener('pagehide',()=>{animalSystem.dispose();animalStudioChannel?.close();},{once:true});
@@ -6034,7 +6042,7 @@ function updateFish(dt,t){
     }
   }
   for(const f of frameFish)if(!f.userData.isDesignedAnimal&&!['sinking','burial'].includes(f.userData.vitalState))constrainWater(f);
-  resolveFishContacts(frameFish.filter(f=>!f.userData.isDesignedAnimal&&f.visible&&!['sinking','burial'].includes(f.userData.vitalState)),previous,(fish,next)=>{
+  resolveFishContacts(frameFish.filter(f=>(f.visible||f.userData.isDesignedAnimal)&&!['sinking','burial'].includes(f.userData.vitalState)),previous,(fish,next)=>{
     const clearance=fish.userData.speciesId==='reef_6'?bottomClearance(fish.scale.x):fish.userData.isPuffer?(.98+(fish.userData.pufferInflation||0)*.75)*fish.scale.x:Math.max(.45,(SPECIES_POLICY[fish.userData.speciesId]?.bodyClearance||0)*fish.scale.x);
     const radius=Math.max(FISH_RADIUS,fish.userData.contactRadius||(fish.userData.speciesId==='reef_5'?fishExtent(fish).length():FISH_RADIUS));
     return next.y<=waterLimit(fish)&&next.y>=terrainHeightAt(next.x,next.z)+clearance
