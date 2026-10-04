@@ -40,7 +40,7 @@ export function normalizeAnimalSettings(input={}){
 export function releasedModelSettings(settings,design,count=1){
  const next=normalizeAnimalSettings(settings),kind='custom-'+design.id;
  if(!isCustomKind(kind)||!design.asset)throw Error('Bewaar eerst een geïmporteerd diermodel.');
- next[kind]={...next.custom,...design.behavior,count,design};return {kind,settings:normalizeAnimalSettings(next)};
+ next[kind]={...(normalizeAnimalSettings()[design.species]||next.custom),...design.behavior,count,design};return {kind,settings:normalizeAnimalSettings(next)};
 }
 export const DEFAULT_ANIMAL_SETTINGS=normalizeAnimalSettings();
 export function turtleLife(age,settings=DEFAULT_ANIMAL_SETTINGS.turtle){
