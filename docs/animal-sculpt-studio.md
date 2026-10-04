@@ -50,3 +50,39 @@ The portable design/brush/skin/keyframe pipeline and named-bone playback are reu
 - Browser tests cover sculpt/undo/redo, fine geometry, skin and real image upload, bone animation, video decoding and twelve actual frame samples, AI proposal preview/accept/reject with a simulated provider, IndexedDB reload, phone width, and absent gateway messaging.
 - Ocean integration checks apply, save/reload of skinned models and texture data, and read-only rejection.
 - Provider tests use a simulated Responses service. Live vision accuracy, generated texture quality and inferred movement accuracy remain unverified until a real API service and actual animal references are supplied.
+
+### Gratis modellen importeren (GLB / glTF 2.0)
+
+Open **5 · Model importeren** in de workbench. Selecteer één `.glb`, of één
+`.gltf` samen met alle `.bin`-bestanden en textures. Je kunt ook een volledige
+uitgepakte map selecteren. ZIP-bestanden eerst uitpakken. Ontbrekende of dubbelzinnige
+bestanden worden gemeld; een mislukte import vervangt het huidige ontwerp niet.
+
+- Model en textures samen maximaal 12 MB; maximaal 300.000 driehoeken en 5.000 nodes.
+- Materialen, textures, skeletten, morph targets en ingebouwde clips worden geladen.
+  Draco en Meshopt worden ondersteund; KTX2/Basis-textures en onbekende verplichte
+  extensies vragen een gewone GLB-export met PNG/JPEG-textures.
+- Richt de kop naar +X en de rug naar +Y met de drie rotatieschuiven. Lengte wordt
+  langs X gemeten. Selecteer een clip, stel het tempo in en gebruik **Test zwemmen**.
+  Zonder meegeleverde clips blijft de lichaamsvorm statisch.
+- Vul maker, licentie en bron in. Deze velden reizen met het ontwerp en de wereld mee;
+  de studio bepaalt niet automatisch of een download gratis of herbruikbaar is.
+- Concepten staan in IndexedDB. JSON-export bevat het volledige model inclusief
+  lokale buffers/textures: opnieuw importeren vereist de oorspronkelijke map niet.
+- **Toepassen in oceaan** gebruikt de bestaande orka-gedragslogica, inclusief groepen
+  en jongen. Andere diersoorten hebben nog geen eigen importslot. Alleen lichaamsclips
+  worden overgenomen; route-, voedsel- en migratiegedrag komt uit AnimalSystem.
+  Een bek- of ademanimatie wordt niet automatisch aan een willekeurig skelet gekoppeld.
+- Na toepassen de wereld lokaal of online bewaren. Grote modellen kunnen de
+  localStorage-cache vullen; bij een geopende oceaansessie kan BroadcastChannel het
+  ontwerp rechtstreeks overdragen. Het IndexedDB-concept en de JSON-export blijven
+  beschikbaar. Sla geen zeer zware assets in iedere wereld op zonder rekening te
+  houden met de omvang van wereldbestanden en online opslag.
+- Sculpt, huidverf en AI-voorstellen blijven beperkt tot eigen volumemodellen. Gebruik
+  **Terug naar eigen sculptuur** om daarmee verder te werken; het originele sculptontwerp
+  is bewaard. Ongedaan maken kan de modelimport herstellen.
+
+Verificatie: `npm test`, `npm run test:animal-import-browser` en
+`npm run test:animal-sculpt-browser`. De importtest gebruikt een echte GLB met een
+skelet en clip, plus een glTF met losse buffer en PNG; er is nog geen benchmark
+van acht zware externe dieren tegelijk.
