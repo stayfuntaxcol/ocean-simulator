@@ -22,3 +22,8 @@ test('large imports pass the former 12 MB limit and irrelevant folder files do n
  assert(asset.data.length>12*1024*1024);assert.deepEqual(parseAnimalDesign(JSON.stringify(normalizeAnimalDesign({asset}))).asset,asset);
  await assert.rejects(importAnimalFiles([{name:'too-large.glb',size:ASSET_MAX_BYTES+1}]),/100 MB/);
 });
+test('every imported species keeps its identity, small scale and independent behaviour',()=>{
+ const asset={kind:'gltf',filename:'scene.gltf',data:JSON.stringify({asset:{version:'2.0'}}),bounds:[.5,.2,.3]};
+ const settings=normalizeAnimalSettings(Object.fromEntries(['orca','whale','turtle','stingray','squid'].map(species=>[species,{design:{species,id:'model-'+species,name:species,asset,worldLength:.35,behavior:{speed:.45,count:1},motion:{duration:25,keys:[{bone:'ImportedTail',time:20,rotation:[0,.2,0]}]}}}])));
+ for(const species of ['orca','whale','turtle','stingray','squid']){const d=settings[species].design;assert.equal(d.species,species);assert.equal(d.worldLength,.35);assert.equal(d.motion.keys[0].time,20);assert.deepEqual(parseAnimalDesign(JSON.stringify(d)),d);assert.equal(animalExtent(species,settings[species],30).x,.175);}
+});

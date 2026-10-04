@@ -86,3 +86,15 @@ Verificatie: `npm test`, `npm run test:animal-import-browser` en
 `npm run test:animal-sculpt-browser`. De importtest gebruikt een echte GLB met een
 skelet en clip, plus een glTF met losse buffer en PNG; er is nog geen benchmark
 van acht zware externe dieren tegelijk.
+
+## Imported animal collection and testing
+
+Imports now support orca, whale, sea turtle, stingray, and squid. Select the species before importing; existing wrongly labelled imports can be corrected using the same selector. Each species has its own `animals.settings[species].design`. One active model per species is used in a world; the local collection can retain multiple variants.
+
+In **Model importeren**, set a name and the **exact ocean length** (0.05–30 m), then choose **Bewaar model**. The **Mijn modellen** list reopens the complete asset with credits, orientation, animation, bone keyframes, and behaviour. This collection and the working draft use IndexedDB; use **Exporteer dierontwerp** for a portable backup. Keeping a model in the collection does not publish or place it in a world.
+
+Suggested initial game lengths are 5 m for orca, 10 m for whale, 1.2 m for turtle, 2 m for stingray, and 0.6 m for squid. These are adjustable game defaults. Turtle length is the adult length; age controls its juvenile scale. Other imported models use the entered length directly, without a hidden native-model size multiplier.
+
+Edit speed, steering, group size, depth, and species-specific behaviour in the import panel, then choose **Test zwemgedrag in Animal Studio**. The testing studio keeps these settings and lets you edit size and behaviour while testing. Reopen its workbench to save updated variants to the collection. **Rig & zwemmen** can add cyclic bone-rotation keyframes over the original clip, including models without supplied clips. No automatic rig creation or anatomical retargeting is implied.
+
+**Toepassen in oceaan** applies the selected species through the existing owner/session checks and places the imported species if absent. Save the world separately with Save Local or Save Online. Squid also has place/follow/remove controls in Details. Large models use IndexedDB and the direct studio channel, avoiding localStorage's small synchronous quota.

@@ -1,3 +1,4 @@
+import {ANIMAL_NAMES,normalizeDesignBehavior} from './AnimalSpecies.js';
 import {normalizeImportedAsset,ASSET_MAX_TEXT} from './ImportedAsset.js';
 // Editable, portable source of truth. No generated meshes or executable AI code in saves.
 export const DESIGN_FORMAT='ocean-animal-design-v1';
@@ -12,7 +13,7 @@ export const DEFAULT_MOTION={duration:3.1,amplitude:.23,frequency:1,flipper:.15,
 const list=(v,name,max)=>{if(v==null)return [];const rows=Array.isArray(v)?v:typeof v==='object'&&Object.keys(v).every(k=>/^\d+$/.test(k))?Object.values(v):null;if(!rows||rows.length>max)throw Error(`${name}: ongeldig formaat of te veel bewerkingen.`);return rows;};
 export function normalizeAnimalDesign(input={}){
  if(input.format&&input.format!==DESIGN_FORMAT)throw Error('Onbekend dierontwerp-formaat.');
- if(input.species&&input.species!=='orca')throw Error('Deze eerste sculpt-workbench ondersteunt de orka.');
+ if(input.species&&!ANIMAL_NAMES[input.species])throw Error('Onbekende diersoort.');if(input.species&&input.species!=='orca'&&!input.asset)throw Error('Boetseren ondersteunt de orka; andere soorten gebruiken een geïmporteerd model.');
  if(input.strokes?.length>DESIGN_LIMITS.strokes||input.skin?.paint?.length>DESIGN_LIMITS.paint||input.motion?.keys?.length>DESIGN_LIMITS.keys)throw Error('Dit ontwerp bevat te veel bewerkingen.');
  const f=input.form||{},s=input.skin||{},m=input.motion||{};
  const strokeRows=list(input.strokes,'Sculptuur',DESIGN_LIMITS.strokes),paintRows=list(s.paint,'Huid',DESIGN_LIMITS.paint),keyRows=list(m.keys,'Beweging',DESIGN_LIMITS.keys);
@@ -21,10 +22,10 @@ export function normalizeAnimalDesign(input={}){
  const skin={dark:color(s.dark,DEFAULT_SKIN.dark),light:color(s.light,DEFAULT_SKIN.light),saddle:color(s.saddle,DEFAULT_SKIN.saddle),roughness:num(s.roughness,.3,.08,.95),pores:num(s.pores,.45,0,1),scars:num(s.scars,.25,0,1),patchSize:num(s.patchSize,1,.65,1.35),seed:Math.round(num(s.seed,17,0,99999)),texture:null,paint:paintRows.map(p=>({point:vec(p?.point,[0,0,0]),radius:num(p?.radius,1,.15,5),color:color(p?.color,'#edf0df'),opacity:num(p?.opacity,1,.05,1),mirror:p?.mirror!==false}))};
  if(s.texture!=null){if(typeof s.texture!=='string'||s.texture.length>DESIGN_LIMITS.textureBytes||!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(s.texture))throw Error('Gebruik een PNG/JPEG/WebP skin van maximaal 1 MB.');skin.texture=s.texture;}
  const allowedBones=new Set(['torso','neck','head','jaw','dorsal','fluke-left','fluke-right',...Array.from({length:7},(_,i)=>'tail-'+(i+1)),...['left','right'].flatMap(side=>Array.from({length:3},(_,i)=>'flipper-'+side+'-'+(i+1)))]);
- if(keyRows.some(k=>!allowedBones.has(k?.bone)))throw Error('Een bewegingshouding verwijst naar een onbekend bot.');
- const duration=num(m.duration,3.1,.8,12);
- const motion={duration:num(m.duration,3.1,.8,12),amplitude:num(m.amplitude,.23,0,.55),frequency:num(m.frequency,1,.2,3),flipper:num(m.flipper,.15,0,.65),lag:num(m.lag,.65,0,1.8),roll:num(m.roll,.025,0,.15),keys:keyRows.map(k=>({time:num(k?.time,0,0,duration),bone:String(k?.bone||'tail-1').slice(0,40),rotation:vec(k?.rotation,[0,0,0],-.8,.8)})).sort((a,b)=>a.time-b.time)};
- return {format:DESIGN_FORMAT,species:'orca',name:String(input.name||'Orka · sculpt').slice(0,80),resolution:num(input.resolution,.4,.28,.7),worldLength:num(input.worldLength,12,input.asset ? .2 : 6,input.asset?30:14),form,strokes,skin,motion,...(input.asset?{asset:normalizeImportedAsset(input.asset)}:{})};
+ if(keyRows.some(k=>!(input.asset?typeof k?.bone==='string'&&k.bone.length>0&&k.bone.length<=160:allowedBones.has(k?.bone))))throw Error('Een bewegingshouding verwijst naar een onbekend bot.');
+ const duration=num(m.duration,3.1,input.asset ? .1 : .8,input.asset?300:12);
+ const motion={duration,amplitude:num(m.amplitude,.23,0,.55),frequency:num(m.frequency,1,.2,3),flipper:num(m.flipper,.15,0,.65),lag:num(m.lag,.65,0,1.8),roll:num(m.roll,.025,0,.15),keys:keyRows.map(k=>({time:num(k?.time,0,0,duration),bone:String(k?.bone||'tail-1').slice(0,input.asset?160:40),rotation:vec(k?.rotation,[0,0,0],-.8,.8)})).sort((a,b)=>a.time-b.time)};
+ return {format:DESIGN_FORMAT,species:input.species||'orca',...(typeof input.id==='string'&&/^[-a-zA-Z0-9]{1,100}$/.test(input.id)?{id:input.id}:{}),...(input.behavior?{behavior:normalizeDesignBehavior(input.behavior)}:{}),name:String(input.name||'Orka · sculpt').slice(0,80),resolution:num(input.resolution,.4,.28,.7),worldLength:num(input.worldLength,12,input.asset ? .05 : 6,input.asset?30:14),form,strokes,skin,motion,...(input.asset?{asset:normalizeImportedAsset(input.asset)}:{})};
 }
 export function parseAnimalDesign(text){if(text.length>ASSET_MAX_TEXT+2200000)throw Error('Dierontwerp is te groot.');const input=JSON.parse(text);if(input.format!==DESIGN_FORMAT)throw Error('Geen Animal Design-bestand.');return normalizeAnimalDesign(input);}
 export function designPrompt(design,instruction=''){

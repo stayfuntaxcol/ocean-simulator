@@ -1,3 +1,4 @@
+import {importedScale} from './design/AnimalSpecies.js';
 import * as THREE from 'three';
 import {normalizeAnimalSettings,turtleLife,ANIMAL_KINDS} from './AnimalSettings.js';
 import {SIDES,HEX,apothem,containsHex,closestInHex} from '../worlds/HexWorld.js';
@@ -5,10 +6,10 @@ let sequence=0;
 const id=()=>`animal-${Date.now().toString(36)}-${(++sequence).toString(36)}`;
 const clamp=THREE.MathUtils.clamp;
 export function animalExtent(kind,s,age=0,role='adult'){
- if(kind==='orca'&&s.design?.asset){return new THREE.Vector3(...s.design.asset.bounds).multiplyScalar(s.design.worldLength*s.size/1.25*(role==='calf'?s.calfSize:1));}
+ if(s.design?.asset){return new THREE.Vector3(...s.design.asset.bounds).multiplyScalar(s.design.worldLength*importedScale(s.design,s,age)*(role==='calf'?s.calfSize:1));}
  if(kind==='orca'&&s.design){const d=s.design,f=d.form,scale=d.worldLength/f.length*s.size/1.25*(role==='calf'?s.calfSize:1),extent=[f.length/2+3,Math.max(3.2+6*f.dorsal,11),2.1+7.9*f.flippers];for(const b of d.strokes)if(b.mode==='add')b.point.forEach((v,i)=>extent[i]=Math.max(extent[i],Math.abs(v)+b.radius));return new THREE.Vector3(...extent).multiplyScalar(scale);}
  const scale=kind==='turtle'?turtleLife(age,s).scale:s.size*(role==='calf'?s.calfSize:1);
- return new THREE.Vector3(...({orca:[6.6,1.65*(.7+1.75*s.dorsal)+.25,1.65*Math.max(1.4*s.tail,.48+1.5*s.flippers)+.2],whale:[14.8,Math.max(3.6,1.1+1.7*s.dorsal),2+6.7*s.flippers+.4],turtle:[1.9,.55,2.3],stingray:[3.3,.52,1.5]}[kind])).multiplyScalar(scale);
+ return new THREE.Vector3(...({orca:[6.6,1.65*(.7+1.75*s.dorsal)+.25,1.65*Math.max(1.4*s.tail,.48+1.5*s.flippers)+.2],whale:[14.8,Math.max(3.6,1.1+1.7*s.dorsal),2+6.7*s.flippers+.4],turtle:[1.9,.55,2.3],stingray:[3.3,.52,1.5],squid:[.35,.2,.2]}[kind])).multiplyScalar(scale);
 }
 export function normalizeAnimalRecords(input){
  const raw=Array.isArray(input)?input:Object.values(input||{}),seen=new Set(),out=[];
@@ -30,12 +31,12 @@ export function createAnimalSystem({settings={},factory,worldId='local-world',te
 
  function removeModel(r){const m=models.get(r.id);if(!m)return;detach(m,r);m.dispose();models.delete(r.id);targets.delete(r.id);}
  function removeKind(kind){for(const r of [...records.values()])if(r.kind===kind&&r.worldId===current){removeModel(r);records.delete(r.id);}}
- function add(kind,position,heading=0){removeKind(kind);const s=config[kind],count=kind==='turtle'?20:s.count,group=id(),base=new THREE.Vector3(...position),forward=new THREE.Vector3(Math.cos(heading),0,Math.sin(heading)),side=new THREE.Vector3(-forward.z,0,forward.x);
+ function add(kind,position,heading=0){removeKind(kind);const s=config[kind],count=s.count,group=id(),base=new THREE.Vector3(...position),forward=new THREE.Vector3(Math.cos(heading),0,Math.sin(heading)),side=new THREE.Vector3(-forward.z,0,forward.x);
  const created=[];for(let i=0;i<count+(kind==='orca'&&s.feeding?1:0);i++){
  const calf=kind==='orca'&&s.feeding&&i===count,spacing=kind==='whale'?s.groupDistance:kind==='orca'?15:kind==='turtle'?s.groupDistance:5;
  let p=base.clone();if(calf)p.addScaledVector(side,s.familyDistance);else if(kind==='turtle')p.addScaledVector(forward,-i*spacing);else p.addScaledVector(side,(i%3)*spacing).addScaledVector(forward,-Math.floor(i/3)*spacing*1.4);
  if(kind==='turtle'&&s.age>0){const life=turtleLife(s.age,s);p=base.clone().addScaledVector(side,(i%5)*Math.max(5,life.scale*6)).addScaledVector(forward,-Math.floor(i/5)*Math.max(5,life.scale*6));}
- const bounded=closestInHex(p,HEX.radius-20);p.set(bounded.x,bounded.y,bounded.z);const extent=animalExtent(kind,s,kind==='turtle'?s.age:0,calf?'calf':'adult');p.y=clamp(p.y,terrain(p.x,p.z)+extent.y+.5,19.3-extent.y);
+ const bounded=closestInHex(p,HEX.radius-20);p.set(bounded.x,bounded.y,bounded.z);const extent=animalExtent(kind,s,kind==='turtle'?s.age:0,calf?'calf':'adult');if(s.design?.asset)p.y=19.8-s.depth;p.y=clamp(p.y,terrain(p.x,p.z)+extent.y+.5,19.3-extent.y);
  const age=kind==='turtle'?s.age:calf?1:20,role=calf?'calf':kind==='orca'&&s.feeding&&i===0?'mother':'adult';
  const r={id:id(),kind,worldId:current,homeId:current,groupId:kind==='turtle'&&age>=s.oldAge?id():group,role,position:p.toArray(),heading,age,hunger:kind==='orca'&&s.feeding?40:20,reserve:80,residence:0,crossings:0,revision:0,away:0,returnWorld:'',surfaceClock:i*3,phase:'cruise',baseY:p.y};
  records.set(r.id,r);modelFor(r);created.push(r);}
@@ -52,20 +53,20 @@ export function createAnimalSystem({settings={},factory,worldId='local-world',te
  function configure(next){
  snapshot();const previous=config;config=normalizeAnimalSettings(next);
  const active=[...records.values()].filter(r=>r.worldId===current&&!r.away),byKind=new Map();for(const r of active)if(!byKind.has(r.kind))byKind.set(r.kind,r);
- for(const [kind,first] of byKind){const existing=active.filter(r=>r.kind===kind),wanted=kind==='turtle'?existing.length:config[kind].count+(kind==='orca'&&config.orca.feeding?1:0);
+ for(const [kind,first] of byKind){const existing=active.filter(r=>r.kind===kind),wanted=kind==='turtle'&&!config[kind].design?.asset&&config[kind].count===previous[kind].count?existing.length:config[kind].count+(kind==='orca'&&config.orca.feeding?1:0);
  if(wanted!==existing.length||(kind==='orca'&&config.orca.feeding!==existing.some(r=>r.role==='calf'))){
-   const retained=existing.filter(r=>r.role!=='calf').slice(0,kind==='turtle'?20:config[kind].count).map(r=>({...r,position:r.position.slice()}));
+   const retained=existing.filter(r=>r.role!=='calf').slice(0,config[kind].count).map(r=>({...r,position:r.position.slice(),...(kind==='turtle'&&config[kind].age!==previous[kind].age?{age:config[kind].age}:{}),...(config[kind].depth!==previous[kind].depth?{baseY:19.8-config[kind].depth}:{})}));
    const calves=existing.filter(r=>r.role==='calf');add(kind,first.position,first.heading);
    const created=[...records.values()].filter(r=>r.kind===kind&&r.worldId===current),adults=created.filter(r=>r.role!=='calf');
    for(let i=0;i<retained.length;i++){const fresh=adults[i];if(!fresh)continue;removeModel(fresh);records.delete(fresh.id);const old={...retained[i],groupId:fresh.groupId,role:fresh.role};records.set(old.id,old);modelFor(old);}
    if(kind==='orca'&&config.orca.feeding&&calves.length){const fresh=created.find(r=>r.role==='calf');if(fresh){removeModel(fresh);records.delete(fresh.id);const old={...calves[0],groupId:fresh.groupId};records.set(old.id,old);modelFor(old);}}
- }else for(const r of existing){removeModel(r);if(kind==='turtle'&&config.turtle.age!==previous.turtle.age){r.age=config.turtle.age;r.revision++;}modelFor(r);}}
+ }else for(const r of existing){removeModel(r);if(config[kind].depth!==previous[kind].depth){r.baseY=19.8-config[kind].depth;}if(kind==='turtle'&&config.turtle.age!==previous.turtle.age){r.age=config.turtle.age;r.revision++;}modelFor(r);}}
  regroupTurtles();return config;
  }
 
  function safe(r,from,to,phase=r.phase){return clearPath(r,from,to,animalExtent(r.kind,config[r.kind],r.age,r.role),phase);}
  function chooseTarget(r,m){const s=config[r.kind],p=m.root.position,h=r.heading;
- for(const turn of [.35,-.55,1,-1.4,2,-2.5,Math.PI]){const a=h+turn,q=p.clone().add(new THREE.Vector3(Math.cos(a)*30,0,Math.sin(a)*30));const floor=terrain(q.x,q.z),e=animalExtent(r.kind,s,r.age,r.role);q.y=clamp(r.baseY+Math.sin(time*.02+r.surfaceClock)*1.3,floor+e.y+.5,19.3-e.y);if(containsHex(q,HEX.radius-e.x-2)&&safe(r,p,q,'cruise'))return q;}return p.clone();}
+ for(const turn of [.35,-.55,1,-1.4,2,-2.5,Math.PI]){const a=h+turn,q=p.clone().add(new THREE.Vector3(Math.cos(a)*30,0,Math.sin(a)*30));const floor=terrain(q.x,q.z),e=animalExtent(r.kind,s,r.age,r.role);q.y=clamp(r.baseY+Math.sin(time*.02+r.surfaceClock)*(s.depthVariation??1.3),floor+e.y+.5,19.3-e.y);if(containsHex(q,HEX.radius-e.x-2)&&safe(r,p,q,'cruise'))return q;}return p.clone();}
  function cross(group,side,destination){const n=SIDES[side],shift=new THREE.Vector3(n.nx*apothem(HEX.radius)*2,0,n.nz*apothem(HEX.radius)*2),from=group[0].worldId;onDeparture({from,ids:group.map(r=>r.id)});for(const r of group){const m=models.get(r.id);if(m)r.position=m.root.position.toArray();removeModel(r);r.crossings++;r.revision++;if(r.kind==='turtle')r.age++;r.residence=0;r.phase='cruise';r.surfaceClock=0;
  if(destination){r.worldId=destination.id;r.position=new THREE.Vector3(...r.position).sub(shift).toArray();const p=closestInHex({x:r.position[0],y:r.position[1],z:r.position[2]},HEX.radius-22);r.position=[p.x,p.y,p.z];}else{r.returnWorld=from;r.worldId=`offshore-${from}`;r.away=config[r.kind].returnTime||90;}}
  onMigration({from,to:destination?.id||null,side,ids:group.map(r=>r.id),kind:group[0].kind});}
@@ -89,9 +90,9 @@ export function createAnimalSystem({settings={},factory,worldId='local-world',te
  if(prey){claimed.add(prey);desired=prey.position.clone();speed=s.huntSpeed;m.openMouth?.();r.phase='cruise';}}
  // Family tether applies to the mother as well as the calf.
  const calf=group.find(a=>a.role==='calf'),cm=calf&&models.get(calf.id);if(r.role==='mother'&&cm&&p.distanceTo(cm.root.position)>s.familyDistance*2){prey=null;desired=cm.root.position.clone();speed=s.speed*.8;}
- if(r!==leader&&!desired){const forward=lm.root.userData.velocity.clone().setY(0).normalize(),side=new THREE.Vector3(-forward.z,0,forward.x),spacing=r.kind==='whale'?s.groupDistance:r.kind==='turtle'?s.groupDistance:s.familyDistance;desired=lm.root.position.clone().addScaledVector(r.role==='calf'?side:forward,r.role==='calf'?spacing:-i*spacing);speed*=clamp(p.distanceTo(desired)/Math.max(1,spacing)+.4,.5,1.4);}
+ if(r!==leader&&!desired){const forward=lm.root.userData.velocity.clone().setY(0).normalize(),side=new THREE.Vector3(-forward.z,0,forward.x),spacing=r.kind==='whale'?s.groupDistance:r.kind==='turtle'?s.groupDistance:(s.familyDistance||s.groupDistance||5);desired=lm.root.position.clone().addScaledVector(r.role==='calf'?side:forward,r.role==='calf'?spacing:-i*spacing);speed*=clamp(p.distanceTo(desired)/Math.max(1,spacing)+.4,.5,1.4);}
  if(!prey&&r.role!=='calf'&&['orca','whale'].includes(r.kind)){
- const surfaceY=19.8-(r.kind==='orca'?(s.design?.asset?s.design.asset.bounds[1]*s.design.worldLength*s.size/1.25:s.design?4.07*s.design.form.girth*s.design.worldLength/s.design.form.length*s.size/1.25:1.45*s.size):2.9*s.size),hold=s.surfaceDuration;
+ const surfaceY=19.8-(s.design?.asset?e.y:r.kind==='orca'?(s.design?4.07*s.design.form.girth*s.design.worldLength/s.design.form.length*s.size/1.25:1.45*s.size):2.9*s.size),hold=s.surfaceDuration;
  if(r.phase==='cruise'&&r.surfaceClock>=s.surfaceInterval){r.phase='ascend';r.baseY=p.y;targets.delete(r.id);}
  if(r.phase==='ascend'){desired=(desired||p.clone().add(new THREE.Vector3(Math.cos(r.heading)*12,0,Math.sin(r.heading)*12))).clone();desired.y=surfaceY;speed=Math.min(speed,1.4);if(Math.abs(p.y-surfaceY)<.3){r.phase='breathe';r.surfaceClock=0;}}
  if(r.phase==='breathe'){desired=(desired||p.clone().add(new THREE.Vector3(Math.cos(r.heading)*10,0,Math.sin(r.heading)*10))).clone();desired.y=surfaceY;speed*=.45;if(r.surfaceClock>hold)r.phase='descend';}

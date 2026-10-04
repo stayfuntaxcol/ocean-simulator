@@ -320,7 +320,7 @@
       <button id="placeTurtle" type="button" style="margin-top:9px">Plaats reuzenschildpad</button>
       <button id="followTurtle" type="button" hidden>Volg reuzenschildpad</button>
       <button id="removeTurtle" type="button" hidden>Verwijder reuzenschildpad</button>
-      <p id="turtleStatus">Reuzenschildpad · rustige flipperslagen en lange glijbewegingen.</p>
+      <button id="placeSquid" type="button">Plaats squid</button><button id="followSquid" type="button" hidden>Volg squid</button><button id="removeSquid" type="button" hidden>Verwijder squid</button><p id="squidStatus">Squid / inktvis · pas je importmodel aan in Animal Studio.</p><p id="turtleStatus">Reuzenschildpad · rustige flipperslagen en lange glijbewegingen.</p>
       <a href="?scene=reference" target="_blank" rel="noopener">Open vaste vergelijkingsscène ↗</a>
       <div id="referenceControls" hidden>
         <p>Demo · vaste scène · eigen lokale opslag</p>
@@ -677,7 +677,8 @@ import { createGreenReefLibrary } from './graphics/GreenReefFish.js';
 import { createReefSpeciesLibrary, REEF_SPECIES } from './graphics/ReefSpecies.js';
 import { createMicroLife } from './graphics/MicroLife.js';
 import { createMicroGeometry } from './graphics/MicroLifeAnatomy.js';
-import {createAnimalSystem} from './animals/AnimalSystem.js';
+import {saveDesign as saveAnimalDesign} from './animal-studio/DesignStore.js';
+import {createAnimalSystem,animalExtent} from './animals/AnimalSystem.js';
 import {createAnimalModel} from './animals/AnimalModels.js';
 import {animalPathClear} from './animals/AnimalCollision.js';
 import {normalizeAnimalSettings} from './animals/AnimalSettings.js';
@@ -3561,13 +3562,13 @@ function canEditCurrentWorld(){
 // Visitor controls are read-only; Firebase remains the authority for writes.
 document.addEventListener('click',event=>{
   const button=event.target.closest?.('button');
-  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','currentFlowAdd','currentFlowPlace','currentFlowDelete'].includes(button.id))return;
+  if(!button||!['editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','placeSquid','removeSquid','currentFlowAdd','currentFlowPlace','currentFlowDelete'].includes(button.id))return;
   if(!cloudBusy&&!communityOcean?.busy&&((button.id==='placeOrca'&&orca)||(button.id==='placeWhale'&&whale)))return;
   if(!canEditCurrentWorld()||communityOcean?.busy||cloudBusy){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 function refreshWorldPermissions(){
   if(document.getElementById('fishLibraryDialog')?.open)fishLibrary.refresh();
-  for(const id of ['animal-count-orca','animal-count-whale','animal-count-stingray','animal-feeding','animal-turtleHunting','editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','currentFlowAdd','currentFlowPlace','currentFlowDelete']){
+  for(const id of ['animal-count-orca','animal-count-whale','animal-count-stingray','animal-feeding','animal-turtleHunting','editModeBtn','randomTerrainBtn','flatTerrainBtn','loadWorldBtn','importWorldBtn','importBlueprintBtn','importBtn','placeOrca','removeOrca','placeWhale','removeWhale','placeStingray','removeStingray','placeTurtle','removeTurtle','placeSquid','removeSquid','currentFlowAdd','currentFlowPlace','currentFlowDelete']){
     const button=document.getElementById(id);if(button)button.disabled=!canEditCurrentWorld()&&!((id==='placeOrca'&&orca)||(id==='placeWhale'&&whale));
   }
   const flowReadOnly=!canEditCurrentWorld();
@@ -4029,12 +4030,13 @@ const schools = new Map();
 let orca=null,orcaCruise=null;
 let whale=null,whaleCruise=null;
 const reefVisitors=new Map();
-const visitorIds={stingray:'Stingray',turtle:'Turtle'};
+const visitorIds={stingray:'Stingray',turtle:'Turtle',squid:'Squid'};
 function visitorClear(kind,from,to,heading){
   const rocks=nearbyImportRocks(from,from.distanceTo(to)+5).slice();
   for(const animal of [orca,whale,...reefVisitors.values()])if(animal&&animal!==reefVisitors.get(kind)){
     animal.root.updateMatrixWorld(true);rocks.push(new THREE.Box3().setFromObject(animal.root));
   }
+  if(kind==='squid'||animalSystem.settings[kind].design?.asset){const settings=animalSystem.settings[kind];return animalPathClear({kind,heading},from,to,animalExtent(kind,settings,settings.age||0),'cruise',{rocks,terrain:terrainHeightAt});}
   return visitorPathClear(kind,from,to,heading,{rocks,terrain:terrainHeightAt,inside:p=>containsHex(p,HEX.radius-1)});
 }
 function clearReefVisitor(kind){
@@ -4069,7 +4071,7 @@ for(const [kind,suffix] of Object.entries(visitorIds)){
   });
   document.getElementById('remove'+suffix).addEventListener('click',()=>clearReefVisitor(kind));
 }
-fishRenderStyle.addEventListener('change',()=>{for(const a of reefVisitors.values())a.setStyle(fishRenderStyle.value);});
+fishRenderStyle.addEventListener('change',()=>{for(const a of reefVisitors.values())a.setStyle?.(fishRenderStyle.value);});
 addEventListener('pagehide',()=>{for(const a of reefVisitors.values())a.dispose();},{once:true});
 const placeOrcaBtn=document.getElementById('placeOrca');
 const removeOrcaBtn=document.getElementById('removeOrca');
@@ -4212,12 +4214,12 @@ const animalSystem=createAnimalSystem({factory:createAnimalModel,worldId:current
  },onDeparture:event=>{migratedFollowId=selectedFish&&event.ids.includes(selectedFish.userData.animalId)?selectedFish.userData.animalId:null;},onMigration:event=>{
   if(event.from!==currentAtlasWorldId())return;
   if(event.to&&migratedFollowId&&event.ids.includes(migratedFollowId)){const followId=migratedFollowId;migratedFollowId=null;queueMicrotask(async()=>{const ok=await communityOcean?.visit(event.to);const animal=animalSystem.models.get(followId);if(ok&&animal)startFollowing(animal.root,'fish');});}
-  const name=event.kind==='whale'?'Walvissen':'Zeeschildpadden';document.getElementById(event.kind==='whale'?'whaleStatus':'turtleStatus').textContent=event.to?`${name} migreren samen naar een buurwereld.`:`${name} reizen buiten beeld en keren later terug.`;
+  const name=event.kind==='whale'?'Walvissen':event.kind==='squid'?'Inktvissen':'Zeeschildpadden';document.getElementById(event.kind+'Status').textContent=event.to?`${name} migreren samen naar een buurwereld.`:`${name} reizen buiten beeld en keren later terug.`;
  }});
 function syncAnimalControls(){
  const first=kind=>[...animalSystem.models.values()].find(a=>a.root.userData.animalKind===kind&&a.root.userData.role!=='calf');
- orca=first('orca')||null;whale=first('whale')||null;reefVisitors.clear();for(const kind of ['turtle','stingray']){const a=first(kind);if(a)reefVisitors.set(kind,a);}
- for(const [kind,suffix] of Object.entries({orca:'Orca',whale:'Whale',stingray:'Stingray',turtle:'Turtle'})){
+ orca=first('orca')||null;whale=first('whale')||null;reefVisitors.clear();for(const kind of ['turtle','stingray','squid']){const a=first(kind);if(a)reefVisitors.set(kind,a);}
+ for(const [kind,suffix] of Object.entries({orca:'Orca',whale:'Whale',stingray:'Stingray',turtle:'Turtle',squid:'Squid'})){
   const present=!!first(kind),place=document.getElementById('place'+suffix),remove=document.getElementById('remove'+suffix),follow=document.getElementById('follow'+suffix);
   if(kind==='orca'||kind==='whale')place.textContent=present?'Volg '+(kind==='orca'?'orka':'walvis'):'Plaats '+(kind==='orca'?'orka':'walvis');else{place.hidden=present;if(follow)follow.hidden=!present;}
   remove.hidden=!present;if(kind==='orca')for(const key of ['feeding','turtleHunting']){const input=document.getElementById('animal-'+key);if(input)input.checked=animalSystem.settings.orca[key];}
@@ -4226,10 +4228,10 @@ function syncAnimalControls(){
  if(fishCountEl.textContent!==String(fishes.length))fishCountEl.textContent=fishes.length;if(schoolCountText.textContent!==String(schools.size))schoolCountText.textContent=schools.size;
 }
 const openAnimalStudioBtn=document.createElement('button');openAnimalStudioBtn.id='openAnimalStudio';openAnimalStudioBtn.textContent='Animal Design Studio · modellen en gedrag';openAnimalStudioBtn.type='button';
-openAnimalStudioBtn.onclick=()=>{const world=currentAtlasWorldId();try{if(animalSystem.settings.orca.design?.asset?.data.length>2000000)throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${world}`,JSON.stringify(animalSystem.settings));}catch{}const url=new URL('./animal-studio/',location.href);url.searchParams.set('world',world);url.searchParams.set('session',animalStudioSession);window.open(url,'ocean-animal-studio');};
+openAnimalStudioBtn.onclick=()=>{const world=currentAtlasWorldId();saveAnimalDesign('settings:'+world,animalSystem.settings).catch(()=>{});try{if(Object.values(animalSystem.settings).some(s=>s?.design?.asset?.data.length>2000000))throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${world}`,JSON.stringify(animalSystem.settings));}catch{}const url=new URL('./animal-studio/',location.href);url.searchParams.set('world',world);url.searchParams.set('session',animalStudioSession);window.open(url,'ocean-animal-studio');};
 document.querySelector('#designDialog .menu-panel-body').prepend(openAnimalStudioBtn);
-for(const [kind,suffix] of Object.entries({orca:'Orca',whale:'Whale',stingray:'Stingray'})){
- const label=document.createElement('label');label.textContent='Aantal '+({orca:'volwassen orka’s',whale:'walvissen',stingray:'roggen'}[kind])+' ';const select=document.createElement('select');select.id='animal-count-'+kind;
+for(const [kind,suffix] of Object.entries({orca:'Orca',whale:'Whale',stingray:'Stingray',squid:'Squid'})){
+ const label=document.createElement('label');label.textContent='Aantal '+({orca:'volwassen orka’s',whale:'walvissen',stingray:'roggen',squid:'inktvissen'}[kind])+' ';const select=document.createElement('select');select.id='animal-count-'+kind;
  for(const n of kind==='whale'?[1,2,3]:[1,3,8]){const option=document.createElement('option');option.value=n;option.textContent=n;select.append(option);}label.append(select);document.getElementById('place'+suffix).before(label);
  select.onchange=()=>{if(!canEditCurrentWorld()||cloudBusy||communityOcean?.busy){syncAnimalControls();return;}const next=normalizeAnimalSettings(animalSystem.settings);next[kind].count=Number(select.value);animalSystem.configure(next);syncAnimalControls();};
 }
@@ -4240,7 +4242,7 @@ for(const [key,text] of [['feeding','Orka’s eten dode importvissen · moeder m
 const animalStudioChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('ocean-animal-studio'):null;
 function applyAnimalStudioSettings(data){if(data?.type!=='animal-settings'||data.world!==currentAtlasWorldId()||data.session!==animalStudioSession)return;if(animalStudioLastRequest===data.requestId)return;animalStudioLastRequest=data.requestId;
  const allowed=canEditCurrentWorld()&&!cloudBusy&&!communityOcean?.busy;
- if(allowed){animalSystem.configure(data.settings);syncAnimalControls();for(const key of ['feeding','turtleHunting'])document.getElementById('animal-'+key).checked=animalSystem.settings.orca[key];try{if(animalSystem.settings.orca.design?.asset?.data.length>2000000)throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${data.world}`,JSON.stringify(animalSystem.settings));}catch{}}
+ if(allowed){animalSystem.configure(data.settings);if(data.activeKind&&animalSystem.settings[data.activeKind]?.design?.asset&&!animalSystem.hasKind(data.activeKind)){animalSystem.add(data.activeKind,camera.position.toArray(),0);}saveAnimalDesign('settings:'+data.world,animalSystem.settings).catch(()=>{});syncAnimalControls();for(const key of ['feeding','turtleHunting'])document.getElementById('animal-'+key).checked=animalSystem.settings.orca[key];try{if(Object.values(animalSystem.settings).some(s=>s?.design?.asset?.data.length>2000000))throw Error('Groot model');localStorage.setItem(`ocean-animal-settings:${data.world}`,JSON.stringify(animalSystem.settings));}catch{}}
  animalStudioChannel?.postMessage({type:'animal-settings-result',world:data.world,session:data.session,message:allowed?'Toegepast in je oceaan. Bewaar de wereld met Save Local of Save Online.':'Deze wereld is alleen-lezen of wordt momenteel geladen. Probeer je eigen wereld.'});
 }
 animalStudioChannel?.addEventListener('message',event=>applyAnimalStudioSettings(event.data));
